@@ -19,7 +19,7 @@ async function assertClientVisible(clientId: string) {
   const session = await requireSession("clients.read");
   if (!isManager(session.user) && session.user.role !== "FINANCE") {
     const ok = await prisma.client.findFirst({
-      where: { id: clientId, deletedAt: null, ...clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions) },
+      where: { id: clientId, deletedAt: null, ...clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions, session.user.systemRole) },
       select: { id: true }
     });
     if (!ok) throw new ActionError("客户不存在");

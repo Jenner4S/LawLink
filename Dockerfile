@@ -13,6 +13,10 @@ COPY prisma ./prisma
 RUN npm ci
 
 FROM node:22-alpine AS builder
+
+# 构建标识必须在此阶段注入，否则客户端 chunk 里拿不到值（预渲染页在 build 时求值）
+ARG BUILD_ID=dev
+ENV NEXT_PUBLIC_BUILD_ID=${BUILD_ID}
 WORKDIR /app
 # 同 deps：prisma generate 同样按探测到的 OpenSSL 版本选引擎
 RUN apk add --no-cache openssl
@@ -25,6 +29,9 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# 构建标识：前端据此判断页面是否已过期（Server Action ID 随构建变化）
+ARG BUILD_ID=dev
+ENV BUILD_ID=${BUILD_ID}
 
 # 自动备份链依赖（2026-09-20 第六轮体检 P1-1）：backup.sh 以 bash 运行并调用
 # pg_dump。postgresql16-client 对齐 db 服务的 postgres:16（pg_dump 客户端主版本

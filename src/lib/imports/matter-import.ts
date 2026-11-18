@@ -17,10 +17,10 @@ export interface ImportColumn {
 
 export const IMPORT_COLUMNS: ImportColumn[] = [
   { key: "clientName", header: "客户名称", required: true },
-  { key: "clientIdNumber", header: "客户证件号", required: true, hint: "身份证 / 统一社会信用代码" },
+  { key: "clientIdNumber", header: "客户证件号", required: false, hint: "选填。留空时按客户名称匹配已有档案，匹配不到则新建" },
   { key: "clientType", header: "客户类型", required: false, hint: "个人 / 企业，默认个人" },
   { key: "opposingName", header: "相对方名称", required: true },
-  { key: "opposingIdNumber", header: "相对方证件号", required: true },
+  { key: "opposingIdNumber", header: "相对方证件号", required: false, hint: "选填。收案初期常未知，可后续补充" },
   { key: "opposingType", header: "相对方类型", required: false, hint: "个人 / 企业，默认个人" },
   { key: "category", header: "案件类型", required: true, hint: Object.values(matterCategoryLabel).join(" / ") },
   { key: "status", header: "案件状态", required: true, hint: "办理中 / 已结案 / 已归档" },
@@ -29,7 +29,8 @@ export const IMPORT_COLUMNS: ImportColumn[] = [
   { key: "cause", header: "案由", required: false, hint: "匹配案由库；未匹配则作为自由文本" },
   { key: "claimAmount", header: "标的额", required: false, hint: "数字，单位元" },
   { key: "clientPhone", header: "联系电话", required: false },
-  { key: "jurisdiction", header: "所属管辖地", required: false }
+  { key: "jurisdiction", header: "所属管辖地", required: false },
+  { key: "caseNumber", header: "案号", required: false, hint: "法院案号，如（2026）沪0116民初10442号；写入首程序" }
 ];
 
 export type RawRow = Record<string, string>;
@@ -50,6 +51,7 @@ export interface NormalizedRow {
   causeText: string | null;
   claimAmount: number | null;
   jurisdiction: string | null;
+  caseNumber: string | null;
 }
 
 /** 文本反查案件类型（按 matterCategoryLabel） */
@@ -136,9 +138,7 @@ export function validateRow(raw: RawRow): RowValidation {
   const opposingName = get("opposingName");
   const opposingIdNumber = get("opposingIdNumber");
   if (!clientName) errors.push("缺少客户名称");
-  if (!clientIdNumber) errors.push("缺少客户证件号");
   if (!opposingName) errors.push("缺少相对方名称");
-  if (!opposingIdNumber) errors.push("缺少相对方证件号");
 
   const categoryText = get("category");
   const category = parseCategoryLabel(categoryText);
@@ -190,7 +190,8 @@ export function validateRow(raw: RawRow): RowValidation {
       intakeDate,
       causeText,
       claimAmount,
-      jurisdiction
+      jurisdiction,
+      caseNumber: get("caseNumber") || null
     }
   };
 }

@@ -304,12 +304,23 @@ export function intakeVisibilityFilter(
 
 // ============ 客户可见性 ============
 
-/** 客户通过关联的案件判断可见性；manager/finance 看全部 */
+/**
+ * 客户通过关联的案件判断可见性；manager/finance 看全部。
+ *
+ * 2026-11 整改（本地实测发现）：
+ *   1) systemRole 与业务角色是两套维度。此前只判 role，导致 SUPER_ADMIN + LAWYER 的账号
+ *      看不到任何「尚未关联案件」的客户，管理员无法巡检全所档案。现显式接收 systemRole。
+ *   2) 团队只读授权（readableTeamFilter / canViewAllMatters）此前只作用于案件，不作用于客户，
+ *      造成「能看到全团队案件、却在客户模块找不到对应委托方」。现并入团队维度。
+ */
 export function clientVisibilityFilter(
   userId: string,
   role: string,
-  grants?: RoleGrant[]
+  grants?: RoleGrant[],
+  systemRole?: string
 ): Prisma.ClientWhereInput {
+  // 系统管理员：不受业务角色限制，始终可见全所客户
+  if (systemRole === "SUPER_ADMIN") return {};
   if (role === "CUSTOM") {
     const scope = scopeFor({ role, rolePermissions: grants }, "clients.read");
     if (!scope) return { id: { in: [] } };
@@ -320,6 +331,8 @@ export function clientVisibilityFilter(
   return {
     OR: [
       { matters: { some: { deletedAt: null, ...matterVisibilityFilter(userId, role, grants) } } },
+      // 团队授权范围内案件的委托方同样可见（只读授权，不放大写权限）
+      { matters: { some: { deletedAt: null, ...teamMatterFilter(userId) } } },
       { intakes: { some: intakeVisibilityFilter(userId, role) } }
     ]
   };

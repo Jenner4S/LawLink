@@ -4,6 +4,8 @@
  * server-only（用了 node:crypto + getExpressSettings 读 SystemSetting）。
  * client 端需要的常量/纯函数请 import "./companies"。
  */
+import { safeFetch } from "@/lib/net/safe-url";
+import { withExternalCallLog } from "@/lib/external-call-log";
 import { createHash } from "node:crypto";
 import { getExpressSettings } from "./settings";
 import { COMPANY_CODES, detectCompany } from "./companies";
@@ -72,12 +74,14 @@ async function callKdniao(opts: {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const res = await fetch("http://api.kdniao.com/Ebusiness/EbusinessOrderHandle.aspx", {
+    // 2026-11 审计：原为 http 明文 + 原生 fetch（绕过 SSRF 防护、不记外发台账），
+    // 改 https + safeFetch + 台账。运单号关联当事人，传输不得明文。
+    const res = await withExternalCallLog({ service: "kdniao" }, () => safeFetch("https://api.kdniao.com/Ebusiness/EbusinessOrderHandle.aspx", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params,
       signal: ctrl.signal
-    });
+    }));
     const json = (await res.json()) as {
       Success?: boolean | string;
       State?: string | number;
@@ -135,12 +139,12 @@ async function callKuaidi100(opts: {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const res = await fetch("https://poll.kuaidi100.com/poll/query.do", {
+    const res = await withExternalCallLog({ service: "kuaidi100" }, () => safeFetch("https://poll.kuaidi100.com/poll/query.do", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
       signal: ctrl.signal
-    });
+    }));
     const json = (await res.json()) as {
       status?: string;
       message?: string;

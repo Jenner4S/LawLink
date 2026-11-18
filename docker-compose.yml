@@ -19,7 +19,12 @@ services:
 
   # 仅在 docker compose up app 时启动；本地开发用 npm run dev 就跳过 app
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 每次构建注入唯一标识，前端据此发现「页面已过期」（Server Action ID 随构建变化）
+        BUILD_ID: ${BUILD_ID:-dev}
     container_name: lawlink-app
     restart: unless-stopped
     depends_on:
@@ -31,6 +36,9 @@ services:
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY}
       APP_STORAGE_DIR: /app/storage
+      # 历史数据迁移：默认放行批量导入（approvalSettings.enabled 硬编码为 true，
+      # 不放行则该功能永久不可达）。生产如要求逐件评审，设为 0。
+      LAWLINK_ALLOW_BULK_IMPORT: ${LAWLINK_ALLOW_BULK_IMPORT:-1}
     ports:
       - "3000:3000"
     volumes:

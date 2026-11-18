@@ -16,10 +16,14 @@ const unconfigured: ResolvedYuandianSettings = {
   configured: false
 };
 
+// 2026-11 安全加固后，yuandian/enterprise 改走 safeFetch（undici + SSRF 钉扎），
+// 打桩 globalThis.fetch 不再生效——改为 mock safe-url 模块。
 const fetchMock = vi.fn();
+vi.mock("@/lib/net/safe-url", () => ({
+  safeFetch: (...args: unknown[]) => fetchMock(...args)
+}));
 beforeEach(() => {
   fetchMock.mockReset();
-  globalThis.fetch = fetchMock as never;
 });
 
 function jsonRes(body: unknown, ok = true, status = 200) {

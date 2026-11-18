@@ -437,6 +437,8 @@ model RolePermission {
 }
 
 model User {
+  timeEntries   TimeEntry[]    @relation("TimeEntryUser")
+  rateSchedules RateSchedule[] @relation("RateScheduleUser")
   archiveBorrows ArchiveBorrowRequest[] @relation("ArchiveBorrowApplicant")
   archiveBorrowApprovals ArchiveBorrowRequest[] @relation("ArchiveBorrowApprover")
   invoiceAdjustments InvoiceAdjustment[]
@@ -599,6 +601,7 @@ model TeamMember {
 }
 
 model Client {
+  rateSchedules RateSchedule[]
   id                String                  @id @default(cuid())
   name              String
   type              ClientType
@@ -760,6 +763,8 @@ model Intake {
 // ============================================================
 
 model Matter {
+  timeEntries   TimeEntry[]
+  rateSchedules RateSchedule[]
   closurePlan ArchiveClosurePlan?
   handovers MatterHandover[]
   urgentItems IntakeUrgentItem[]
@@ -1633,6 +1638,7 @@ model EvidenceItem {
 }
 
 model Billing {
+  timeEntries TimeEntry[]
   draftTerms Json?
   completedWork String?
   handoverWork String?
@@ -1831,10 +1837,17 @@ model AuditLog {
   detail     Json?
   ip         String?
   userAgent  String?
+
+  /// 链式审计（借鉴 LexNebulis）：本条记录的 SHA-256 摘要，含上一条的摘要
+  integrityHash String?
+  /// 上一条记录的 integrityHash；首条为空。篡改任意一条会导致后续全部校验失败
+  previousHash  String?
+
   createdAt  DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
+  @@index([previousHash])
 }
 
 // ============================================================
@@ -2991,4 +3004,97 @@ model InvoiceAdjustment {
  createdAt DateTime @default(now())
  @@unique([invoiceId, reference])
  @@index([replacementInvoiceId])
+}
+
+// ============ 工时与费率（2026-11-18 新增）============
+// 背景：系统原本只记「结果」（收了多少钱），不记「投入」（花了多少小时），
+// 导致算不出单案毛利、律师产能，也无法支撑计时收费。
+
+enum RateScope {
+  DEFAULT
+  ROLE
+  USER
+  CLIENT
+  MATTER
+}
+
+enum TimeEntryStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  BILLED
+  WRITTEN_OFF
+}
+
+/// 费率表：四级覆盖，解析时按 MATTER > CLIENT > USER > ROLE > DEFAULT 就近取用
+model RateSchedule {
+  id               String    @id @default(cuid())
+  scope            RateScope
+  matterId         String?
+  matter           Matter?   @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  clientId         String?
+  client           Client?   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId           String?
+  user             User?     @relation("RateScheduleUser", fields: [userId], references: [id], onDelete: Cascade)
+  role             UserRole?
+  /// 标准小时费率（元/小时）
+  hourlyRate       Decimal   @db.Decimal(12, 2)
+  /// 计费进位（分钟）；0 = 按实际分钟计。律所惯例 6 分钟 = 0.1 小时
+  billingIncrement Int       @default(0)
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  note             String?
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  timeEntries TimeEntry[]
+
+  @@index([scope, active])
+  @@index([matterId])
+  @@index([clientId])
+  @@index([userId])
+}
+
+/// 工时记录
+model TimeEntry {
+  id        String @id @default(cuid())
+  matterId  String
+  matter    Matter @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User   @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  workDate   DateTime @db.Date
+  minutes    Int
+  /// 工作内容（律师可读的叙述）
+  narrative  String   @db.Text
+  /// 自定义任务分类：阅卷 / 开庭 / 起草 / 沟通 …
+  taskCode   String?
+  billable   Boolean  @default(true)
+  /// 不可计费时必填理由
+  noChargeReason String?
+
+  /// 费率快照：录入当时锁定，不随费率表调整而变
+  rateScheduleId     String?
+  rateSchedule       RateSchedule? @relation(fields: [rateScheduleId], references: [id], onDelete: SetNull)
+  hourlyRateSnapshot Decimal       @db.Decimal(12, 2)
+  amount             Decimal       @db.Decimal(12, 2)
+  /// 计费分钟（进位后），与 minutes 区分：actual 是实际投入，billableMinutes 是计费依据
+  billableMinutes    Int
+
+  /// 出账关联
+  billingId String?
+  billing   Billing? @relation(fields: [billingId], references: [id], onDelete: SetNull)
+
+  status       TimeEntryStatus @default(DRAFT)
+  approvedById String?
+  approvedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([matterId, workDate])
+  @@index([userId, workDate])
+  @@index([status])
+  @@index([billingId])
 }

@@ -4,6 +4,8 @@
  * 入口：GET {baseUrl}/{routeKey}?param=value，header X-API-Key。
  * 复用 settings.ts 的加密密钥读取。
  */
+import { safeFetch } from "@/lib/net/safe-url";
+import { withExternalCallLog } from "@/lib/external-call-log";
 import { getYuandianSettings, type ResolvedYuandianSettings } from "./settings";
 import { YuandianNotConfiguredError, YuandianApiError } from "./client";
 import { ActionError } from "@/lib/action-error";
@@ -63,14 +65,14 @@ export async function searchEnterpriseCandidates(
     data?: EnterpriseCandidate[] | null;
   };
   try {
-    const res = await fetch(url, {
+    const res = await withExternalCallLog({ service: "yuandian" }, () => safeFetch(url, {
       method: "GET",
       headers: {
         "X-API-Key": s.apiKey,
         Accept: "application/json"
       },
       signal: ctrl.signal
-    });
+    }));
     if (!res.ok) throw new YuandianApiError(`HTTP ${res.status}`, res.status);
     json = await res.json();
   } finally {
@@ -104,14 +106,14 @@ export async function getEnterpriseBaseInfo(
     data?: RawEnterpriseBaseInfo | null;
   };
   try {
-    const res = await fetch(url, {
+    const res = await withExternalCallLog({ service: "yuandian" }, () => safeFetch(url, {
       method: "GET",
       headers: {
         "X-API-Key": s.apiKey,
         Accept: "application/json"
       },
       signal: ctrl.signal
-    });
+    }));
     if (!res.ok) throw new YuandianApiError(`HTTP ${res.status}`, res.status);
     json = await res.json();
   } finally {
@@ -306,11 +308,11 @@ export async function getEnterpriseSummary(
     data?: Record<string, unknown> | null;
   };
   try {
-    const res = await fetch(url, {
+    const res = await withExternalCallLog({ service: "yuandian" }, () => safeFetch(url, {
       method: "GET",
       headers: { "X-API-Key": s.apiKey, Accept: "application/json" },
       signal: ctrl.signal
-    });
+    }));
     if (!res.ok) throw new YuandianApiError(`HTTP ${res.status}`, res.status);
     json = await res.json();
   } finally {

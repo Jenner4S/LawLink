@@ -18,9 +18,10 @@ export const config = {
      *   /api/auth         NextAuth 路由
      *   /api/health       健康检查
      *   /api/calendar     v0.50 ICS 日历订阅（token 即凭证，日历客户端无 cookie）
+     *   /api/version      构建标识（仅返回 BUILD_ID，用于前端发现「页面已过期」）
      *   /_next/*          Next 内部资源（含 HMR websocket）
      *   静态文件（.png .ico .svg 等）
      */
-    "/((?!login|api/auth|api/health|api/calendar|_next|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)).*)"
+    "/((?!login|api/auth|api/health|api/calendar|api/version|_next|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)).*)"
   ]
 };

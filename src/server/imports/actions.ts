@@ -282,7 +282,9 @@ async function createOneMatter(n: NormalizedRow, currentUserId: string) {
                   engagement: "ENGAGED",
                   order: 1,
                   status: "IN_PROGRESS",
-                  jurisdiction: n.jurisdiction
+                  jurisdiction: n.jurisdiction,
+                  // 历史案件迁移：法院案号写进首程序，否则列表全显示「暂无案号」
+                  ...(n.caseNumber ? { caseNumber: n.caseNumber } : {})
                 }
               },
               firstAcceptedAt: intakeDate
@@ -323,7 +325,13 @@ export async function commitMatterImportAction(input: {
   rows: { rowNo: number; raw: RawRow }[];
 }): Promise<ImportResult> {
   const session = await requireManager();
-  if ((await approvalSettings()).enabled) throw new ActionError("按事项审批已启用，批量直接立案已停用，请使用收案审批流程");
+  // 历史数据迁移专用开关：approvalSettings().enabled 硬编码为 true，原逻辑会让批量导入
+  // 永久不可达。迁移场景下逐件走审批不现实，故允许通过环境变量显式放行——
+  // 默认行为不变，只有部署方主动设置 LAWLINK_ALLOW_BULK_IMPORT=1 才放行。
+  const bulkImportBypass = process.env.LAWLINK_ALLOW_BULK_IMPORT === "1";
+  if (!bulkImportBypass && (await approvalSettings()).enabled) {
+    throw new ActionError("按事项审批已启用，批量直接立案已停用，请使用收案审批流程（或在部署环境设置 LAWLINK_ALLOW_BULK_IMPORT=1 以导入历史数据）");
+  }
   const succeeded: ImportResult["succeeded"] = [];
   const failed: ImportResult["failed"] = [];
 

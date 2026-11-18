@@ -39,7 +39,7 @@ export async function listClients(input: Partial<ClientListQuery> = {}) {
   const query = clientListQuerySchema.parse(input);
 
   const where: Prisma.ClientWhereInput = {
-    AND: [clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions)],
+    AND: [clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions, session.user.systemRole)],
     deletedAt: null,
     ...(query.type ? { type: query.type } : {}),
     ...(query.tag ? { tags: { has: query.tag } } : {}),
@@ -85,7 +85,7 @@ export async function getClientById(id: string) {
       where: {
         id,
         deletedAt: null,
-        ...clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions)
+        ...clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions, session.user.systemRole)
       },
       select: { id: true }
     });
@@ -131,7 +131,7 @@ export async function getClientFinanceSummary(clientId: string) {
       where: {
         id: clientId,
         deletedAt: null,
-        ...clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions)
+        ...clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions, session.user.systemRole)
       },
       select: { id: true }
     });

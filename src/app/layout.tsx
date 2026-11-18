@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { VersionGuard } from "@/components/patterns/version-guard";
 
 export const metadata: Metadata = {
   title: "LawLink — 律师案件管理系统",
@@ -15,7 +16,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          <VersionGuard />
+          {children}
+        </Providers>
       </body>
     </html>
   );
