@@ -1,5 +1,6 @@
 "use server";
 import {assertExecutionOpen} from "@/server/approval-permissions/termination";
+import { nextSystemCounter } from "@/lib/system-counter";
 import { parseInput } from "@/lib/parse-input";
 import { checkRoleMutation } from "@/lib/roles/service";
 import { isManager } from "@/lib/permissions";
@@ -11,7 +12,7 @@ import { canReadDocument } from "@/lib/approvals/documents";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { Prisma, type SealType } from "@prisma/client";
+import { type SealType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/server/audit";
@@ -50,21 +51,21 @@ function assertPdfDocument(file: { name?: string | null; type?: string | null; m
 async function generateSealCode(): Promise<string> {
   // 2026-09-20 第五轮审计时区修复：编号年份按上海（元旦 0-8 点不再生成去年编号、落去年计数器）
   const year = shParts(new Date()).y;
-  const key = `seal-counter-${year}`;
-  const next = await prisma.$transaction(
-    async (tx) => {
-      const existing = await tx.systemSetting.findUnique({ where: { key } });
-      const current = (existing?.value as { value?: number })?.value ?? 0;
-      const incremented = current + 1;
-      await tx.systemSetting.upsert({
-        where: { key },
-        update: { value: { value: incremented } },
-        create: { key, value: { value: incremented } }
-      });
-      return incremented;
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-  );
+  // 2026-11-21 修复（P2，多智能体审计「事务边界/并发」维度）：
+  //
+  // 这里原本是 `nextSystemCounter` 事务体的**逐字复制，只少了重试循环**。
+  // 而 system-counter.ts 的注释写得清清楚楚：
+  //   「此前发号器没有重试路径，并发建档时偶发冲突会直接把错误抛给用户
+  //     （报告 P0-6 验证项发现）」
+  // —— 那个 P0-6 修的是客户编号与案件编号，用印这一份漏掉了。
+  //
+  // 于是在 `Serializable` 下，两人同时提交用印申请会产生 40001（Prisma P2034），
+  // 直接以脱敏错误抛给用户：用户只看到「未能保存，请稍后重试」，
+  // 而他的封皮/附件文件其实已经落了盘（后续步骤未执行）。
+  //
+  // 改成复用统一发号器：重试策略、退避抖动、最大次数都跟着那 4 条既有测试走，
+  // 不再有第二份需要单独维护的实现。
+  const next = await nextSystemCounter(`seal-counter-${year}`);
   return `SEAL-${year}-${String(next).padStart(4, "0")}`;
 }
 
