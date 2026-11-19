@@ -78,7 +78,14 @@ function measureTests() {
       env: process.env
     });
     const m = out.match(/Tests\s+(\d+) passed/);
-    return m ? Number(m[1]) : null;
+    if (!m) {
+      // 2026-11-21：实测过一种情况 —— 同时有另一个 vitest 在跑时，
+      // 输出可能被交错的进程信息打乱、匹配不到这一行。
+      // 返回 null 而不是 0，让主流程报「未知」而不是「文档写错了」。
+      console.error("  ⚠️ 从 vitest 输出里读不到『Tests N passed』（可能同时有别的测试进程在跑）");
+      return null;
+    }
+    return Number(m[1]);
   } catch {
     return null;
   }
