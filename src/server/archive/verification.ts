@@ -128,11 +128,22 @@ export async function verifyArchivePolicySource(snapshot: ArchiveReviewSnapshot)
 }
 
 export async function assertDocumentNotInPendingArchive(documentId: string) {
-  const records = await prisma.archiveRecord.findMany({
-    where: { status: "PENDING_REVIEW" },
-    select: { archiveNo: true, checklistJson: true }
+  // 2026-11-19：改为数据库侧过滤。
+  //
+  // 此前把全表 status=PENDING_REVIEW 的记录捞进内存，再对每条做 parseArchiveSnapshot
+  // （完整 zod 校验 + 解析 documents/checklist）来判断 documentIds 是否包含目标。
+  // 删除/硬删一份材料就要全量 JSON 解析一次，复杂度 O(待审申请数 × 快照体积)，
+  // 而归档申请不会自动清理、会长期累积。
+  //
+  // 现在用 JSONB 路径下推：checklistJson -> 'documentIds' @> [documentId]。
+  // documentIds 在快照顶层（archiveSnapshotSchema），可直接索引比较。
+  const record = await prisma.archiveRecord.findFirst({
+    where: {
+      status: "PENDING_REVIEW",
+      checklistJson: { path: ["documentIds"], array_contains: documentId }
+    },
+    select: { archiveNo: true }
   });
-  const record = records.find((item) => archiveSnapshotDocumentIds(item.checklistJson).includes(documentId));
   if (record) throw new ActionError(`该材料已列入待审归档申请 ${record.archiveNo}，请先驳回或处理该申请`);
 }
 

@@ -38,7 +38,7 @@ describe("readDecryptedBlob", () => {
     const sealed = encryptBuffer(plain);
     const out = await readDecryptedBlob(async () => sealed.ciphertext, {
       path: "a/c.bin", name: "材料C",
-      encrypted: true, iv: sealed.iv, authTag: sealed.authTag
+      encrypted: true, iv: sealed.iv.toString("base64"), authTag: sealed.authTag.toString("base64")
     });
     expect(out.toString()).toBe("机密内容");
   });
@@ -60,12 +60,12 @@ describe("readDecryptedBlob", () => {
     const read = async () => tampered;
     await expect(
       readDecryptedBlob(read, {
-        path: "t.bin", name: "证据材料", encrypted: true, iv: sealed.iv, authTag: sealed.authTag
+        path: "t.bin", name: "证据材料", encrypted: true, iv: sealed.iv.toString("base64"), authTag: sealed.authTag.toString("base64")
       })
     ).rejects.toThrow(ActionError);
     await expect(
       readDecryptedBlob(read, {
-        path: "t.bin", name: "证据材料", encrypted: true, iv: sealed.iv, authTag: sealed.authTag
+        path: "t.bin", name: "证据材料", encrypted: true, iv: sealed.iv.toString("base64"), authTag: sealed.authTag.toString("base64")
       })
     ).rejects.toThrow(/解密失败.*内容可能已损坏或加密密钥已更换/);
   });
