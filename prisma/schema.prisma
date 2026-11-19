@@ -543,6 +543,7 @@ model User {
   leadProcedures            MatterProcedure[]             @relation("ProcedureLeadLawyer")
   identityDocuments         UserIdentityDocument[]        @relation("IdentityOwner")
   uploadedIdentityDocuments UserIdentityDocument[]        @relation("IdentityUploader")
+  archivedEmails            EmailArchive[]               @relation("EmailArchiver")
   createdAt                 DateTime                      @default(now())
   updatedAt                 DateTime                      @updatedAt
 
@@ -861,6 +862,7 @@ model Matter {
   Payment          Payment[]
   EngagementMatter EngagementMatter[]
   evidenceItems    EvidenceItem[]
+  emailArchives    EmailArchive[]
 
   @@index([status, updatedAt])
   @@index([ownerId])
@@ -3167,4 +3169,61 @@ model EthicalWallDenial {
   @@index([wallId])
   @@index([userId])
   @@index([teamId])
+}
+
+// ============ 邮件归档 Email Archive（2026-11-19 新增，台账 P1-3）============
+// 律所与客户/法院的沟通大量在邮件里。此前系统只发不存，后果是：
+//   ① 更换承办律师时历史沟通断档；② 客户追问当时承诺时翻不到；③ 利冲与执业风险排查缺证据。
+// 本轮无 IMAP 接入，最低成本通道是「粘贴邮件归档」；匹配算法给出归属建议，命中多案不猜，交人工指定。
+// 隐私约定：邮件正文属客户通信内容，读取一律跟随案件的可见性（assertCanReadMatter），
+// 待归档队列在管理侧，普通律师只看自己归档的未匹配件。
+
+enum EmailMatchKind {
+  /// 正文或主题含案件编号（internalCode / firmCaseNo）
+  MATCHED_BY_CODE
+  /// 正文含唯一归属的当事人全名
+  MATCHED_BY_PARTY
+  /// 发件人邮箱与客户/联系人邮箱一致
+  MATCHED_BY_ADDRESS
+  /// 人工指定
+  MANUAL
+  /// 未匹配（含命中多案需人工指定的情况）
+  UNMATCHED
+}
+
+model EmailArchive {
+  id          String  @id @default(cuid())
+  subject     String
+  fromAddress String
+  fromName    String?
+  /// 多个收件人 / 抄送
+  toAddresses String[]
+  ccAddresses String[]
+  sentAt      DateTime
+  bodyText    String  @db.Text
+  bodyHtml    String? @db.Text
+  /// 附件数量。本轮仅粘贴归档（无附件上传通道），恒为 0；接入 IMAP 后由取件器回填。
+  attachmentCount Int @default(0)
+
+  /// 归属案件（可空：尚未匹配）
+  matterId String?
+  matter   Matter? @relation(fields: [matterId], references: [id], onDelete: SetNull)
+
+  /// 匹配依据类别
+  matchKind EmailMatchKind @default(UNMATCHED)
+  /// 匹配依据的可读说明，如「正文含案号 LL-2026-CC-0001」
+  matchEvidence String?
+
+  archivedById String
+  archivedBy   User   @relation("EmailArchiver", fields: [archivedById], references: [id], onDelete: Restrict)
+
+  /// RFC Message-ID，用于去重；为空表示来源未提供
+  messageId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([matterId, sentAt])
+  @@index([matchKind, sentAt])
+  @@index([fromAddress])
 }

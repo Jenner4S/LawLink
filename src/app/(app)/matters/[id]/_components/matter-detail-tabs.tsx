@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { contactRoleLabels } from "./info-panel";
 import { MatterArchive, TeamRailCard } from "./matter-archive";
 import { FinancePanel } from "./finance-panel";
+import { EmailPanel } from "./email-panel";
 import { ImportantItemDialog } from "./procedure-content";
 import { ProcedureWorkflowPanel } from "./procedure-workflow-panel";
 import type { DossierView, WaitingItem, WorkflowApi, WorkflowNote, WorkflowPreservationCase } from "./procedure-workflow-panel";
@@ -595,6 +596,7 @@ export function MatterDetailTabs({
           <ApprovalsPanel matterId={matter.id} matterTitle={matter.title} sealContracts={sealContracts} canRequest={canAssociateThisMatter && allowed("seals.request")} />
         }
         timeNode={timeNode}
+        emailNode={<EmailPanel matterId={matter.id} canWrite={allowed("matters.write") && !isArchived} />}
       />
 
       <Sheet open={caseSearchOpen} onOpenChange={setCaseSearchOpen}>

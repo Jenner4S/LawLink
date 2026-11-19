@@ -17,6 +17,7 @@ const targetLabels: Record<string, string> = {
   Payment: "实收", Receivable: "应收", ReminderDelivery: "提醒送达台账",
   UserIdentityDocument: "人员证件资料",
   EthicalWall: "隔离墙",
+  EmailArchive: "邮件归档",
   // 工时与费率（P0-1）
   TimeEntry: "工时记录", RateSchedule: "费率安排"
 };
@@ -68,6 +69,8 @@ const words: Record<string, string> = {
   TIME: "工时",
   // 隔离墙（P0-3 管理 UI 批次）。同上：新增审计动作必须同步补词。
   ETHICAL: "合规", WALL: "隔离墙", LIFT: "解除",
+  // 邮件归档（P1-3）：EMAIL_ARCHIVE / EMAIL_LINK 两个动作需要该词，缺一即整条降级
+  EMAIL: "邮件",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

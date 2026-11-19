@@ -9,6 +9,7 @@ import {
   Building2,
   ChevronRight,
   Clock3,
+  Mail,
   FileUp,
   KeyRound,
   Layers,
@@ -71,7 +72,8 @@ export const adminNavigation: Array<{ label: string; items: AdminNavItem[] }> = 
     label: "安全与审计",
     items: [
       { href: "/admin/audit", label: "审计日志", icon: ScrollText, adminOnly: true },
-      { href: "/admin/ethical-walls", label: "隔离墙", icon: ShieldAlert, adminOnly: true }
+      { href: "/admin/ethical-walls", label: "隔离墙", icon: ShieldAlert, adminOnly: true },
+      { href: "/admin/emails", label: "邮件归档", icon: Mail, adminOnly: true }
     ]
   }
 ];
