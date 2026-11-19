@@ -110,8 +110,6 @@ const { ActionError } = await import("@/lib/action-error");
 const shDay = (d: Date) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 
-let seq = 0;
-const uid = (p: string) => `${p}${Date.now().toString(36)}${(++seq).toString(36)}`;
 
 /** 造一笔保全财产，到期日为给定日期 */
 async function seedProperty(expiryDate: Date) {
