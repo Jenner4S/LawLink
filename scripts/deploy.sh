@@ -49,6 +49,14 @@ if npx eslint src 2>&1 | grep -qE "error|warning"; then
   exit 1
 fi
 echo "    eslint 0 problems"
+# 写守卫一致性审计（2026-11-21）：涉及案件的写操作有没有状态守卫。
+# 2026-11-21 两天里连着抓到三处「同一条规则、不同写路径各行其是」——
+# 材料版本切换、已归档案件的关联关系、已归档案件的证据项。
+# 有豁免清单，只对**新增**的漏网报错；每次部署跑一次，防止再长出第四处。
+if ! node scripts/audit-write-guards.mjs | tail -2; then
+  echo "    ❌ 写守卫审计发现未登记的新漏网，终止。先跑：node scripts/audit-write-guards.mjs --list" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------
 echo

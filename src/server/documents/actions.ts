@@ -497,32 +497,6 @@ export async function rejectDocument(id: string, reason?: string) {
   return { ok: true };
 }
 
-export async function fileDocument(id: string) {
-  const session = await requireSession("documents.write");
-  const doc = await prisma.document.findUnique({ where: { id, deletedAt: null } });
-  if (!doc) throw new ActionError("材料不存在");
-  if (doc.matterId)
-    // 材料归档属材料操作（P1-1）：合伙人全所口径，其余岗位（含管理权）须经办。
-    await assertCanHandleMatter(session.user, doc.matterId);
-  if (doc.status !== "APPROVED") throw new ActionError("只有已审批的材料才能归档");
-
-  await documentMutation(session.user,doc, async roleDb => roleDb.document.update({
-    where: { id },
-    data: { status: "FILED" },
-  }));
-
-  await audit({
-    userId: session.user.id,
-    action: "DOCUMENT_FILE",
-    targetType: "Document",
-    targetId: id,
-    detail: { matterId: doc.matterId, name: doc.name },
-  });
-
-  if (doc.matterId) await revalidateMatter(doc.matterId);
-  revalidatePath("/approvals");
-  return { ok: true };
-}
 
 
 /**
