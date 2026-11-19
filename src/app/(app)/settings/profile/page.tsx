@@ -2,10 +2,13 @@ import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { ChangePasswordForm } from "./_components/change-password-form";
 import { TotpCard } from "./_components/totp-card";
+import { PasskeyCard } from "./_components/passkey-card";
 import { AvatarForm } from "./_components/avatar-form";
 import { ProfileBasicsForm } from "@/components/users/profile-basics-form";
 import { IdentityForm } from "@/components/users/identity-form";
 import { roleDisplayName } from "@/lib/roles/catalog";
+import { isWebAuthnConfigured } from "@/lib/auth/webauthn";
+import { listCredentials } from "@/server/auth/webauthn-service";
 
 export default async function ProfilePage() {
   const session = await requireSession("personal");
@@ -15,6 +18,10 @@ export default async function ProfilePage() {
     where: { id: user.id },
     select: { avatar: true, name: true, email: true, phone: true, role: true, updatedAt: true, totpEnabled: true }
   });
+
+  // 台账 P2-2 后半：未配置 WebAuthn 时整卡不渲染（与 SSO 按钮同口径，不留死按钮）
+  const passkeyEnabled = isWebAuthnConfigured();
+  const passkeys = passkeyEnabled ? await listCredentials({ id: user.id, role: user.role }) : [];
 
   return (
     <div className="space-y-5">
@@ -35,6 +42,8 @@ export default async function ProfilePage() {
         </section>
         <TotpCard enabled={dbUser.totpEnabled} />
       </div>
+
+      {passkeyEnabled ? <PasskeyCard credentials={passkeys} /> : null}
     </div>
   );
 }

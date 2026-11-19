@@ -38,6 +38,16 @@ services:
       APP_STORAGE_DIR: /app/storage
       # 历史数据迁移：默认放行批量导入（approvalSettings.enabled 硬编码为 true，
       # 不放行则该功能永久不可达）。生产如要求逐件评审，设为 0。
+      # 单点登录与通行密钥（默认关闭，设值即启用；详见 .env.example）
+      AUTH_OIDC_ENABLED: ${AUTH_OIDC_ENABLED:-}
+      AUTH_OIDC_ISSUER: ${AUTH_OIDC_ISSUER:-}
+      AUTH_OIDC_CLIENT_ID: ${AUTH_OIDC_CLIENT_ID:-}
+      AUTH_OIDC_CLIENT_SECRET: ${AUTH_OIDC_CLIENT_SECRET:-}
+      AUTH_OIDC_DISPLAY_NAME: ${AUTH_OIDC_DISPLAY_NAME:-}
+      AUTH_OIDC_SCOPES: ${AUTH_OIDC_SCOPES:-}
+      AUTH_WEBAUTHN_RP_ID: ${AUTH_WEBAUTHN_RP_ID:-}
+      AUTH_WEBAUTHN_RP_NAME: ${AUTH_WEBAUTHN_RP_NAME:-}
+      AUTH_WEBAUTHN_ORIGIN: ${AUTH_WEBAUTHN_ORIGIN:-}
       LAWLINK_ALLOW_BULK_IMPORT: ${LAWLINK_ALLOW_BULK_IMPORT:-1}
     ports:
       - "3000:3000"

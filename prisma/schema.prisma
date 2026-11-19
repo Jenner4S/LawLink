@@ -445,6 +445,8 @@ model User {
   archiveBorrows ArchiveBorrowRequest[] @relation("ArchiveBorrowApplicant")
   archiveBorrowApprovals ArchiveBorrowRequest[] @relation("ArchiveBorrowApprover")
   invoiceAdjustments InvoiceAdjustment[]
+  // WebAuthn / Passkey（台账 P2-2 后半）：一个账号可绑定多台设备
+  webAuthnCredentials WebAuthnCredential[]
   outgoingIntakeHandovers IntakeHandover[] @relation("IntakeHandoverFrom")
   incomingIntakeHandovers IntakeHandover[] @relation("IntakeHandoverTo")
   initiatedIntakeHandovers IntakeHandover[] @relation("IntakeHandoverInitiator")
@@ -3226,4 +3228,57 @@ model EmailArchive {
   @@index([matterId, sentAt])
   @@index([matchKind, sentAt])
   @@index([fromAddress])
+}
+
+// ============ WebAuthn / Passkey（台账 P2-2 后半，2026-11-19）============
+// 密码是最大的攻击面（钓鱼、撞库、复用）。Passkey 用设备生物识别替代密码，
+// 且天然抗钓鱼——签名绑定 rpID + origin，假站点拿到的断言一律验签失败。
+//
+// 两条安全设计（写在此处，避免后人误改）：
+//   1. **challenge 必须落库**：多实例部署下进程内 Map 会随机失效（A 实例发挑战、
+//      B 实例验签），表现为"偶发登录失败"。落库后由 usedAt + expiresAt 做原子一次性消费。
+//   2. **counter 必须校验**：认证器每次签名递增 counter，克隆的凭证无法让真凭证的
+//      counter 前进，因此"新 counter <= 已存 counter"是发现克隆的唯一手段。
+
+model WebAuthnCredential {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Base64URL 编码的 credential ID（浏览器侧 WebAuthnCredential.id）
+  credentialId String @unique
+  /// Base64URL 编码的 COSE 公钥
+  publicKey    String @db.Text
+  /// 签名计数器（BigInt：部分认证器 counter 为 32 位无符号且可能很大）
+  counter      BigInt @default(0)
+  /// usb / nfc / ble / internal / hybrid（浏览器上报，用于 allowCredentials 提示）
+  transports   String[]
+  /// 用户可读备注，如「MacBook 指纹」
+  deviceName   String?
+  /// 是否为可同步的 passkey（多设备凭证）。仅记录事实，不参与准入判定
+  backedUp     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+}
+
+/// WebAuthn 挑战与会话票据（登录 ticket 同表存储，见 src/lib/auth/webauthn.ts）。
+///
+/// kind 取值：
+///   - `register`        注册挑战（5 分钟）
+///   - `login`           登录挑战（5 分钟，userId 可为空＝无用户名发现）
+///   - `TICKET`          Passkey 断言已验证、一次性登录票据（60 秒）
+///   - `TICKET_2FA`      同上，但该账号的两步验证已在验签环节通过
+model WebAuthnChallenge {
+  id        String    @id @default(cuid())
+  challenge String    @unique
+  /// 注册时有值；登录时可为空（无用户名发现），验证成功后回填匹配到的用户
+  userId    String?
+  /// register / login / TICKET / TICKET_2FA
+  kind      String
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([expiresAt])
 }

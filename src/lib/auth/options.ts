@@ -10,6 +10,7 @@ import { verifyLoginSecondFactor } from "@/server/auth/totp-login";
 import { recordLoginFailure } from "@/lib/auth/login-lockout";
 import { oidcWellKnownUrl, readOidcConfig } from "@/lib/auth/oidc";
 import { resolveOidcSignIn, ssoRejectRedirectUrl } from "@/lib/auth/sso-signin";
+import { resolvePasskeySignIn } from "@/lib/auth/passkey-signin";
 
 // v1.x P0-3: 登录失败锁定参数（连续 5 次失败锁 15 分钟；成功登录清零）
 const LOGIN_LOCKOUT_THRESHOLD = 5;
@@ -64,6 +65,60 @@ const credentialsSchema = z.object({
   totpCode: z.string().optional()
 });
 
+/**
+ * 台账 P2-2 后半：Passkey 票据分支的入参。
+ *
+ * 前端在浏览器完成 WebAuthn 断言后，先调 /api/auth/webauthn/login/verify 换一张
+ * 一次性票据，再用 `signIn("credentials", { ticket, __passkey: "1" })` 建会话。
+ * 票据 60 秒、单次、绑定 userId（存库，多实例可用），核销逻辑见
+ * src/lib/auth/webauthn.ts 的 consumeLoginTicket。
+ *
+ * 为什么用 `__passkey` 这个前缀：NextAuth 会把 credentials 原样传给 authorize，
+ * 下划线前缀是"协议字段"的约定写法，不会与用户填写的邮箱/密码字段冲突。
+ */
+const passkeyCredentialsSchema = z.object({
+  ticket: z.string().min(20).max(256),
+  __passkey: z.literal("1")
+});
+
+function isPasskeyTicketRequest(credentials: Record<string, unknown> | undefined): boolean {
+  return credentials !== undefined && credentials.__passkey === "1";
+}
+
+/**
+ * 票据 → 本地会话身份。
+ *
+ * 准入判定（票据一次性、账号状态、角色、锁定、TOTP 标记）全部在
+ * src/lib/auth/passkey-signin.ts，本函数只负责把结果翻译成 NextAuth 的 User 形状。
+ * 失败一律返回 null（NextAuth 转成 CredentialsSignin），拒绝原因已在审计里，
+ * 不回前端——避免把本地账号状态泄露给仅持有票据的一方。
+ */
+async function authorizePasskeyTicket(credentials: Record<string, unknown> | undefined): Promise<User | null> {
+  const parsed = passkeyCredentialsSchema.safeParse(credentials);
+  if (!parsed.success) {
+    await audit({
+      userId: null,
+      action: "WEBAUTHN_LOGIN_REJECT",
+      targetType: "User",
+      detail: { provider: "passkey", stage: "ticket", reason: "MALFORMED_TICKET" }
+    });
+    return null;
+  }
+
+  const result = await resolvePasskeySignIn({ ticket: parsed.data.ticket });
+  if (!result.ok) return null; // 审计已在 resolvePasskeySignIn 内写入 WEBAUTHN_LOGIN_REJECT
+
+  return {
+    id: result.user.id,
+    name: result.user.name,
+    email: result.user.email,
+    role: result.user.role,
+    systemRole: result.user.systemRole,
+    sessionVersion: result.user.sessionVersion,
+    avatar: result.user.avatar
+  };
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 12 * 60 * 60 }, // 12h
   pages: {
@@ -77,6 +132,13 @@ export const authOptions: NextAuthOptions = {
         password: { label: "密码", type: "password" }
       },
       async authorize(credentials) {
+        // 台账 P2-2 后半：Passkey 票据分支必须在密码分支之前分流——
+        // 票据里没有 email/password，继续往下走只会被 credentialsSchema 判为非法，
+        // 而密码分支的一行一行为（含失败锁定、审计文案）保持原样不动。
+        if (isPasskeyTicketRequest(credentials as Record<string, unknown> | undefined)) {
+          return authorizePasskeyTicket(credentials as Record<string, unknown> | undefined);
+        }
+
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
 

@@ -19,7 +19,9 @@ const targetLabels: Record<string, string> = {
   EthicalWall: "隔离墙",
   EmailArchive: "邮件归档",
   // 工时与费率（P0-1）
-  TimeEntry: "工时记录", RateSchedule: "费率安排"
+  TimeEntry: "工时记录", RateSchedule: "费率安排",
+  // 通行密钥（P2-2 后半）
+  WebAuthnCredential: "通行密钥"
 };
 const words: Record<string, string> = {
   BUILTIN: "内置", ROLE: "角色", PRESENTATION: "显示资料", DEFINITION: "定义",
@@ -75,6 +77,10 @@ const words: Record<string, string> = {
   // 安全上这两个动作是登录审计的主线索（成功与拒绝都要能读懂是谁、为什么），
   // 因此词条与 LOGIN / REJECT 组合使用。
   SSO: "单点登录",
+  // 通行密钥（P2-2 后半）：WEBAUTHN_REGISTER / WEBAUTHN_LOGIN / WEBAUTHN_LOGIN_REJECT /
+  // WEBAUTHN_DELETE / WEBAUTHN_COUNTER_ANOMALY 五个动作需要。COUNTER_ANOMALY 是
+  // 高危安全事件（凭证可能被克隆），审计页必须一眼能读懂，因此单列两个词。
+  WEBAUTHN: "通行密钥", REGISTER: "注册", COUNTER: "计数器", ANOMALY: "异常",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

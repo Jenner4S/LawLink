@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, AlertCircle, Mail, LockKeyhole, ShieldCheck, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { checkLoginTotpEnforcement } from "@/server/auth/totp-actions";
+import { PasskeyLogin } from "./passkey-login";
 
 const schema = z.object({
   email: z.string().email("请填写有效邮箱"),
@@ -18,9 +19,11 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-/** 服务端只传按钮文案；secret 与 issuer 不进客户端 */
+/** 服务端只传按钮文案与开关；secret 与 issuer 不进客户端 */
 export type LoginFormProps = {
   sso?: { displayName: string } | null;
+  /** 服务端判定 isWebAuthnConfigured() 的结果：false 时整块 Passkey 入口不渲染 */
+  passkey?: boolean;
 };
 
 /**
@@ -61,7 +64,7 @@ function initialAuthError(params: URLSearchParams): string | null {
   return "登录未完成，请重试；问题持续请联系管理员。";
 }
 
-export function LoginForm({ sso = null }: LoginFormProps) {
+export function LoginForm({ sso = null, passkey = false }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
@@ -73,10 +76,15 @@ export function LoginForm({ sso = null }: LoginFormProps) {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors, isSubmitting }
   } = useForm<FormValues>({
     resolver: zodResolver(schema)
   });
+  // Passkey 登录用已填的邮箱限定凭证（留空则走无用户名发现，由浏览器让用户选设备）。
+  // 用 getValues 而不是 watch：只在点按钮时取值，不必订阅表单（也就不会触发
+  // React Compiler 对 useForm().watch 的「无法安全 memo」跳过提示）。
+  const readEmail = () => getValues("email") ?? "";
 
   async function onSubmit(values: FormValues) {
     setAuthError(null);
@@ -211,14 +219,20 @@ export function LoginForm({ sso = null }: LoginFormProps) {
       </button>
       </form>
 
+      {/* 台账 P2-2 后半：仅在服务端确认 WebAuthn 已配置时渲染（未配置则整块不存在） */}
+      {passkey ? <PasskeyLogin getEmail={readEmail} callbackUrl={callbackUrl} /> : null}
+
       {/* 台账 P2-2：仅在服务端确认 AUTH_OIDC_ENABLED=1 时渲染（未配置则整块不存在） */}
       {sso ? (
-        <div className="mt-5">
-          <div className="mb-4 flex items-center gap-3 text-[11.5px] text-[var(--t-faint)]" aria-hidden>
-            <span className="h-px flex-1 bg-[var(--bd-subtle)]" />
-            或
-            <span className="h-px flex-1 bg-[var(--bd-subtle)]" />
-          </div>
+        <div className={passkey ? "mt-3" : "mt-5"}>
+          {/* Passkey 块已自带「或」分隔线，两者同时存在时不再重复画一条 */}
+          {passkey ? null : (
+            <div className="mb-4 flex items-center gap-3 text-[11.5px] text-[var(--t-faint)]" aria-hidden>
+              <span className="h-px flex-1 bg-[var(--bd-subtle)]" />
+              或
+              <span className="h-px flex-1 bg-[var(--bd-subtle)]" />
+            </div>
+          )}
           <button type="button" className="btn btn-secondary btn-login" onClick={onSso} disabled={ssoPending}>
             {ssoPending ? <Loader2 className="animate-spin" /> : <Building2 aria-hidden />}
             {ssoPending ? "正在跳转…" : sso.displayName}

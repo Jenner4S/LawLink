@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import { getFirmProfile } from "@/server/settings/firm-profile";
 import { readOidcConfig } from "@/lib/auth/oidc";
+import { isWebAuthnConfigured } from "@/lib/auth/webauthn";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
@@ -18,6 +19,11 @@ export default async function LoginPage() {
   // clientSecret 永远不进浏览器。未配置时 sso 为 null，表单下方不出现按钮。
   const oidc = readOidcConfig();
   const sso = oidc ? { displayName: oidc.displayName } : null;
+
+  // 台账 P2-2 后半：WebAuthn 配置同样只在服务端读取，只把一个布尔值传给客户端组件——
+  // RP ID / origin 不落进浏览器（虽然它们不是秘密，但没必要让页面持有判断依据）。
+  // 未配置时 passkey=false，密码表单下方不出现「使用 Passkey 登录」。
+  const passkey = isWebAuthnConfigured();
 
   return (
     <div className="mo-login">
@@ -84,9 +90,15 @@ export default async function LoginPage() {
         <div className="form-panel">
           <div className="fp-body">
             <h2 className="fp-title">登录 LawLink</h2>
-            <p className="fp-sub">{sso ? "使用本所账号，或通过企业身份系统登录" : "使用你的工作账号进入本所工作台"}</p>
+            <p className="fp-sub">{
+              sso
+                ? "使用本所账号，或通过企业身份系统登录"
+                : passkey
+                  ? "使用本所账号，或用设备上的通行密钥（指纹 / 面容）登录"
+                  : "使用你的工作账号进入本所工作台"
+            }</p>
             <Suspense fallback={<LoginFallback />}>
-              <LoginForm sso={sso} />
+              <LoginForm sso={sso} passkey={passkey} />
             </Suspense>
             <div className="fp-protect">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
