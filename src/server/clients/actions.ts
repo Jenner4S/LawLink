@@ -277,9 +277,25 @@ export async function updateClient(input: ClientUpdateInput) {
     }
   }
 
-  // 简单策略：删除所有联系人 + 重新创建。后续可优化为 diff
+  // 简单策略：删除所有联系人 + 重新创建。
+  //
+  // 2026-11-21 修复（P2，多智能体审计「并发安全」维度）：
+  // 两个人同时编辑同一客户的联系人时，READ COMMITTED 下各自走一遍
+  // 「删光 → 重建」。B 的 DELETE 语句快照在 A 提交前就取好了，
+  // **看不到 A 新建的那批**，于是 B 只删掉旧行、再插自己的一批 ——
+  // 最终这个客户有 A 的 + B 的联系人，全都留着，还都标了各自的主联系人。
+  //
+  // 修法：事务一开始就对该客户行加锁（`SELECT ... FOR UPDATE`），
+  // 把「同一客户的联系人编辑」串行化。B 会等 A 提交后才继续，
+  // 那时它的 DELETE 是新语句、新快照，能看见 A 插的行，一并删掉。
+  //
+  // 用行锁而不是加唯一索引：联系人允许同名同电话（真实场景里同一人可能
+  // 在两个项目里挂不同头衔），唯一约束会误伤正常数据。行锁只解决并发，
+  // 不改变业务允许的形态。
   await prisma.$transaction(async db => {
     await checkRoleMutation(db, session.user, "clients.write");
+    // 锁住客户行，串行化对同一客户联系人的并发编辑
+    await db.$queryRaw`SELECT 1 AS locked FROM "Client" WHERE id = ${id} FOR UPDATE`;
     await db.contact.deleteMany({ where: { clientId: id } });
     await db.client.update({
       where: { id },
