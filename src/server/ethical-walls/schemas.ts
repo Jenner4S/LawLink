@@ -36,12 +36,12 @@ const dateKeySchema = z
 
 export const denyInputSchema = z.object({
   denyType: z.enum(DENY_TYPES, {
-    errorMap: () => ({ message: "被隔离对象类别只能是人员、团队或角色" })
+    error: "被隔离对象类别只能是人员、团队或角色"
   }),
   userId: z.string().trim().min(1).nullish(),
   teamId: z.string().trim().min(1).nullish(),
   role: z.nativeEnum(UserRole, {
-    errorMap: () => ({ message: "按角色隔离时岗位不合法" })
+    error: "按角色隔离时岗位不合法"
   }).nullish()
 });
 

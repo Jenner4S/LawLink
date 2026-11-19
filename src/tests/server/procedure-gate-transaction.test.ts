@@ -40,13 +40,13 @@ beforeEach(() => {
 describe("程序启动门禁事务（P1-3）", () => {
   it("动态冲突复核失败时零写入：updateMany 不被调用", async () => {
     gate.review.mockRejectedValue(new Error("存在待复核的主体或范围变更"));
-    await expect(updateProcedure({ id: CUID, status: "IN_PROGRESS" })).rejects.toThrow("待复核");
+    await expect(updateProcedure({ id: CUID, status: "IN_PROGRESS", acceptedAt: undefined })).rejects.toThrow("待复核");
     expect(db.matterProcedure.updateMany).not.toHaveBeenCalled();
   });
 
   it("合同覆盖校验失败时零写入", async () => {
     gate.covered.mockRejectedValue(new Error("当前代理范围没有有效合同覆盖"));
-    await expect(updateProcedure({ id: CUID, status: "IN_PROGRESS" })).rejects.toThrow("合同覆盖");
+    await expect(updateProcedure({ id: CUID, status: "IN_PROGRESS", acceptedAt: undefined })).rejects.toThrow("合同覆盖");
     expect(db.matterProcedure.updateMany).not.toHaveBeenCalled();
   });
 
@@ -55,14 +55,14 @@ describe("程序启动门禁事务（P1-3）", () => {
     // 事务外快照（NOT_STARTED）会与行内真实值（IN_PROGRESS）不一致——
     // 新实现以 FOR UPDATE 行内值为准，门禁条件不成立、直接条件更新。
     db.$queryRaw.mockResolvedValue([{ status: "IN_PROGRESS", engagement: "ENGAGED", matterId: "m1" }]);
-    await expect(updateProcedure({ id: CUID, status: "IN_PROGRESS" })).resolves.toEqual({ ok: true });
+    await expect(updateProcedure({ id: CUID, status: "IN_PROGRESS", acceptedAt: undefined })).resolves.toEqual({ ok: true });
     expect(gate.review).not.toHaveBeenCalled();
     expect(db.matterProcedure.updateMany).toHaveBeenCalledOnce();
   });
 
   it("非首次启动转换不做启动门禁，但条件更新带原状态", async () => {
     db.$queryRaw.mockResolvedValue([{ status: "NOT_STARTED", engagement: "ENGAGED", matterId: "m1" }]);
-    await expect(updateProcedure({ id: CUID, caseNumber: "（2026）沪01民初1号" })).resolves.toEqual({ ok: true });
+    await expect(updateProcedure({ id: CUID, caseNumber: "（2026）沪01民初1号", acceptedAt: undefined })).resolves.toEqual({ ok: true });
     expect(gate.review).not.toHaveBeenCalled();
     expect(db.matterProcedure.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: CUID, status: "NOT_STARTED" } }));
   });
@@ -70,6 +70,6 @@ describe("程序启动门禁事务（P1-3）", () => {
   it("行内状态在事务内被并发改变时拒绝而非静默跳过", async () => {
     db.$queryRaw.mockResolvedValue([{ status: "IN_PROGRESS", engagement: "ENGAGED", matterId: "m1" }]);
     db.matterProcedure.updateMany.mockResolvedValue({ count: 0 });
-    await expect(updateProcedure({ id: CUID, status: "CONCLUDED" })).rejects.toThrow("状态已变化");
+    await expect(updateProcedure({ id: CUID, status: "CONCLUDED", acceptedAt: undefined })).rejects.toThrow("状态已变化");
   });
 });

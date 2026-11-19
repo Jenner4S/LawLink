@@ -37,7 +37,7 @@ const timeEntryCreateSchema = z
       .trim()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD"),
     minutes: z
-      .number({ invalid_type_error: "时长必须是数字" })
+      .number({ error: "时长必须是数字" })
       .int({ message: "时长须按整分钟填写" })
       .positive({ message: "时长必须大于 0 分钟" })
       .max(MAX_MINUTES, { message: "单条工时不得超过 24 小时" }),
