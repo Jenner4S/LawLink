@@ -33,7 +33,13 @@ export async function allocateLedgerTx(db: Prisma.TransactionClient, userId: str
   const payment = await lockPayment(db, data.paymentId);
   if (payment.revision !== data.revision) throw new ActionError("此笔实收已变化或请求已处理，请刷新后重试");
   await assertPaymentSource(db, payment);
-  await assertAllocationTotals(db, payment);
+  // 2026-11-19：assertAllocationTotals 下沉到 RECEIVABLE 分支内。
+  // 它校验的是「Allocation 明细合计 == payment.allocatedAmount」——只有核销会读写
+  // Allocation，发票关联（InvoicePaymentAllocation）既不读也不写。
+  // 此前无条件执行，导致某笔实收若存在历史脏账（明细与余额背离），
+  // 连「关联发票」这个与核销无关的动作都会被「实收核销明细与余额不符」拦住，
+  // 把两个独立的修复动作耦合在一起：必须先修好核销账才能关联票据。
+  // 现在核销仍严格校验（脏账必须先在核销侧修正），发票关联只看它自己的余额口径。
   // 锁序必须与进程 locale 无关：localeCompare 在 ICU 规则下排序是
   // ["a","A","b","B"]，而字节序是 ["A","B","a","b"]——两者不同。
   // 多实例部署时若各进程 LANG 不一致（如 LANG=C vs en_US.UTF-8），
@@ -44,6 +50,8 @@ export async function allocateLedgerTx(db: Prisma.TransactionClient, userId: str
   );
   const amount = total(items.map(i => new Prisma.Decimal(i.amount)));
   if (data.kind === "RECEIVABLE") {
+    // 核销前的账目一致性护栏：明细合计必须等于已核销余额，否则先修账再加分配。
+    await assertAllocationTotals(db, payment);
     if (amount.gt(paymentBalance(payment))) throw new ActionError("分配合计超过实收未核销余额");
     for (const item of items) {
       const [ar] = await db.$queryRaw<LedgerReceivable[]>`SELECT * FROM "Receivable" WHERE id=${item.targetId} FOR UPDATE`;
