@@ -1,4 +1,17 @@
 "use server";
+/**
+ * 文档夹（DocumentFolder）服务层 —— **当前无 UI 入口**。
+ *
+ * 2026-11-21 审计确认：本文件导出的 6 个 action（listFoldersByMatter /
+ * createFolder / renameFolder / deleteFolder / reorderFolders /
+ * moveDocumentToFolder）全仓**零引用**，也没有对应的前端组件。
+ *
+ * 按 AGENTS.md「效果图未画到的旧模块须归位不得删除」保留，不删代码；
+ * 但如果将来要做文档夹，**从这里接线**即可，不必重写服务层。
+ * 在那之前，这 6 个 action 是可达但未接线的死入口 —— 留着不会造成安全
+ * 或数据问题（各自都有 assertMatterWritable / assertCanLeadMatter 守卫），
+ * 但会误导后续审计以为"文档夹功能还活着"。
+ */
 import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
 import { parseInput } from "@/lib/parse-input";
 
