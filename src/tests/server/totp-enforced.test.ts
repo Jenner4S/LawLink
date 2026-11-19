@@ -19,7 +19,11 @@ const { db, session, auditMock, approvalAuditMock, approvalTx, requireSessionMoc
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(async ({ where, data }: any) => ({ id: where.id, ...data }))
     },
-    systemSetting: { findUnique: vi.fn(async () => null) }
+    systemSetting: { findUnique: vi.fn(async () => null) },
+    // 2026-11-21：recordLoginFailure 走 $queryRaw（原子 UPDATE ... RETURNING），
+    // 此前本文件没有这个 mock —— 因为没人测过「动态码错误」这条路。
+    // 默认返回 1 次失败；用例可改返回值模拟累积到阈值。
+    $queryRaw: vi.fn(async () => [{ attempts: 1 }])
   };
   return {
     db,
@@ -58,13 +62,17 @@ vi.mock("@/server/auth/totp-login", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/auth/totp-login")>();
   return {
     ...actual,
-    verifyLoginSecondFactor: vi.fn(async () => true) // authorize 内部依赖；其余用真实现
+    // 2026-11-21：改成可控 —— 原先是 `async () => true`，于是「动态码错误」这条
+    // 分支永远走不到，爆破防护（错码计失败 → 达阈值锁定）等于零测试。
+    // 现在用例可用 vi.mocked(verifyLoginSecondFactor).mockResolvedValueOnce(false) 覆盖。
+    verifyLoginSecondFactor: vi.fn(async () => true)
   };
 });
 
 import { forceEnforceTotp } from "@/server/users/actions";
 import { disableTotp, checkLoginTotpEnforcement } from "@/server/auth/totp-actions";
 import { authOptions } from "@/lib/auth/options";
+import { verifyLoginSecondFactor } from "@/server/auth/totp-login";
 
 const ADMIN = session.user.id;
 const TARGET = "cuser00000000000000000001";
@@ -163,6 +171,65 @@ describe("登录 authorize 的强制拦截", () => {
     db.user.findUnique.mockResolvedValue(loginRow({}));
     const res = await authorize({ email: "a@example.com", password: "correct" });
     expect(res).toMatchObject({ id: TARGET });
+  });
+
+  /* ================================================================
+   * 2026-11-21 补（多智能体审计 A-4）：「动态码」这条路此前零测试。
+   *
+   * 原 mock 是 `verifyLoginSecondFactor: async () => true` —— 永远通过，
+   * 于是 options.ts:214-228 的整个错误分支走不到：
+   *   · 无码 → 拒绝（且**不计**失败，因为无码可试）
+   *   · 错码 → 拒绝（且**计**失败，爆破防护的关键）
+   *   · 错码累积到阈值 → 锁定
+   * 这三条是登录安全的核心，此前一条都没测。
+   * ================================================================ */
+
+  it("已绑定 + 无码：拒绝且【不计】失败锁定（无码可试，不该累计）", async () => {
+    db.user.findUnique.mockResolvedValue(loginRow({ totpEnabled: true }));
+    const res = await authorize({ email: "a@example.com", password: "correct" });
+    expect(res).toBeNull();
+    // 关键：不打 $queryRaw（recordLoginFailure 走它）
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+    expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({
+      action: "LOGIN_TOTP_FAILED",
+      detail: expect.objectContaining({ email: "a@example.com" })
+    }));
+  });
+
+  it("已绑定 + 错码：拒绝且【计】失败（爆破防护）", async () => {
+    db.user.findUnique.mockResolvedValue(loginRow({ totpEnabled: true }));
+    vi.mocked(verifyLoginSecondFactor).mockResolvedValueOnce(false);
+    db.$queryRaw.mockResolvedValueOnce([{ attempts: 2 }]);
+    const res = await authorize({ email: "a@example.com", password: "correct", totpCode: "000000" });
+    expect(res).toBeNull();
+    // 关键：必须调 recordLoginFailure（否则持正确密码的爆破者不会被闸住）
+    expect(db.$queryRaw).toHaveBeenCalled();
+    expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({
+      action: "LOGIN_TOTP_FAILED",
+      detail: expect.objectContaining({ attempts: 2, locked: false })
+    }));
+  });
+
+  it("已绑定 + 错码累积到阈值：审计写 LOGIN_LOCKED", async () => {
+    db.user.findUnique.mockResolvedValue(loginRow({ totpEnabled: true }));
+    vi.mocked(verifyLoginSecondFactor).mockResolvedValueOnce(false);
+    db.$queryRaw.mockResolvedValueOnce([{ attempts: 5 }]); // 达阈值
+    const res = await authorize({ email: "a@example.com", password: "correct", totpCode: "111111" });
+    expect(res).toBeNull();
+    expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({
+      action: "LOGIN_LOCKED",
+      detail: expect.objectContaining({ attempts: 5, locked: true })
+    }));
+  });
+
+  it("已绑定 + 正确码：放行并清零失败计数", async () => {
+    db.user.findUnique.mockResolvedValue(loginRow({ totpEnabled: true }));
+    vi.mocked(verifyLoginSecondFactor).mockResolvedValueOnce(true);
+    const res = await authorize({ email: "a@example.com", password: "correct", totpCode: "123456" });
+    expect(res).toMatchObject({ id: TARGET });
+    expect(db.user.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ failedLoginAttempts: 0, lockedUntil: null })
+    }));
   });
 });
 
