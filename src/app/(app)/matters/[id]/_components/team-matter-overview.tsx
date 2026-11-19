@@ -7,7 +7,7 @@ import { avatarTone, matterStatusTone } from "@/lib/ui/moan-tones";
 import { getWallSummaryForMatter } from "@/server/ethical-walls/read";
 import { EthicalWallBanner } from "./ethical-wall-banner";
 import { InitialAvatar, ProcedureChain, type ChainNode } from "@/components/patterns/moan";
-import { cn, formatDate, formatDateTime } from "@/lib/utils";
+import { cn, formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
 
 type Matter = NonNullable<Awaited<ReturnType<typeof getMatterById>>>;
 const shortDate = (value: Date | null) => (value ? formatDate(new Date(value)).slice(5) : null);
@@ -29,7 +29,7 @@ export async function TeamMatterOverview({ matter }: { matter: Matter }) {
   const ours = matter.parties.filter((p) => p.role === "CLIENT_PARTY");
   const opposing = matter.parties.filter((p) => p.role === "OPPOSING_PARTY");
   const others = matter.parties.filter((p) => p.role !== "CLIENT_PARTY" && p.role !== "OPPOSING_PARTY");
-  const claim = matter.claimAmount == null ? null : `¥${Number(matter.claimAmount).toLocaleString("zh-CN")}`;
+  const claim = matter.claimAmount == null ? null : formatCurrency(Number(matter.claimAmount));
   const order = { LEAD: 0, CO_LEAD: 1, ASSISTANT: 2 } as const;
   const members = [
     ...(matter.owner && !matter.members.some((m) => m.userId === matter.ownerId) ? [{ id: matter.owner.id, name: matter.owner.name, role: "LEAD" as const, roleName: (matter.owner as { roleName?: string }).roleName }] : []),

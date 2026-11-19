@@ -1,3 +1,4 @@
+import { formatCurrency } from "@/lib/utils";
 import { clientIdTypeLabel } from "@/lib/clients/person-id";
 import { requireSession } from "@/lib/auth/session";
 import { hasCustomPermission } from "@/lib/roles/catalog";
@@ -22,8 +23,11 @@ import { ContractConfirmationPanel } from "./_components/contract-confirmation-p
 const COOP_BADGE: Record<string, string> = { POTENTIAL: "b-slate", NEGOTIATING: "b-amber", SIGNED: "b-teal", TERMINATED: "b-bronze" };
 const ACTIVE = new Set(["PENDING_ACCEPTANCE", "IN_PROGRESS", "ON_HOLD"]);
 
-const compact = (n: number) => (n >= 1_000_000 ? `¥${(n / 1_000_000).toFixed(2)}M` : n >= 10_000 ? `¥${Math.round(n / 1000)}K` : `¥${Math.round(n).toLocaleString("zh-CN")}`);
-const yuan = (n: number) => `¥${Math.round(n).toLocaleString("zh-CN")}`;
+// 2026-11-20：删掉与 (app)/page.tsx 完全相同的 compact() 实现（同一逻辑造了两遍），
+// 改用 @/lib/utils 的 formatCurrency。原实现 Math.round 会把 9999.5 显示成 ¥10,000。
+const compact = (n: number) => formatCurrency(n, { compact: true });
+// 概览取整是刻意的（与财务 KPI 同口径），但走统一实现以固定小数位规则
+const yuan = (n: number) => formatCurrency(n, { precision: 0 });
 const ymd = (d: Date | string | null | undefined) => (d ? new Date(d).toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }) : "—");
 const mmdd = (d: string) => new Date(d).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", timeZone: "Asia/Shanghai" }).replace("/", "-");
 

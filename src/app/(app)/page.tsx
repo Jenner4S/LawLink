@@ -2,6 +2,7 @@
  * 工作台（墨案 02 效果图）：今日行动与风险（问候 + 今日焦点）→ 行动入口四卡 →
  * 近期日程与期限 + 待我处理 → 趋势与分布（实收应收 / 案件类型 / 客户来源）。
  */
+import { formatCurrency } from "@/lib/utils";
 import Link from "next/link";
 import { ChevronRight, Gavel, SquareCheck, Timer, TriangleAlert, Calendar as CalendarIcon, Landmark, Clock3, ChartColumn } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
@@ -26,7 +27,16 @@ import {
   getDashboardClientSources
 } from "@/server/dashboard/actions";
 
-const money = (n: number) => (n >= 1_000_000 ? `¥${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M` : n >= 10_000 ? `¥${Math.round(n / 1000)}K` : `¥${Math.round(n).toLocaleString("zh-CN")}`);
+// 2026-11-20：删掉自制的 money()，改用 @/lib/utils 的 formatCurrency。
+//
+// 原实现有两个问题：
+//   1. 准确性：n < 10000 时 Math.round(n)，9999.5 会显示成 ¥10,000 —— 看不出
+//      实际是 9,999.5 还是 10,000。金额四舍五入是不可接受的。
+//   2. 单位：≥10000 时用 K（¥15K），而统一实现在中文语境下用「万」（¥1.5万）。
+//      同一系统里两种金额单位，律师要自己换算。
+//
+// 统一实现的行为：< 10000 不紧凑化（显示 ¥9,999.50，准确）；≥ 10000 用「万」。
+const money = (n: number) => formatCurrency(n, { compact: true });
 
 export default async function DashboardPage() {
   const session = await getSession();

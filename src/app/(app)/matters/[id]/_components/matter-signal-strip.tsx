@@ -6,7 +6,7 @@
 import { deadlineCategoryLabel } from "@/lib/enums";
 import { deadlineRisk } from "@/lib/ui/moan-tones";
 import { RiskLadder } from "@/components/patterns/moan";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 
 type SignalProcedure = {
   deadlines: { id: string; title: string; category: keyof typeof deadlineCategoryLabel; dueAt: Date; completed: boolean; basis: string | null; confirmStatus?: string; sourceRuleId?: string | null }[];
@@ -166,15 +166,15 @@ export function MatterSignalStrip({
           finance.contractAmount > 0 || finance.received > 0 ? (
             <>
               <div className="signal-main">
-                <span className="signal-num">¥{finance.received.toLocaleString("zh-CN")}</span>
-                {finance.contractAmount > 0 ? <span className="signal-unit">/ ¥{finance.contractAmount.toLocaleString("zh-CN")}</span> : <span className="signal-unit">已收</span>}
+                <span className="signal-num">{formatCurrency(finance.received)}</span>
+                {finance.contractAmount > 0 ? <span className="signal-unit">/ {formatCurrency(finance.contractAmount)}</span> : <span className="signal-unit">已收</span>}
               </div>
               {finance.contractAmount > 0 ? (
                 <div className="progress" style={{ marginTop: 2 }}>
                   <div className="progress-fill" style={{ width: `${percent}%` }} />
                 </div>
               ) : null}
-              <div className="signal-foot">{invoicePending > 0 ? `应收未开票 ¥${invoicePending.toLocaleString("zh-CN")}` : finance.contractAmount > 0 ? `回款 ${percent}%` : "未登记合同金额，无法计算回款进度"}</div>
+              <div className="signal-foot">{invoicePending > 0 ? `应收未开票 ${formatCurrency(invoicePending)}` : finance.contractAmount > 0 ? `回款 ${percent}%` : "未登记合同金额，无法计算回款进度"}</div>
             </>
           ) : (
             <>

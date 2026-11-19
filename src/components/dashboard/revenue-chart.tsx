@@ -1,6 +1,7 @@
 "use client";
 
 /** 墨案 02 / 08：近 6 个月实收（teal 面积）与应收（灰虚线） */
+import { formatCurrency } from "@/lib/utils";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { LineChart as LineChartIcon } from "lucide-react";
 
@@ -38,7 +39,7 @@ export function RevenueChart({ data, height = 196 }: { data: { month: string; re
               <YAxis tick={{ fill: "#98A3AD", fontSize: 10.5, fontFamily: "SF Mono, ui-monospace, monospace" }} axisLine={false} tickLine={false} width={52} tickFormatter={(v: number) => (v >= 10000 ? `${Math.round(v / 1000)}K` : String(v))} />
               <Tooltip
                 contentStyle={{ background: "#fff", border: "1px solid #DDE3E0", borderRadius: 10, fontSize: 12, boxShadow: "0 12px 32px -8px rgba(12,25,39,0.16)" }}
-                formatter={(v) => `¥${Number(v).toLocaleString("zh-CN")}`}
+                formatter={(v) => formatCurrency(Number(v))}
               />
               <Area type="linear" dataKey="receivable" name="应收" stroke="#A8B2B8" strokeWidth={1.4} strokeDasharray="4 4" fill="none" />
               <Area type="linear" dataKey="received" name="实收" stroke="#007B7F" strokeWidth={2.2} fill="url(#mo-fill-teal)" dot={false} activeDot={{ r: 4, fill: "#007B7F" }} />

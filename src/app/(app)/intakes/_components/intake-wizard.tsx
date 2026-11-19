@@ -49,7 +49,7 @@ import { PartyCard } from "@/app/(app)/matters/_components/party-card";
 import { CauseCombobox } from "@/app/(app)/matters/_components/cause-combobox";
 import { CauseAiManualDialog } from "@/app/(app)/matters/_components/cause-ai-manual-dialog";
 import { readFormPath } from "@/lib/form-path";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { ClientCombobox } from "./client-combobox";
 import { CauseRecommendationDialog } from "./cause-recommendation-dialog";
 import { JurisdictionSelect } from "./jurisdiction-select";
@@ -1077,7 +1077,7 @@ export function IntakeWizard({
                         ...(kind === "litigation" ? [["代理程序", firstProcedureType ? procedureTypeLabel[firstProcedureType] : "未选择"], ["我方地位", ourStanding ? litigationStandingLabel[ourStanding] : "未选择"]] : []),
                         [clientLabel, party0Name || "未填写"],
                         ["其他当事人", `${otherParties.length} 个`],
-                        ["收费", feeType ? `${feeTypeLabel[feeType]}${watch("feeAmount") ? ` · ¥${Number(watch("feeAmount")).toLocaleString("zh-CN")}` : ""}` : "未选择"],
+                        ["收费", feeType ? `${feeTypeLabel[feeType]}${watch("feeAmount") ? ` · ${formatCurrency(Number(watch("feeAmount")))}` : ""}` : "未选择"],
                         ["主办律师", colleagues.find((u) => u.id === ownerUserId)?.name ?? "未选择"],
                         ["附件", `${contracts.length} 份`]
                       ].map(([k, v]) => (

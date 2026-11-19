@@ -610,7 +610,7 @@ function MockupMatterRow({ m, show, onOpen }: { m: MatterRow; show: (c: MatterCo
           )}
         </td>
       ) : null}
-      {show("amount") ? <td className="num font-mono text-[12.75px] font-medium">{m.claimAmount != null ? `¥${Math.round(m.claimAmount).toLocaleString("zh-CN")}` : <span className="t-faint">—</span>}</td> : null}
+      {show("amount") ? <td className="num font-mono text-[12.75px] font-medium">{m.claimAmount != null ? formatCurrency(m.claimAmount) : <span className="t-faint">—</span>}</td> : null}
       {show("deadline") ? (
         <td>
           {days === null || !nearest ? (

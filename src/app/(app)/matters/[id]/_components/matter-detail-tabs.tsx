@@ -20,7 +20,7 @@ import {
   matterCategoryKind,
   matterCategoryLabel
 } from "@/lib/enums";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { contactRoleLabels } from "./info-panel";
 import { MatterArchive, TeamRailCard } from "./matter-archive";
 import { FinancePanel } from "./finance-panel";
@@ -383,7 +383,10 @@ export function MatterDetailTabs({
       .map((s) => ({ key: `seal-${s.id}`, title: `用印申请 · ${s.documentTitle}`, meta: `${s.code} · ${formatMonthDay(s.createdAt)} 提交`, onOpen: () => setView("seal") })),
     ...(latestArchive?.status === "PENDING_REVIEW" ? [{ key: "archive", title: `归档申请 · ${latestArchive.archiveNo}`, meta: `提交人 ${latestArchive.archivedBy} · 等待归档审核` }] : [])
   ];
-  const money = (n: number | null | undefined) => (n != null && n > 0 ? `¥${n.toLocaleString("zh-CN")}` : null);
+  // 2026-11-20：改用统一金额格式（固定两位小数）。
+  // 原用 toLocaleString，小数位随值变化（¥15,000 / ¥15,000.5 / ¥15,000.55），
+  // 金额列对不齐，也无法判断是「15,000 元」还是「15,000.5 元」。
+  const money = (n: number | null | undefined) => (n != null && n > 0 ? formatCurrency(n) : null);
 
   return (
     <DocActionsContext.Provider value={docActions}>
@@ -818,13 +821,13 @@ function BillingsCard({ matterId, billings, canManage, contractTotal }: { matter
               <span className={cn("badge", b.status === "ACTIVE" ? "b-teal" : b.status === "CLOSED" ? "b-slate" : "b-white")}>
                 {b.status === "ACTIVE" ? "执行中" : b.status === "CLOSED" ? "已结束" : "草稿"}
               </span>
-              <span className="v mono">¥{Number(b.contractAmount).toLocaleString("zh-CN")}</span>
+              <span className="v mono">{formatCurrency(Number(b.contractAmount))}</span>
               <span className="m">{[b.signedAt ? `${formatShortDate(b.signedAt)} 签署` : null, b.schedule].filter(Boolean).join(" · ")}</span>
             </div>
           ))}
           <div className="panel-foot flex items-center justify-between">
             <span className="t-xs t-mute">已签署律师费合同额</span>
-            <span className="font-mono text-[14px] font-semibold">¥{total.toLocaleString("zh-CN")}</span>
+            <span className="font-mono text-[14px] font-semibold">{formatCurrency(total)}</span>
           </div>
         </>
       )}
@@ -839,7 +842,8 @@ function FinanceHero({ stats }: { stats: FinancePayload["stats"] }) {
   const base = stats.receivable;
   const received = base > 0 ? Math.min(100, Math.round((stats.allocated / base) * 100)) : 0;
   const pending = base > 0 ? Math.min(100 - received, Math.round((outstanding / base) * 100)) : 0;
-  const money = (n: number) => (n > 0 ? `¥${n.toLocaleString("zh-CN")}` : "—");
+  // 同上：统一两位小数（此函数空值语义是「—」，与上一处返回 null 不同，保留各自契约）
+  const money = (n: number) => (n > 0 ? formatCurrency(n) : "—");
   const cells: [string, number, string][] = [
     ["合同额", stats.contractAmount, ""],
     ["已收", stats.received, "green"],

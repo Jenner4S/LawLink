@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation";
 import { useTopbarAction } from "@/components/layout/topbar-action";
 import { invoiceRequestStatusLabel } from "@/lib/enums";
 import { matterHref } from "@/lib/matters/route";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { shMonthDay, shParts } from "@/lib/ui/sh-time";
 import { moneyKindLabels, type MoneyKind } from "@/lib/finance/ledger-labels";
 import { actionErrorMessage } from "@/lib/action-error";
@@ -100,7 +100,9 @@ const TYPE_META: Record<Entry["type"], { label: string; badge: string; sign: str
   COMMISSION: { label: "分成", badge: "b-violet", sign: "", cls: "out" }
 };
 
-const yuan = (n: number, digits = 0) => `¥${n.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+// 2026-11-20：委托统一金额实现，保留 digits 参数（财务 KPI 概览默认取整是刻意的）。
+// 自己不另写一份 NumberFormat，避免小数位规则将来只改一处、漏另一处。
+const yuan = (n: number, digits = 0) => formatCurrency(n, { precision: digits });
 const mmdd = (d: Date | string) => shMonthDay(d);
 
 export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests, pendingEntries, commissionEntries: commissionRows, invoiceReconciliation, canApproveInvoice, canExport, canWrite, canConfirmReceipt }: Props) {
