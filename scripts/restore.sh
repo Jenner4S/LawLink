@@ -36,6 +36,24 @@ DB_PASS=$(echo "$DB_URL" | sed -E 's/.*:\/\/[^:]+:([^@]+)@.*/\1/')
 DUMP_FILE="${BACKUP_PATH}/database.dump"
 STORAGE_FILE="${BACKUP_PATH}/storage.tar.gz"
 
+# ─────────────────────────────────────────────────────────────
+# 选择 pg_restore（2026-11-21，与 backup.sh 同一处修复）
+# 宿主 pg_restore 版本低于 dump 使用的版本时同样会失败；优先用数据库容器内的客户端。
+#   DB_CONTAINER=<名称>   指定容器（默认 lawlink-db）
+#   USE_HOST_PG=1         强制用宿主客户端（调试用）
+# ─────────────────────────────────────────────────────────────
+DB_CONTAINER="${DB_CONTAINER:-lawlink-db}"
+PG_MODE="host"
+if [ "${USE_HOST_PG:-0}" != "1" ] && command -v docker >/dev/null 2>&1 \
+   && docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" >/dev/null 2>&1; then
+  PG_MODE="container"
+fi
+if [ "$PG_MODE" = "container" ]; then
+  echo "恢复客户端: 容器 ${DB_CONTAINER}（版本与 dump 一致）"
+else
+  echo "恢复客户端: 宿主 pg_restore"
+fi
+
 echo "=== LawLink 数据恢复 ==="
 echo "备份: ${BACKUP_PATH}"
 echo "目标数据库: ${DB_NAME}@${DB_HOST}:${DB_PORT}"
@@ -50,15 +68,24 @@ fi
 # 1. 恢复数据库
 if [ -f "$DUMP_FILE" ]; then
   echo "[1/2] 恢复数据库..."
-  PGPASSWORD="$DB_PASS" pg_restore \
-    -h "$DB_HOST" \
-    -p "$DB_PORT" \
-    -U "$DB_USER" \
-    -d "$DB_NAME" \
-    --clean \
-    --if-exists \
-    --no-owner \
-    "$DUMP_FILE"
+  if [ "$PG_MODE" = "container" ]; then
+    # dump 从宿主 stdin 送进容器（不依赖容器内路径挂载）。
+    # 容器内连本地 5432；目标库由 -d 指定。
+    docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONTAINER" \
+      pg_restore -h 127.0.0.1 -p 5432 -U "$DB_USER" -d "$DB_NAME" \
+        --clean --if-exists --no-owner \
+      < "$DUMP_FILE"
+  else
+    PGPASSWORD="$DB_PASS" pg_restore \
+      -h "$DB_HOST" \
+      -p "$DB_PORT" \
+      -U "$DB_USER" \
+      -d "$DB_NAME" \
+      --clean \
+      --if-exists \
+      --no-owner \
+      "$DUMP_FILE"
+  fi
   echo "  数据库恢复完成"
 else
   echo "[1/2] 跳过: 未找到数据库备份文件"

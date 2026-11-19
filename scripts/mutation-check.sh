@@ -202,6 +202,33 @@ else
 fi
 
 # ---------------------------------------------------------------
+# [S1] 脚本语言细节守卫（2026-11-21）
+#
+# `$var` 后面紧跟全角字符（（）：、等）时，bash 在部分 locale 下会把多字节
+# 字符并入变量名，报 "xxx?: unbound variable"，脚本在那一行崩掉。
+# 这是写中文输出时才会踩的坑 —— 2026-11-21 一轮之内连踩两次（backup.sh、
+# drill-backup-restore.sh），第一次还让脚本**错误地返回了 0**。
+# 规则：变量紧邻中文标点时一律用 ${var}。
+echo
+echo "[S1] 扫描 scripts/*.sh 中「\$var 紧跟全角字符」"
+S1_BAD=0
+while IFS= read -r hit; do
+  [ -z "$hit" ] && continue
+  echo "  ❌ ${hit}"
+  S1_BAD=$((S1_BAD+1))
+done < <(python3 - <<'PYSCAN'
+import pathlib, re
+pat = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)([\u3000-\u303f\uff00-\uffef])")
+for f in sorted(pathlib.Path("scripts").glob("*.sh")):
+    for i, line in enumerate(f.read_text().split("\n"), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        for m in pat.finditer(line):
+            print(f"{f.as_posix()}:{i}  ${m.group(1)}{m.group(2)}")
+PYSCAN
+)
+report "S1 脚本无全角标点吞变量名" "0" "${S1_BAD}"
+
 echo
 echo "==> 结果：通过 ${PASS}，失败 ${FAIL}，探针无效 ${INVALID}"
 # 探针无效也返回非零：它意味着「本次没验成」，不能当通过。

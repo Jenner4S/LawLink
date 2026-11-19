@@ -34,6 +34,57 @@ DB_PASS=$(echo "$DB_URL" | sed -E 's/.*:\/\/[^:]+:([^@]+)@.*/\1/')
 
 mkdir -p "$BACKUP_PATH"
 
+# ─────────────────────────────────────────────────────────────
+# 选择 pg_dump / pg_restore（2026-11-21 修复）
+#
+# 背景：pg_dump 拒绝导出**比自己新**的服务端。只要宿主的 PostgreSQL 客户端
+# 版本低于服务端（macOS Homebrew 常年是 14、Debian stable 是 15，而服务端是 16），
+# 备份脚本就会直接失败：
+#     pg_dump: error: server version: 16.16; pg_dump version: 14.25
+#     pg_dump: error: aborting because of server version mismatch
+#
+# 后果不是一个失败的任务，而是**这个律所根本没有备份** —— 而且只有在真的需要
+# 恢复的那天才知道。所以这里优先用数据库容器里的客户端（版本必然与服务端一致）。
+#
+# 覆盖方式（按需）：
+#   DB_CONTAINER=<名称>   指定容器（默认 lawlink-db）
+#   USE_HOST_PG=1         强制用宿主客户端（调试用）
+# ─────────────────────────────────────────────────────────────
+DB_CONTAINER="${DB_CONTAINER:-lawlink-db}"
+PG_MODE="host"
+
+server_major() {
+  PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
+    "show server_version_num" 2>/dev/null | tr -d ' ' | cut -c1-2
+}
+
+if [ "${USE_HOST_PG:-0}" != "1" ] && command -v docker >/dev/null 2>&1 \
+   && docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" >/dev/null 2>&1; then
+  PG_MODE="container"
+else
+  # 没有容器时才回退到宿主，并明确检查版本，避免又一次「静默产出 0 字节 dump」
+  if ! command -v pg_dump >/dev/null 2>&1; then
+    echo "错误: 既没有可用的数据库容器（${DB_CONTAINER}），宿主也没有 pg_dump" >&2
+    exit 1
+  fi
+  SRV_MAJOR=$(server_major)
+  CLI_MAJOR=$(pg_dump --version | sed -E 's/.* ([0-9]+)\..*/\1/')
+  if [ -n "$SRV_MAJOR" ] && [ "$CLI_MAJOR" != "$SRV_MAJOR" ]; then
+    echo "错误: 宿主 pg_dump 是 ${CLI_MAJOR}.x，服务端是 ${SRV_MAJOR}.x —— 版本必须一致。" >&2
+    echo "      pg_dump 不会导出比自己新的服务端。请二选一：" >&2
+    echo "      1) 启动数据库容器并设置 DB_CONTAINER=<名称>（推荐，版本自然匹配）" >&2
+    echo "      2) 安装与服务端同版本的 postgresql-client" >&2
+    exit 1
+  fi
+fi
+# 注意：$DB_CONTAINER 后面紧跟全角「）」时，bash 会把全角字符当成变量名的一部分
+# （报 "DB_CONTAINER?: unbound variable"）。必须用 ${DB_CONTAINER} 显式界定。
+if [ "$PG_MODE" = "container" ]; then
+  echo "导出客户端: 容器 ${DB_CONTAINER}（版本与服务端一致）"
+else
+  echo "导出客户端: 宿主 pg_dump"
+fi
+
 echo "=== LawLink 备份 ${TIMESTAMP} ==="
 echo "数据库: ${DB_NAME}@${DB_HOST}:${DB_PORT}"
 echo "存储目录: ${STORAGE_DIR}"
@@ -41,14 +92,22 @@ echo ""
 
 # 1. pg_dump（设置了 BACKUP_PASSPHRASE 时产物整体加密，见第 4 步）
 echo "[1/3] 导出数据库..."
-PGPASSWORD="$DB_PASS" pg_dump \
-  -h "$DB_HOST" \
-  -p "$DB_PORT" \
-  -U "$DB_USER" \
-  -d "$DB_NAME" \
-  --format=custom \
-  --compress=6 \
-  -f "${BACKUP_PATH}/database.dump"
+if [ "$PG_MODE" = "container" ]; then
+  # 容器内导出到 stdout，再由宿主写入文件（避免依赖容器内的路径挂载）
+  docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONTAINER" \
+    pg_dump -h 127.0.0.1 -p 5432 -U "$DB_USER" -d "$DB_NAME" \
+      --format=custom --compress=6 \
+    > "${BACKUP_PATH}/database.dump"
+else
+  PGPASSWORD="$DB_PASS" pg_dump \
+    -h "$DB_HOST" \
+    -p "$DB_PORT" \
+    -U "$DB_USER" \
+    -d "$DB_NAME" \
+    --format=custom \
+    --compress=6 \
+    -f "${BACKUP_PATH}/database.dump"
+fi
 echo "  数据库备份完成: $(du -sh "${BACKUP_PATH}/database.dump" | cut -f1)"
 
 # 2. 文件存储
