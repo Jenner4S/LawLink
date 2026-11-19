@@ -137,9 +137,28 @@ async function main() {
 
   // ── 4. 至少一个可用 SUPER_ADMIN ──────────────────────────
   // 没有可用超管时全所进不了管理后台，而且没有任何自助恢复路径。
+  //
+  // 但要区分「空库」：`migrate deploy` 刚跑完、还没 `db seed` 的库，
+  // User 表本来就是空的 —— 那不是违规，是「还没初始化」。
+  // 已在用的库（有用户但没有在职超管）才是真问题。
   {
-    const n = await prisma.user.count({ where: { systemRole: "SUPER_ADMIN", active: true } });
-    record("super-admin", "至少一个在职的超级管理员", n === 0 ? ["active SUPER_ADMIN = 0"] : []);
+    const totalUsers = await prisma.user.count();
+    if (totalUsers === 0) {
+      findings.push({
+        id: "super-admin",
+        title: "至少一个在职的超级管理员",
+        violations: 0,
+        samples: [],
+        note: "库中无任何用户（空库，尚未 db seed），本项不适用"
+      });
+    } else {
+      const n = await prisma.user.count({ where: { systemRole: "SUPER_ADMIN", active: true } });
+      record(
+        "super-admin",
+        "至少一个在职的超级管理员",
+        n === 0 ? [`共 ${totalUsers} 个用户，但 active SUPER_ADMIN = 0`] : []
+      );
+    }
   }
 
   // ── 5. 借阅单：生效中必须有有效归档记录 ──────────────────

@@ -100,6 +100,43 @@ docker compose --profile full build "${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}" app
 # --no-deps 保证 db 若是健康的就原样复用。
 docker compose --profile full up -d --force-recreate --no-deps app
 
+# ─────────────────────────────────────────────────────────────
+# 数据库迁移（2026-11-21 补）
+#
+# 此前本脚本**只构建和启动容器，完全不碰数据库** —— 容器 CMD 也只是
+# `npm run start`。于是「全新部署跑 deploy.sh」得到的是一台空库上的应用：
+# 每个页面都报表不存在、也没有任何账号能登录。
+# README 里有手工的两步（migrate deploy / db seed），但脚本名字叫 deploy
+# 却不做完整部署，这就是个陷阱 —— 而且只在第一次部署时咬人。
+#
+# 这里补上迁移：`migrate deploy` 是幂等的，已是最新时只说「无需操作」，
+# 所以每次部署都跑是安全的，还能顺带避免「应用已新、库仍旧」这种经典事故。
+#
+# **不自动 seed**：seed 会创建默认管理员（默认密码）并写入模板/用章配置，
+# 这两件事都不该在无人值守的部署里悄悄发生。改为**检测并明确报错**，
+# 让第一次部署的人知道下一步该做什么 —— 而不是拿到一台打不开的系统。
+echo "    数据库迁移..."
+if ! docker exec lawlink-app npx prisma migrate deploy 2>&1 | tail -3; then
+  echo "    ❌ 数据库迁移失败，终止部署" >&2
+  exit 1
+fi
+
+# 首次部署检测：库里一个用户都没有 → 应用起来也没人能登录
+USER_COUNT=$(docker exec lawlink-db psql -U "${POSTGRES_USER:-lawlink}" -d "${POSTGRES_DB:-lawlink}" \
+  -tAc 'select count(*) from "User"' 2>/dev/null | tr -d ' ' || echo "")
+if [ "${USER_COUNT}" = "0" ]; then
+  echo "" >&2
+  echo "    ❌ 数据库里没有任何用户 —— 应用虽然起来了，但没有人能登录。" >&2
+  echo "       首次部署必须初始化基础数据（管理员 / 案由 / 阶段模板 / 期限规则）：" >&2
+  echo "" >&2
+  echo "         docker exec -it lawlink-app npx prisma db seed" >&2
+  echo "" >&2
+  echo "       默认管理员 admin@lawlink.local / ChangeMe!2026，登录后立即改密码。" >&2
+  echo "       已有数据时不要重跑 seed：密码不会被覆盖，但模板配置可能被刷新。" >&2
+  echo "" >&2
+  exit 1
+fi
+
 echo "    等待健康..."
 HEALTHY=0
 for i in $(seq 1 30); do
