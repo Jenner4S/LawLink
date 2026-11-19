@@ -1,6 +1,7 @@
 import { listAuditLogs } from "@/server/settings/actions";
 import { listUsers } from "@/server/users/actions";
 import { AuditView } from "./_components/audit-view";
+import { ChainIntegrityCard } from "./_components/chain-integrity-card";
 import { SsoStatusCard } from "./_components/sso-status-card";
 
 type Props = { searchParams: { action?: string; userId?: string; days?: string } };
@@ -16,6 +17,9 @@ export default async function AuditPage({ searchParams }: Props) {
   ]);
   return (
     <div className="space-y-4">
+      {/* 审计链完整性（2026-11-19）：verifyAuditChain 早就在跑，但结果只有 API 和 CLI 两个出口，
+          运维真正打开的是这个页面 —— 算出来没人看见等于没算。 */}
+      <ChainIntegrityCard />
       {/* 台账 P2-2：安全与审计下的 SSO 只读状态卡（是否启用 / issuer 主机 / 最近 5 条 SSO 审计） */}
       <SsoStatusCard />
       <AuditView items={items} distinctActions={distinctActions} userOptions={users.map(user => ({ id: user.id, name: user.name }))} initialFilters={{ action: searchParams.action ?? "ALL", userId: searchParams.userId ?? "ALL", days: searchParams.days ?? "30" }} />
