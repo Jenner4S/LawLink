@@ -22,6 +22,7 @@ import { responsibilityReady } from "@/server/reminders/responsibility";
 import { refreshScheduleReminderAfterSave } from "@/server/reminders/schedule";
 import { recordTimelineEvent } from "@/server/timeline/record";
 import { fileSmsInboundFilesToMatter } from "./inbound-filing";
+import { shDayKey, shTime } from "@/lib/ui/sh-time";
 
 const decisionInput = z.object({
   ids: z.array(z.string().cuid()).min(1, "请选择要处理的建议").max(50),
@@ -238,5 +239,25 @@ function parseDateTime(dateText: string, timeText: string): Date {
   if (!t) throw new ActionError(`文书时刻格式无法解析：${timeText}，请人工核对后手工登记`);
   const hh = Number(t[1]), mm = Number(t[2]);
   if (hh > 23 || mm > 59) throw new ActionError(`文书时刻越界：${timeText}，请人工核对后手工登记`);
-  return new Date(`${m[1]}-${m[2]}-${m[3]}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+08:00`);
+  const built = new Date(`${m[1]}-${m[2]}-${m[3]}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+08:00`);
+  // 2026-11-20：月/日也要回验，不能只校验时分。
+  //
+  // 上面只挡了 hh>23 / mm>59，没挡「日期本身不存在」。实测（修复前）：
+  //   "2026-02-30 10:00" → 上海 3 月 2 日
+  //   "2026-02-29 10:00" → 3 月 1 日（非闰年）
+  //   "2026-04-31 10:00" → 5 月 1 日
+  // 这是律师手工登记的文书日期/开庭时刻入口，错了会直接写进案件。
+  //
+  // 同一仓库里 emails/actions.ts 的 parseShanghaiSentAt 早就做了这件事
+  // （`shDayKey(date) !== ... || shTime(date) !== ...`），这里照抄同样的口径——
+  // 同一个校验在两处各写一遍不是理想状态，但比留一处漏网好；
+  // 该模式的统一已登记为后续重构项。
+  if (
+    Number.isNaN(built.getTime()) ||
+    shDayKey(built) !== `${m[1]}-${m[2]}-${m[3]}` ||
+    shTime(built) !== `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`
+  ) {
+    throw new ActionError(`文书日期不存在：${dateText}，请人工核对后手工登记`);
+  }
+  return built;
 }
