@@ -131,6 +131,31 @@ export async function decideCorrectionTx(db: Prisma.TransactionClient, userId: s
   return { matterId: row.matterId };
 }
 
+/**
+ * 应用账务更正计划。
+ *
+ * 调用契约（2026-11-20 补测时明确的三个前置条件）：
+ *
+ * 1. **plan.effects 必须非空**。本函数自身没有幂等键，防重复完全依赖
+ *    FinanceCorrectionEffect 的唯一索引。若 effects 为空，下面三条 UPDATE
+ *    （Receivable / Payment）没有任何守卫，同一份计划连调两次会重复调整
+ *    （实测 adjustmentAmount 从 -300 变成 -600）。
+ *    生产路径 decideCorrectionTx 算出的计划恒有 ≥1 条效果行，故当前不可达；
+ *    但函数是导出的，新调用方必须遵守此契约。
+ *
+ * 2. **refundTarget 必须与 plan.paymentReversed 对同一笔实收的退款额一致**。
+ *    这里 Payment.refundedAmount 取 refundTarget.amount，而效果行记录的是
+ *    plan 里的值 —— 两者不做校验，数据库余额约束也不会报警。实测金额可分叉
+ *    （refundedAmount=150，效果行记 200）。
+ *
+ * 3. **refundTarget.id 必须属于 plan.touchedPayments**。不在集合内时退款会被
+ *    静默丢弃（两笔实收的 refundedAmount 都不变），而效果行仍写着退款金额。
+ *
+ * 上面 2、3 在生产路径上自洽（decideCorrectionTx 把 {id: targetId, amount: request.amount}
+ * 与计划一起算出），属于硬化缺口而非线上错账。之所以只在注释里明确契约、不加运行时断言：
+ * 这几条路径当前不可达，加强制断言反而可能对未来合法调用方造成未知影响。
+ * 若后续出现新的调用路径，应把这三条改为显式校验。
+ */
 export async function applyCorrectionPlan(db:Prisma.TransactionClient,correctionId:string,plan:Awaited<ReturnType<typeof correctionPlan>>,refundTarget?:{id:string;amount:Prisma.Decimal}) {
     for (const effect of plan.effects) {
       // column 来自服务内封闭枚举，不接受用户提供的 SQL 标识符。

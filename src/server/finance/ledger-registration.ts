@@ -36,6 +36,13 @@ export async function signBillingTx(db:Prisma.TransactionClient,userId:string,in
   if(!target)throw new ActionError("收费安排不存在");
   await assertLedgerWrite(db,userId,target.matterId,"finance.write",{allowTail:false});
   const [billing]=await db.$queryRaw<{id:string;matterId:string;moneyKind:MoneyKind;contractAmount:Prisma.Decimal;status:string;signedAt:Date|null;revision:number;sourceBillingId:string|null}[]>`SELECT * FROM "Billing" WHERE id=${data.id} FOR UPDATE`;
+  // 2026-11-20：加锁可能返回 0 行 —— 上面 findUnique 到这条 SELECT 之间，该行可能已被
+  // 另一会话删除。`FOR UPDATE` 对被删行返回空集，`billing` 为 undefined，
+  // 下一行读 sourceBillingId 会抛 TypeError（用户看到 500 而不是可读提示）。
+  // 当前唯一调用方 ledger-actions.mutate 用 Serializable，被删行会让加锁以 40001/P2010
+  // 失败并被翻译成「账务或授权已变化，请刷新后重试」；但函数是导出的，
+  // 未显式指定隔离级别的新调用方会真的崩。这里一行兜底，与上面的 findUnique 同文案。
+  if(!billing)throw new ActionError("收费安排不存在");
  if(billing.sourceBillingId)throw new ActionError("补充协议须从合同变更入口确认生效");
  if(billing.revision!==data.revision || billing.status!=="DRAFT" || billing.signedAt)throw new ActionError("收费安排已签署或发生变化，请刷新");
  billingRegistrationInput.parse({matterId:billing.matterId,title:"签署",moneyKind:billing.moneyKind,amount:billing.contractAmount.toFixed(2),signedAt:data.signedAt,installments:data.installments});
