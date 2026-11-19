@@ -52,6 +52,7 @@ const words: Record<string, string> = {
   SET: "设置", SETTINGS: "设置", SMS: "短信", STAGE: "阶段", STAMP: "盖章回填", STAMPED: "已盖章",
   STATUS: "状态", SUBMIT: "提交", SUMMARY: "摘要", TASK: "事项", TEAM: "团队", TEMPLATE: "模板",
   TOGGLE: "启停", TOGGLES: "开关", TOKEN: "订阅凭证", UNBIND: "解除关联", UPDATE: "更新",
+  NOTES: "备注", CLEAN: "清洗",
   UPLOAD: "上传", USER: "用户", VALUES: "内容", VECTOR: "语义索引", VIEW: "查看", WEBHOOK: "群机器人",
   WEEKLY: "周报", WORKFLOW: "工作流", YUANDIAN: "元典", ADD: "添加", CLEANUP: "历史清理",
   ENGAGEMENT: "委托", EVIDENCE: "证据", TERMINATE: "终止", ACTIVATE: "启用", SERVICE: "服务",
