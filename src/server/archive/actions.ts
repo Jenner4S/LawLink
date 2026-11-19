@@ -10,6 +10,7 @@ import { approvalTransaction, approvalAudit, assertApprovalItem, requireApproval
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
+import { isPrismaError, uniqueViolationOn } from "@/lib/prisma-errors";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/server/audit";
@@ -190,6 +191,19 @@ export async function archiveMatter(input: ArchiveSubmitInput) {
       where: { id: { in: [coverDocId, catalogDocId] } },
       data: { deletedAt: new Date() }
     })).catch(() => null);
+
+    // 2026-11-21 修复（P2，多智能体审计）：归档号在事务外取（封皮/目录渲染要先用到它），
+    // 撞号由 @@unique(archiveNo) 兜底。原实现直接 `throw error`，
+    // 用户看到的是 Prisma 的原文：
+    //   Invalid `prisma.archiveRecord.create()` invocation in
+    //   /path/to/actions.ts:289:45
+    //   Unique constraint failed on the fields: (`archiveNo`)
+    // —— 既看不懂，又泄漏了服务器文件路径与行号。
+    // 这里翻成可操作的中文；表单本身不会丢（客户端只在成功时才关弹窗），
+    // 用户点一次重试即可拿到新号。
+    if (isPrismaError(error, "P2002") && uniqueViolationOn(error, "archiveNo")) {
+      throw new ActionError("归档号刚刚被其他同事占用（同年度同类别按顺序编号）。请直接再提交一次，系统会取新号。");
+    }
     throw error;
   }
   const previousRecord = await prisma.archiveRecord.findFirst({

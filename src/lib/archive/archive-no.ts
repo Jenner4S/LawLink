@@ -8,8 +8,17 @@
  *
  * 示例：2026-民-0017
  *
- * 并发：依赖 @@unique(archiveNo) 兜底。取号在事务外（封皮/目录渲染先行），
- * 撞号由调用方捕获 P2002 提示重提；如需彻底消除，可把取号挪进持锁事务。
+ * 并发：依赖 @@unique(archiveNo) 兜底。取号在事务外（封皮/目录渲染先行）。
+ *
+ * 2026-11-21 更正：这里原本写「撞号由调用方捕获 P2002 提示重提」——
+ * **调用方当时并没有捕获**，`archiveMatter` 直接 `throw error`，
+ * 用户看到的是 Prisma 原文（含服务器文件路径与行号）。
+ * 现已在 `server/archive/actions.ts` 的 catch 里把 archiveNo 的 P2002
+ * 翻成「请直接再提交一次，系统会取新号」。
+ *
+ * 如需彻底消除撞号：把取号挪进持锁事务（`pg_advisory_xact_lock` + 事务内取号），
+ * 但渲染封皮/目录必须在事务外（涉及文件系统），所以要两者拆开——
+ * 代价明显，当前选择「翻译错误 + 让用户重试」。表单不会丢，重试成本很低。
  */
 import type { MatterCategory } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
