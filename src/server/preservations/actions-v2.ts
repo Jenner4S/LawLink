@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 import { isManager } from "@/lib/permissions";
 
 import { revalidatePath } from "next/cache";
@@ -30,7 +31,7 @@ import { ActionError } from "@/lib/action-error";
 
 export async function listPreservationCases(input?: z.input<typeof caseListFilterSchema>) {
   const session = await requireSession("matters.read");
-  const filter = caseListFilterSchema.parse(input ?? {});
+  const filter = parseInput(caseListFilterSchema, input ?? {});
 
   const accessWhere: Prisma.PreservationCaseWhereInput = {
     OR: [
@@ -108,7 +109,7 @@ async function assertCanAccessPreservationCase(userId: string, id: string) {
 
 export async function createPreservationCase(input: z.infer<typeof caseCreateSchema>) {
   const session = await requireSession("matters.write");
-  const data = caseCreateSchema.parse(input);
+  const data = parseInput(caseCreateSchema, input);
 
   if (data.matterId) {
     const m = await prisma.matter.findUnique({ where: { id: data.matterId } });
@@ -165,7 +166,7 @@ export async function createPreservationCase(input: z.infer<typeof caseCreateSch
 
 export async function updatePreservationCase(input: z.infer<typeof caseUpdateSchema>) {
   const session = await requireSession("matters.write");
-  const data = caseUpdateSchema.parse(input);
+  const data = parseInput(caseUpdateSchema, input);
   const { id, matterId, court, rulingNumber, note, ownerId, guaranteeType, ...rest } = data;
 
   const existing = await assertCanAccessPreservationCase(session.user.id, id);
@@ -210,7 +211,7 @@ export async function updatePreservationCase(input: z.infer<typeof caseUpdateSch
 
 export async function deletePreservationCase(input: z.infer<typeof deleteSchema>) {
   const session = await requireSession("matters.write");
-  const data = deleteSchema.parse(input);
+  const data = parseInput(deleteSchema, input);
   if (!isManager(session.user)) {
     throw new ActionError("仅主任律师可删除保全记录");
   }
@@ -236,7 +237,7 @@ export async function deletePreservationCase(input: z.infer<typeof deleteSchema>
 
 export async function addTarget(input: z.infer<typeof targetCreateSchema>) {
   const session = await requireSession("matters.write");
-  const data = targetCreateSchema.parse(input);
+  const data = parseInput(targetCreateSchema, input);
 
   const cs = await assertCanAccessPreservationCase(session.user.id, data.caseId);
   if (cs.matterId) await assertMatterWritable(cs.matterId);
@@ -252,7 +253,7 @@ export async function addTarget(input: z.infer<typeof targetCreateSchema>) {
 
 export async function updateTarget(input: z.infer<typeof targetUpdateSchema>) {
   const session = await requireSession("matters.write");
-  const data = targetUpdateSchema.parse(input);
+  const data = parseInput(targetUpdateSchema, input);
   const target = await prisma.preservationTarget.findUnique({
     where: { id: data.id },
     include: { case: { select: { id: true, matterId: true, ownerId: true } } }
@@ -288,7 +289,7 @@ export async function deleteTarget(id: string) {
 
 export async function addProperty(input: z.infer<typeof propertyCreateSchema>) {
   const session = await requireSession("matters.write");
-  const data = propertyCreateSchema.parse(input);
+  const data = parseInput(propertyCreateSchema, input);
   if (data.expiryDate <= data.startDate) throw new ActionError("到期日期必须晚于生效日期");
 
   const target = await prisma.preservationTarget.findUnique({
@@ -327,7 +328,7 @@ export async function addProperty(input: z.infer<typeof propertyCreateSchema>) {
 
 export async function updateProperty(input: z.infer<typeof propertyUpdateSchema>) {
   const session = await requireSession("matters.write");
-  const data = propertyUpdateSchema.parse(input);
+  const data = parseInput(propertyUpdateSchema, input);
   const { id, amount, propertyDetail } = data;
   const property = await prisma.preservationProperty.findUnique({
     where: { id },
@@ -357,7 +358,7 @@ export async function updateProperty(input: z.infer<typeof propertyUpdateSchema>
 
 export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) {
   const session = await requireSession("matters.write");
-  const data = propertyRenewSchema.parse(input);
+  const data = parseInput(propertyRenewSchema, input);
 
   const prop = await prisma.preservationProperty.findUnique({
     where: { id: data.propertyId },

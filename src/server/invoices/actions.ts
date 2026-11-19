@@ -1,5 +1,6 @@
 "use server";
 import {assertExecutionOpen,terminationReady} from "@/server/approval-permissions/termination";
+import { parseInput } from "@/lib/parse-input";
 
 import { approvalTransaction, approvalAudit, assertApprovalItem, canExecuteInvoice } from "@/lib/approvals/service";
 
@@ -71,7 +72,7 @@ const createSchema = z.object({
 
 export async function createInvoiceRequest(input: z.infer<typeof createSchema>) {
   const session = await requireSession("approval");
-  const data = createSchema.parse(input);
+  const data = parseInput(createSchema, input);
   await assertCanAssociateMatter(session.user.id, data.matterId);
   await assertMatterWritable(data.matterId);
 
@@ -308,7 +309,7 @@ const rejectSchema = z.object({
 
 export async function rejectInvoiceRequest(input: z.infer<typeof rejectSchema>) {
   const session = await requireSession("approval");
-  const data = rejectSchema.parse(input);
+  const data = parseInput(rejectSchema, input);
 
   const existing = await prisma.invoiceRequest.findUnique({
     where: { id: data.requestId },

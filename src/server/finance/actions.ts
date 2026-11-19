@@ -1,5 +1,6 @@
 "use server";
 import {insertFinanceRowTx} from "@/server/finance/allocation-internals";
+import { parseInput } from "@/lib/parse-input";
 import { financeLedgerReady } from "./ledger-storage";
 import type { MoneyKind } from "@/lib/finance/ledger-labels";
 import { confirmReceiptTx,rejectReceiptTx,deleteBillingDraftTx } from "./ledger-registration";
@@ -52,7 +53,7 @@ import { ActionError } from "@/lib/action-error";
 export async function createBilling(input: BillingCreateInput) {
   const session = await requireSession("finance.write");
   if(await financeLedgerReady(prisma))throw new ActionError("请在应收与收款分配页面登记收费及分期");
-  const data = billingCreateSchema.parse(input);
+  const data = parseInput(billingCreateSchema, input);
   await assertMatterWritable(data.matterId, { allowFinanceRole: true });
 
   // v1.x §二：合同与应收同事务创建（签署即确认收费安排 → 应收立项）
@@ -136,7 +137,7 @@ export async function deleteBilling(id: string) {
 export async function createFeeEntry(input: FeeEntryCreateInput) {
   const session = await requireSession("finance.write");
   if(await financeLedgerReady(prisma))throw new ActionError("请在应收与收款分配页面登记收款；退款须通过财务更正处理");
-  const data = feeEntryCreateSchema.parse(input);
+  const data = parseInput(feeEntryCreateSchema, input);
   await assertMatterWritable(data.matterId, { allowFinanceRole: true });
 
   // 2026-09-19 用户确认：实收一律先挂「待确认」，谁登记的都一样（含主任律师自己收的案件），
@@ -414,7 +415,7 @@ export async function deleteFeeEntry(id: string) {
  */
 export async function setCommissionPlan(input: CommissionPlanSetInput) {
   const session = await requireSession("finance.write");
-  const data = commissionPlanSetSchema.parse(input);
+  const data = parseInput(commissionPlanSetSchema, input);
   await assertMatterWritable(data.matterId);
   await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可设置分成方案");
 

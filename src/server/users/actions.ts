@@ -1,5 +1,6 @@
 "use server";
 import {responsibilityCounts,recordOffboardingRisk} from "@/server/reminders/offboarding";
+import { parseInput } from "@/lib/parse-input";
 
 import { readBuiltinPresentations } from "@/lib/roles/presentation";
 import { roleTablesReady } from "@/lib/roles/service";
@@ -128,7 +129,7 @@ export async function listActiveColleagues() {
 export async function createUser(formData: FormData) {
   const session = await requireAdmin();
   const roleDefinitionId = formData.get("roleDefinitionId");
-  const data = userCreateSchema.parse({
+  const data = parseInput(userCreateSchema, {
     name: formData.get("name"),
     email: formData.get("email"),
     password: formData.get("password"),
@@ -203,7 +204,7 @@ export async function createUser(formData: FormData) {
 
 export async function updateUserRole(input: UserUpdateRoleInput) {
   const session = await requireAdmin();
-  const data = userUpdateRoleSchema.parse(input);
+  const data = parseInput(userUpdateRoleSchema, input);
   if (data.id === session.user.id) {
     throw new ActionError("不能修改自己的角色");
   }
@@ -245,7 +246,7 @@ async function protectLastSystemAdmin(db: import("@prisma/client").Prisma.Transa
 
 export async function updateUserSystemRole(input: UserUpdateSystemRoleInput) {
   const session = await requireAdmin();
-  const data = userUpdateSystemRoleSchema.parse(input);
+  const data = parseInput(userUpdateSystemRoleSchema, input);
   if (data.id === session.user.id) throw new ActionError("不能修改自己的系统管理身份");
   await approvalTransaction(async db => {
     await assertCurrentAdmin(db, session.user.id);
@@ -273,7 +274,7 @@ const userUpdateManagerSchema = z.object({
  */
 export async function setUserManagerAuthorized(input: z.infer<typeof userUpdateManagerSchema>) {
   const session = await requireAdmin();
-  const data = userUpdateManagerSchema.parse(input);
+  const data = parseInput(userUpdateManagerSchema, input);
   await approvalTransaction(async db => {
     await assertCurrentAdmin(db, session.user.id);
     const current = await db.user.findUniqueOrThrow({ where: { id: data.id }, select: { managerAuthorized: true } });
@@ -333,7 +334,7 @@ export async function updateUserProfile(input: z.infer<typeof adminProfileSchema
 
 export async function resetUserPassword(input: ResetPasswordInput) {
   const session = await requireAdmin();
-  const data = resetPasswordSchema.parse(input);
+  const data = parseInput(resetPasswordSchema, input);
 
   const passwordHash = await bcrypt.hash(data.newPassword, 12);
   await approvalTransaction(async db => {
@@ -350,7 +351,7 @@ export async function resetUserPassword(input: ResetPasswordInput) {
  */
 export async function changeMyPassword(input: ChangeMyPasswordInput) {
   const session = await requireSession("personal");
-  const data = changeMyPasswordSchema.parse(input);
+  const data = parseInput(changeMyPasswordSchema, input);
 
   const me = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -419,7 +420,7 @@ export type TotpEnforceInput = z.input<typeof totpEnforceSchema>;
 
 export async function forceEnforceTotp(input: TotpEnforceInput) {
   const session = await requireAdmin();
-  const data = totpEnforceSchema.parse(input);
+  const data = parseInput(totpEnforceSchema, input);
 
   await approvalTransaction(async db => {
     await assertCurrentAdmin(db, session.user.id);

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { isManager } from "@/lib/permissions";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
@@ -37,7 +38,7 @@ export async function getWebhookSettingsAction() {
 
 export async function saveWebhookSettingsAction(input: z.infer<typeof saveSchema>) {
   const session = await requireManager();
-  const data = saveSchema.parse(input);
+  const data = parseInput(saveSchema, input);
   if (data.enabled && !data.url) throw new ActionError("启用推送需要填写机器人地址");
 
   await saveWebhookSettings({ enabled: data.enabled, url: data.url });

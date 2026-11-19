@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireSystemAdmin } from "@/lib/auth/session";
@@ -67,7 +68,7 @@ export async function getArchivePolicySettings() {
 
 export async function saveArchivePolicy(input: z.input<typeof saveArchivePolicySchema>) {
   const session = await requireSystemAdmin();
-  const data = saveArchivePolicySchema.parse(input);
+  const data = parseInput(saveArchivePolicySchema, input);
   const source = await prisma.firmFile.findFirst({
     where: { id: data.sourceFileId, category: "POLICY", archivedAt: null },
     select: { id: true, name: true, sha256: true }

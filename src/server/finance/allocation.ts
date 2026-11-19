@@ -1,5 +1,6 @@
 "use server";
 import {insertFinanceRowTx} from "@/server/finance/allocation-internals";
+import { parseInput } from "@/lib/parse-input";
 
 /**
  * 财务核销服务层（P1 §二）。
@@ -41,7 +42,7 @@ const allocateSchema = z.object({
  */
 export async function allocatePayment(input: z.infer<typeof allocateSchema>) {
   const session = await requireSession("finance.write");
-  const data = allocateSchema.parse(input);
+  const data = parseInput(allocateSchema, input);
   if (await financeLedgerReady(prisma)) {
     if (data.revision === undefined) throw new ActionError("请从账务核对与分配页面刷新实收版本后操作");
     return allocateLedger({ paymentId: data.paymentId, revision: data.revision, kind: "RECEIVABLE", items: data.items.map(i => ({ targetId: i.receivableId, amount: i.amount })) });
@@ -140,7 +141,7 @@ const correctionSchema = z.object({
 /** 冲正/更正记录：带原因与凭证号，同事务审计（替代物理删除的正式更正口径） */
 export async function recordFinanceCorrection(input: z.infer<typeof correctionSchema>) {
   const session = await requireSession("finance.write");
-  const data = correctionSchema.parse(input);
+  const data = parseInput(correctionSchema, input);
   if (await financeLedgerReady(prisma)) throw new ActionError("请到“应收与收款分配”的退款与账务更正区提交申请，旧入口不直接更改余额");
 
   return prisma.$transaction(async tx => {

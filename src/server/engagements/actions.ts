@@ -9,6 +9,7 @@
  * （终止不校验财务状态——状态轴分离原则）。
  */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { auditTx } from "@/server/audit";
@@ -26,7 +27,7 @@ const createSchema = z.object({
 
 export async function createEngagement(input: z.input<typeof createSchema>) {
   const session = await requireSession("matters.write");
-  const data = createSchema.parse(input);
+  const data = parseInput(createSchema, input);
 
   const client = await prisma.client.findUnique({ where: { id: data.clientId }, select: { id: true, name: true, deletedAt: true } });
   if (!client || client.deletedAt) throw new ActionError("客户不存在或已停用");
@@ -72,7 +73,7 @@ const linkSchema = z.object({
 /** 关联事项到委托（样例 7：一事项先后涉及多份委托，带生效区间） */
 export async function linkEngagementMatter(input: z.infer<typeof linkSchema>) {
   const session = await requireSession("matters.write");
-  const data = linkSchema.parse(input);
+  const data = parseInput(linkSchema, input);
 
   const eng = await prisma.engagement.findUnique({ where: { id: data.engagementId }, select: { id: true, endedAt: true } });
   if (!eng) throw new ActionError("委托不存在");
@@ -108,7 +109,7 @@ const terminateSchema = z.object({
  */
 export async function terminateEngagement(input: z.infer<typeof terminateSchema>) {
   const session = await requireSession("matters.write");
-  const data = terminateSchema.parse(input);
+  const data = parseInput(terminateSchema, input);
 
   const eng = await prisma.engagement.findUnique({
     where: { id: data.engagementId },

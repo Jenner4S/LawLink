@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { z } from "zod";
 import type { ProcedureType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -31,7 +32,7 @@ export async function listStageTemplates() {
 
 export async function upsertStageTemplate(input: TemplateUpdateInput) {
   const session = await requireSystemAdmin();
-  const data = templateUpdateSchema.parse(input);
+  const data = parseInput(templateUpdateSchema, input);
   const id = `default-${data.procedureType}`;
 
   await prisma.stageTemplate.upsert({
@@ -73,7 +74,7 @@ export type AuditQuery = z.infer<typeof auditQuerySchema>;
 
 export async function listAuditLogs(input: Partial<AuditQuery> = {}) {
   await requireSystemAdmin();
-  const query = auditQuerySchema.parse(input);
+  const query = parseInput(auditQuerySchema, input);
   const since = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
 
   const where: Prisma.AuditLogWhereInput = {

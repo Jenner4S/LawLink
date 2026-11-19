@@ -10,6 +10,7 @@
  *   投递器复核借阅单仍有效后送达；归还/驳回即作废未投递行。
  */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/server/audit";
@@ -127,7 +128,7 @@ export async function listArchiveBorrows(): Promise<{
 
 export async function createArchiveBorrow(input: z.input<typeof createSchema>) {
   const session = await requireSession("matters.read");
-  const data = createSchema.parse(input);
+  const data = parseInput(createSchema, input);
   const record = await prisma.archiveRecord.findUnique({
     where: { id: data.archiveRecordId },
     select: {
@@ -178,7 +179,7 @@ export async function createArchiveBorrow(input: z.input<typeof createSchema>) {
 
 export async function decideArchiveBorrow(input: z.input<typeof decideSchema>) {
   const session = await requireSession();
-  const data = decideSchema.parse(input);
+  const data = parseInput(decideSchema, input);
   const row = await prisma.archiveBorrowRequest.findUnique({
     where: { id: data.id },
     select: {

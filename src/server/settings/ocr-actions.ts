@@ -1,6 +1,7 @@
 "use server";
 /** B2：OCR 设置管理 action（仅 SUPER_ADMIN；密钥不回显明文）。 */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { requireSystemAdmin } from "@/lib/auth/session";
 import { audit } from "@/server/audit";
 import { readOcrSettings, saveOcrSettings } from "@/server/ocr/provider";
@@ -24,7 +25,7 @@ export async function getOcrSettingsPublic() {
 
 export async function saveOcrSettingsAction(input: z.input<typeof saveSchema>) {
   const session = await requireSystemAdmin();
-  const data = saveSchema.parse(input);
+  const data = parseInput(saveSchema, input);
   const existing = await readOcrSettings();
   await saveOcrSettings({
     endpoint: data.endpoint,

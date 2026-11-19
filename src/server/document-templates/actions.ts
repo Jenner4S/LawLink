@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -23,7 +24,7 @@ import { ActionError } from "@/lib/action-error";
 
 export async function listTemplates(input?: z.input<typeof templateListFilterSchema>) {
   await requireSession("personal");
-  const filter = templateListFilterSchema.parse(input ?? {});
+  const filter = parseInput(templateListFilterSchema, input ?? {});
 
   const where: Prisma.DocumentTemplateWhereInput = {};
   if (filter.onlyEnabled) where.enabled = true;
@@ -66,7 +67,7 @@ export async function getTemplate(id: string) {
 
 export async function toggleTemplate(input: z.infer<typeof templateToggleSchema>) {
   const session = await requireSystemAdmin();
-  const data = templateToggleSchema.parse(input);
+  const data = parseInput(templateToggleSchema, input);
 
   await prisma.documentTemplate.update({
     where: { id: data.id },
@@ -96,7 +97,7 @@ export async function toggleTemplate(input: z.infer<typeof templateToggleSchema>
  */
 export async function renderTemplate(input: z.infer<typeof templateRenderSchema>) {
   const session = await requireSession("documents.write");
-  const data = templateRenderSchema.parse(input);
+  const data = parseInput(templateRenderSchema, input);
 
   await assertMatterWritable(data.matterId);
   await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可生成文书");
@@ -222,7 +223,7 @@ const MAX_TEMPLATE_SIZE = 10 * 1024 * 1024;
  */
 export async function uploadDocumentTemplate(formData: FormData) {
   const session = await requireSystemAdmin();
-  const data = uploadTemplateSchema.parse({
+  const data = parseInput(uploadTemplateSchema, {
     name: formData.get("name"),
     category: formData.get("category"),
     description: formData.get("description") || undefined,

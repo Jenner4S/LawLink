@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { requireSession } from "@/lib/auth/session";
 import { readAndValidateIdentityImage } from "@/lib/identity-documents";
 import { approvalAudit } from "@/lib/approvals/service";
@@ -11,7 +12,7 @@ import { ActionError } from "@/lib/action-error";
 
 export async function correctUserIdentityWithPhotos(formData: FormData) {
   const session = await requireSession();
-  const data = correctIdentitySchema.parse({
+  const data = parseInput(correctIdentitySchema, {
     id: formData.get("id"),
     identityDocumentType: formData.get("identityDocumentType"),
     identityDocumentName: formData.get("identityDocumentName"),

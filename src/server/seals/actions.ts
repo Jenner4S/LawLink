@@ -1,5 +1,6 @@
 "use server";
 import {assertExecutionOpen} from "@/server/approval-permissions/termination";
+import { parseInput } from "@/lib/parse-input";
 import { checkRoleMutation } from "@/lib/roles/service";
 import { isManager } from "@/lib/permissions";
 import { shParts } from "@/lib/ui/sh-time";
@@ -75,7 +76,7 @@ async function generateSealCode(): Promise<string> {
 // ============================================================
 export async function listSealRequests(input?: z.input<typeof sealListFilterSchema>) {
   const session = await requireSession("approval");
-  const filter = sealListFilterSchema.parse(input ?? {});
+  const filter = parseInput(sealListFilterSchema, input ?? {});
   const rows = await prisma.sealRequest.findMany({
     where: { ...(filter.status ? { status: filter.status } : {}), ...(filter.sealType ? { sealType: filter.sealType } : {}), ...(filter.scope === "mine" ? { requestedById: session.user.id } : {}), ...(filter.scope === "approval" ? { status: "PENDING" } : {}) },
     orderBy: [{ status: "asc" }, { requestedAt: "desc" }],
@@ -162,7 +163,7 @@ export async function createSealRequest(formData: FormData) {
     requestNote: formData.get("requestNote") || "",
     parentSealRequestId: formData.get("parentSealRequestId") || null
   };
-  const data = sealCreateSchema.parse(raw);
+  const data = parseInput(sealCreateSchema, raw);
 
   // "同时加盖法定代表人章"：主章不是法人章时附带创建一个 LEGAL_REP_SEAL 子请求，
   // 共用同一份文件副本，便于两条审批线分别走（公章/合同章走对应审批人，法人章走法定代表人）
@@ -465,7 +466,7 @@ export async function createSealRequest(formData: FormData) {
 // ============================================================
 export async function approveSealRequest(input: z.infer<typeof sealApproveSchema>) {
   const session = await requireSession("approval");
-  const data = sealApproveSchema.parse(input);
+  const data = parseInput(sealApproveSchema, input);
 
   const seal = await prisma.sealRequest.findUnique({
     where: { id: data.id },
@@ -512,7 +513,7 @@ export async function approveSealRequest(input: z.infer<typeof sealApproveSchema
 // ============================================================
 export async function rejectSealRequest(input: z.infer<typeof sealRejectSchema>) {
   const session = await requireSession("approval");
-  const data = sealRejectSchema.parse(input);
+  const data = parseInput(sealRejectSchema, input);
 
   const seal = await prisma.sealRequest.findUnique({
     where: { id: data.id },
@@ -640,7 +641,7 @@ export async function stampSealRequest(formData: FormData) {
 // ============================================================
 export async function cancelSealRequest(input: z.infer<typeof sealCancelSchema>) {
   const session = await requireSession("approval");
-  const data = sealCancelSchema.parse(input);
+  const data = parseInput(sealCancelSchema, input);
 
   const seal = await prisma.sealRequest.findUnique({
     where: { id: data.id },

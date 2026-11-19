@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { requireSystemAdmin } from "@/lib/auth/session";
 import { audit } from "@/server/audit";
 import {
@@ -25,7 +26,7 @@ export async function getAiSettingsPublic() {
 
 export async function saveAiSettingsAction(input: z.infer<typeof saveSchema>) {
   const session = await requireSystemAdmin();
-  const data = saveSchema.parse(input);
+  const data = parseInput(saveSchema, input);
 
   await saveSettings({
     apiKey: data.apiKey?.trim() || undefined,
@@ -51,7 +52,7 @@ export async function saveAiSettingsAction(input: z.infer<typeof saveSchema>) {
 
 export async function clearAiKeyAction(input: z.infer<typeof clearSchema>) {
   const session = await requireSystemAdmin();
-  clearSchema.parse(input);
+  parseInput(clearSchema, input);
 
   await saveSettings({ clearKey: true });
 

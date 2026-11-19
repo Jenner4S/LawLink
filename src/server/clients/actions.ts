@@ -1,5 +1,6 @@
 "use server";
 import { getFinanceFacts } from "@/server/finance/facts";
+import { parseInput } from "@/lib/parse-input";
 import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
 
 import { revalidatePath } from "next/cache";
@@ -36,7 +37,7 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): T {
 
 export async function listClients(input: Partial<ClientListQuery> = {}) {
   const session = await requireSession("clients.read");
-  const query = clientListQuerySchema.parse(input);
+  const query = parseInput(clientListQuerySchema, input);
 
   const where: Prisma.ClientWhereInput = {
     AND: [clientVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions, session.user.systemRole)],
@@ -187,7 +188,7 @@ export async function getClientFinanceSummary(clientId: string) {
 
 export async function createClient(input: ClientCreateInput) {
   const session = await requireSession("clients.write");
-  const data = clientCreateSchema.parse(input);
+  const data = parseInput(clientCreateSchema, input);
 
   // v1.x P0-1: 证件规范化 + 建档查重（身份持续唯一：含软删档案）
   const idNumber = normalizeIdNumber(data.idNumber);
@@ -259,7 +260,7 @@ export async function updateClient(input: ClientUpdateInput) {
   if (session.user.role !== "CUSTOM" && !isManager(session.user.role)) {
     throw new ActionError("仅管理员或主办律师可编辑客户信息");
   }
-  const data = clientUpdateSchema.parse(input);
+  const data = parseInput(clientUpdateSchema, input);
   const { id, contacts, gender, idType, idNumber, ...rest } = data;
   await assertCustomClientWrite(session.user, id);
 
@@ -347,7 +348,7 @@ export async function addContact(clientId: string, input: ContactInput) {
     throw new ActionError("仅管理员或主办律师可编辑联系人");
   }
   await assertCustomClientWrite(session.user, clientId);
-  const data = contactInputSchema.parse(input);
+  const data = parseInput(contactInputSchema, input);
   const created = await roleMutation(session.user, "clients.write", async roleDb => roleDb.contact.create({
     data: { clientId, ...emptyToNull(data) }
   }));

@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 
 import { scopeFor, type RoleUser } from "@/lib/roles/catalog";
 import { revalidatePath } from "next/cache";
@@ -30,7 +31,7 @@ import { ActionError } from "@/lib/action-error";
 
 export async function listExpress(input?: z.input<typeof expressListFilterSchema>) {
   const session = await requireSession("express.manage");
-  const filter = expressListFilterSchema.parse(input ?? {});
+  const filter = parseInput(expressListFilterSchema, input ?? {});
 
   const accessWhere: Prisma.ExpressTrackingWhereInput = session.user.role === "CUSTOM" && scopeFor(session.user, "express.manage") === "ALL" ? {} : {
     OR: [
@@ -100,7 +101,7 @@ async function assertCanAccessExpressRecord(userId: string, id: string, user?: R
 
 export async function createExpress(input: z.infer<typeof expressCreateSchema>) {
   const session = await requireSession("express.manage");
-  const data = expressCreateSchema.parse(input);
+  const data = parseInput(expressCreateSchema, input);
 
   // 自动识别公司（如未指定）
   let companyCode = data.companyCode?.trim() || null;
@@ -167,7 +168,7 @@ export async function createExpress(input: z.infer<typeof expressCreateSchema>) 
 
 export async function refreshExpress(input: z.infer<typeof expressIdSchema>) {
   const session = await requireSession("express.manage");
-  const data = expressIdSchema.parse(input);
+  const data = parseInput(expressIdSchema, input);
 
   await assertCanAccessExpressRecord(session.user.id, data.id, session.user);
   const e = await prisma.expressTracking.findUniqueOrThrow({
@@ -205,7 +206,7 @@ export async function refreshExpress(input: z.infer<typeof expressIdSchema>) {
 
 export async function deleteExpress(input: z.infer<typeof expressIdSchema>) {
   const session = await requireSession("express.manage");
-  const data = expressIdSchema.parse(input);
+  const data = parseInput(expressIdSchema, input);
 
   const e = await assertCanAccessExpressRecord(session.user.id, data.id, session.user);
 
@@ -234,7 +235,7 @@ export async function getExpressSettingsPublic() {
 
 export async function saveExpressSettingsAction(input: z.infer<typeof expressSettingsSaveSchema>) {
   const session = await requireSystemAdmin();
-  const data = expressSettingsSaveSchema.parse(input);
+  const data = parseInput(expressSettingsSaveSchema, input);
 
   await saveSettings({
     kdniaoEbusinessId: data.kdniaoEbusinessId?.trim() || undefined,

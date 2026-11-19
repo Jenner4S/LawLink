@@ -1,5 +1,6 @@
 "use server";
 import type { ProcedureStatus } from "@prisma/client";
+import { parseInput } from "@/lib/parse-input";
 import {assertMatterReviewCurrent} from "@/server/conflicts/matter-review";
 import {assertProcedureCovered} from "@/server/finance/ledger-contracts";
 import { approvalTransaction } from "@/lib/approvals/service";
@@ -51,7 +52,7 @@ function emptyToNull<T extends Record<string, unknown>>(obj: T): T {
 
 export async function addProcedure(input: ProcedureCreateInput) {
   const session = await requireSession("schedule.write");
-  const data = procedureCreateSchema.parse(input);
+  const data = parseInput(procedureCreateSchema, input);
   await assertCanHandleMatter(session.user, data.matterId);
   await assertMatterWritable(data.matterId);
   assertAgencyAllowedForProcedure(data.handlingAgency, data.type);
@@ -105,7 +106,7 @@ export async function addProcedure(input: ProcedureCreateInput) {
 
 export async function updateProcedure(input: ProcedureUpdateInput) {
   const session = await requireSession("schedule.write");
-  const data = procedureUpdateSchema.parse(input);
+  const data = parseInput(procedureUpdateSchema, input);
   const { id, ...rest } = data;
 
   const existing = await prisma.matterProcedure.findUnique({
@@ -190,7 +191,7 @@ async function materializeProcedureStage(
   options: { allowExisting: boolean }
 ) {
   const session = await requireSession("schedule.write");
-  const data = procedureStageCreateSchema.parse(input);
+  const data = parseInput(procedureStageCreateSchema, input);
 
   const procedure = await prisma.matterProcedure.findUnique({
     where: { id: data.procedureId },
@@ -341,7 +342,7 @@ function nextStageOrder(
 
 export async function removeProcedureStage(input: ProcedureStageRemoveInput) {
   const session = await requireSession("schedule.write");
-  const data = procedureStageRemoveSchema.parse(input);
+  const data = parseInput(procedureStageRemoveSchema, input);
 
   const stage = await prisma.matterStage.findUnique({
     where: { id: data.id },
@@ -438,7 +439,7 @@ export async function removeProcedureStage(input: ProcedureStageRemoveInput) {
 
 export async function addDeadline(input: DeadlineCreateInput) {
   const session = await requireSession("schedule.write");
-  const data = deadlineCreateSchema.parse(input);
+  const data = parseInput(deadlineCreateSchema, input);
 
   const procedureForGuard = await prisma.matterProcedure.findUnique({
     where: { id: data.procedureId },
@@ -592,7 +593,7 @@ export async function deleteDeadline(id: string) {
 
 export async function addHearing(input: HearingCreateInput) {
   const session = await requireSession("schedule.write");
-  const data = hearingCreateSchema.parse(input);
+  const data = parseInput(hearingCreateSchema, input);
 
   const procedureForGuard = await prisma.matterProcedure.findUnique({
     where: { id: data.procedureId },

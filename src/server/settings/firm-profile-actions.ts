@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { z } from "zod";
 import type { MatterCategory } from "@prisma/client";
 
@@ -27,7 +28,7 @@ const saveSchema = z.object({
 
 export async function saveFirmProfileAction(input: z.infer<typeof saveSchema>) {
   const session = await requireSystemAdmin();
-  const data = saveSchema.parse(input);
+  const data = parseInput(saveSchema, input);
 
   // Logo 校验：必须是 image/* 的 base64 data URL，且体积受限
   if (typeof data.logoDataUrl === "string" && data.logoDataUrl.length > 0) {

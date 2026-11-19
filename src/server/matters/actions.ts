@@ -1,5 +1,6 @@
 "use server";
 import {responsibilityReady,readWorkRows,closedHearingIds} from "@/server/reminders/responsibility";
+import { parseInput } from "@/lib/parse-input";
 import { withRoleNames } from "@/lib/roles/presentation";
 import { hasCustomPermission } from "@/lib/roles/catalog";
 import { checkRoleMutation, roleMutation } from "@/lib/roles/service";
@@ -105,7 +106,7 @@ export async function getMatterTabCounts(input: {
 
 export async function listMatters(input: Partial<MatterListQuery> = {}) {
   const session = await requireSession("matters.read");
-  const query = matterListQuerySchema.parse(input);
+  const query = parseInput(matterListQuerySchema, input);
 
   const whereParts: Prisma.MatterWhereInput[] = [
     matterReadVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions),
@@ -834,7 +835,7 @@ export async function getMatterById(id: string) {
 
 export async function createMatter(input: MatterCreateInput) {
   const session = await requireSession("intakes.create");
-  const data = matterCreateSchema.parse(input);
+  const data = parseInput(matterCreateSchema, input);
   if ((await approvalSettings()).enabled) throw new ActionError("按事项审批已启用，请先收案登记并完成审批后转为正式案件");
   assertAgencyAllowedForProcedure(data.firstProcedure.handlingAgency, data.firstProcedure.type);
   await assertCauseAllowedForSelection({
@@ -1046,7 +1047,7 @@ export async function updateMatterTeam(input: {
 // v0.27: 编辑案件基本信息（收案日期 readonly，状态走 lifecycle）
 export async function updateMatterBasicInfo(input: MatterUpdateBasicInput) {
   const session = await requireSession("matters.write");
-  const data = matterUpdateBasicSchema.parse(input);
+  const data = parseInput(matterUpdateBasicSchema, input);
 
   const matter = await prisma.matter.findUnique({
     where: { id: data.id, deletedAt: null },

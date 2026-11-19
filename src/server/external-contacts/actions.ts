@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 
 /**
  * v0.27: 服务中心 - 外部联系人通讯录
@@ -119,7 +120,7 @@ async function assertCanModify(id: string, sessionUserId: string, role: string, 
 
 export async function createExternalContact(input: z.infer<typeof externalContactSchema>) {
   const session = await requireSession("contacts.manage");
-  const data = externalContactSchema.parse(input);
+  const data = parseInput(externalContactSchema, input);
   // v1.0: 审核流默认关闭（小所信任环境，新增直接通过）；可在设置里打开
   const { externalContactReview } = await getWorkflowToggles();
   const status =
@@ -165,7 +166,7 @@ export async function createExternalContact(input: z.infer<typeof externalContac
 
 export async function updateExternalContact(input: z.infer<typeof externalContactUpdateSchema>) {
   const session = await requireSession("contacts.manage");
-  const data = externalContactUpdateSchema.parse(input);
+  const data = parseInput(externalContactUpdateSchema, input);
   await assertCanModify(data.id, session.user.id, session.user.role, session.user.rolePermissions, session.user.managerAuthorized === true);
   const updated = await roleMutation(session.user, "contacts.manage", async roleDb => roleDb.externalContact.update({
     where: { id: data.id },
@@ -196,7 +197,7 @@ export async function updateExternalContact(input: z.infer<typeof externalContac
 export async function approveExternalContact(input: z.infer<typeof externalContactReviewSchema>) {
   const session = await requireSession("contacts.review");
   if (!customOrLegacy(session.user, "contacts.review", isManager(session.user))) throw new ActionError("仅管理员可审核联系人");
-  const data = externalContactReviewSchema.parse(input);
+  const data = parseInput(externalContactReviewSchema, input);
   const current = await prisma.externalContact.findUnique({
     where: { id: data.id },
     select: { id: true, name: true, status: true, createdById: true }
@@ -235,7 +236,7 @@ export async function approveExternalContact(input: z.infer<typeof externalConta
 export async function rejectExternalContact(input: z.infer<typeof externalContactReviewSchema>) {
   const session = await requireSession("contacts.review");
   if (!customOrLegacy(session.user, "contacts.review", isManager(session.user))) throw new ActionError("仅管理员可审核联系人");
-  const data = externalContactReviewSchema.parse(input);
+  const data = parseInput(externalContactReviewSchema, input);
   const current = await prisma.externalContact.findUnique({
     where: { id: data.id },
     select: { id: true, name: true, status: true, createdById: true }

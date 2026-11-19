@@ -9,6 +9,7 @@
  * 必须跳过 CONFIRMED/ADJUSTED 期限（assertDeadlineRecalcWritable）。
  */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { auditTx } from "@/server/audit";
@@ -33,7 +34,7 @@ const confirmSchema = z.object({ id: z.string().cuid() });
 /** 确认规则生成的待定期限（起算事实、规则、结果就此固定） */
 export async function confirmDeadline(input: z.infer<typeof confirmSchema>) {
   const session = await requireSession("schedule.write");
-  const { id } = confirmSchema.parse(input);
+  const { id } = parseInput(confirmSchema, input);
   const deadline = await loadDeadlineWithGuard(id);
 
   await assertCanModifyMatter(session.user.id, session.user.role, deadline.procedure.matterId);
@@ -66,7 +67,7 @@ const adjustSchema = z.object({
 /** 人工调整期限到期日：写 ADJUSTED + 调整人/时间，全程留痕 */
 export async function adjustDeadline(input: z.infer<typeof adjustSchema>) {
   const session = await requireSession("schedule.write");
-  const data = adjustSchema.parse(input);
+  const data = parseInput(adjustSchema, input);
   const deadline = await loadDeadlineWithGuard(data.id);
 
   await assertCanModifyMatter(session.user.id, session.user.role, deadline.procedure.matterId);

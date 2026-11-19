@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -30,7 +31,7 @@ export type NoteUpdateInput = z.infer<typeof noteUpdateSchema>;
 
 export async function createNote(input: NoteCreateInput) {
   const session = await requireSession("schedule.write");
-  const data = noteCreateSchema.parse(input);
+  const data = parseInput(noteCreateSchema, input);
   await assertCanModifyMatter(session.user.id, session.user.role, data.matterId);
   await assertMatterWritable(data.matterId);
 
@@ -60,7 +61,7 @@ export async function createNote(input: NoteCreateInput) {
 
 export async function updateNote(input: NoteUpdateInput) {
   const session = await requireSession("schedule.write");
-  const data = noteUpdateSchema.parse(input);
+  const data = parseInput(noteUpdateSchema, input);
 
   const existing = await prisma.note.findUnique({ where: { id: data.id } });
   if (!existing) throw new ActionError("沟通记录不存在");

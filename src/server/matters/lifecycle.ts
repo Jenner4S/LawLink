@@ -1,5 +1,6 @@
 "use server";
 import {closureReady,closureFacts} from "@/server/archive/closure";
+import { parseInput } from "@/lib/parse-input";
 import { checkRoleMutation } from "@/lib/roles/service";
 
 import { revalidatePath } from "next/cache";
@@ -32,7 +33,7 @@ export type HoldMatterInput = z.infer<typeof holdMatterSchema>;
  */
 export async function closeMatter(input: CloseMatterInput) {
   const session = await requireSession("matters.write");
-  const data = closeMatterSchema.parse(input);
+  const data = parseInput(closeMatterSchema, input);
   await assertMatterWritable(data.id);
   await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以结案");
 
@@ -121,7 +122,7 @@ export async function reopenMatter(id: string) {
  */
 export async function holdMatter(input: HoldMatterInput) {
   const session = await requireSession("matters.write");
-  const data = holdMatterSchema.parse(input);
+  const data = parseInput(holdMatterSchema, input);
   await assertMatterWritable(data.id);
   await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以暂停案件");
 
@@ -169,7 +170,7 @@ export type CompleteMatterServiceInput = z.input<typeof completeServiceSchema>;
  */
 export async function completeMatterService(input: CompleteMatterServiceInput) {
   const session = await requireSession("matters.write");
-  const data = completeServiceSchema.parse(input);
+  const data = parseInput(completeServiceSchema, input);
 
   const matter = await prisma.matter.findUnique({ where: { id: data.id }, select: { serviceStatus: true } });
   if (!matter) throw new ActionError("案件不存在");

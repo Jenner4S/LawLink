@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { parseInput } from "@/lib/parse-input";
 import { z } from "zod";
 import { ApprovalAction, ApprovalCaseScope, MatterCategory, SealType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -41,7 +42,7 @@ export async function getPermissionAdministration() {
   return { groups, purposes, users, settings };
 }
 export async function savePermissionGroup(input: PermissionGroupInput) {
-  const data = groupSchema.parse(input);
+  const data = parseInput(groupSchema, input);
   data.rules = data.rules.map(rule => rule.action.startsWith("SEAL_")
     ? { ...rule, purposeId: rule.allSealPurposes ? null : rule.purposeId }
     : { ...rule, allSealPurposes: false, purposeId: null, sealTypes: [] });
@@ -71,7 +72,7 @@ export async function savePermissionGroup(input: PermissionGroupInput) {
 }
 const purposeSchema = z.object({ id: z.string().cuid().optional(), name: z.string().trim().min(1).max(60), description: z.string().trim().max(300), active: z.boolean(), allowedSealTypes: z.array(z.nativeEnum(SealType)).min(1).max(5) });
 export async function saveSealPurpose(input: z.infer<typeof purposeSchema>) {
-  const data = purposeSchema.parse(input);
+  const data = parseInput(purposeSchema, input);
   await approvalTransaction(async db => {
     const actorId = await admin(db);
     const { id, ...values } = data;

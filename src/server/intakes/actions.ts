@@ -1,5 +1,6 @@
 "use server";
 import {insertFinanceRowTx} from "@/server/finance/allocation-internals";
+import { parseInput } from "@/lib/parse-input";
 import { assertNoOpenIntakeUrgency, transferIntakeUrgency } from "@/server/reminders/urgent";
 import { recordMatterReviewTx } from "@/server/conflicts/matter-review";
 import { assertLiveAssignees, currentActor, intakeWorkflowReady, submitIntakeTx, assertIntakeConvertible, assertIntakeEditor } from "./workflow";
@@ -177,7 +178,7 @@ function assertConflictReviewAllowsConversion(intake: IntakeConflictGateInput) {
 
 export async function listIntakes(input: Partial<IntakeListQuery> = {}) {
   const session = await requireSession("matters.read");
-  const query = intakeListQuerySchema.parse(input);
+  const query = parseInput(intakeListQuerySchema, input);
 
   const statusWhere: Prisma.IntakeWhereInput = query.statusIn?.length
     ? { status: { in: query.statusIn } }
@@ -293,7 +294,7 @@ export async function getIntakeById(id: string) {
 
 export async function createIntake(input: IntakeCreateInput) {
   const session = await requireSession("intakes.create");
-  const data = intakeCreateSchema.parse(input);
+  const data = parseInput(intakeCreateSchema, input);
   await requireApprovalRoute({ action: "INTAKE_APPROVE", category: data.category, requesterId: session.user.id });
   assertAgencyAllowedForProcedure(data.firstAgency, data.firstProcedureType);
   await assertCauseAllowedForSelection({
@@ -513,7 +514,7 @@ export async function createIntake(input: IntakeCreateInput) {
 
 export async function declineIntake(input: DeclineIntakeInput) {
   const session = await requireSession("approval");
-  const data = declineIntakeSchema.parse(input);
+  const data = parseInput(declineIntakeSchema, input);
 
   await approvalTransaction(async tx => {
     await assertApprovalItem(session.user.id, "INTAKE_APPROVE", data.id, tx);

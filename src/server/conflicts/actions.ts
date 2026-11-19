@@ -1,5 +1,6 @@
 "use server";
 import { approvalTransaction } from "@/lib/approvals/service";
+import { parseInput } from "@/lib/parse-input";
 import { assertIntakeEditor, intakeState, intakeWorkflowReady, currentActor } from "@/server/intakes/workflow";
 
 import { revalidatePath } from "next/cache";
@@ -93,7 +94,7 @@ const runCheckSchema = z.object({
  */
 export async function runCheckAndSave(input: z.infer<typeof runCheckSchema>) {
   const session = await requireSession("intakes.create");
-  const data = runCheckSchema.parse(input);
+  const data = parseInput(runCheckSchema, input);
   if (data.intakeId) {
     await assertCanAccessIntake(session.user.id, session.user.role, data.intakeId, session.user.rolePermissions);
   }
@@ -194,7 +195,7 @@ const conclusionSchema = z.object({
 
 export async function setConflictConclusion(input: z.infer<typeof conclusionSchema>) {
   const session = await requireSession("intakes.create");
-  const data = conclusionSchema.parse(input);
+  const data = parseInput(conclusionSchema, input);
   const target = await prisma.conflictCheck.findUnique({ where: { id: data.checkId }, select: { intakeId: true } });
   if (!target) throw new ActionError("检索记录不存在");
   if (!target.intakeId) throw new ActionError("冲突预检仅供了解情况，不出检索结论；正式结论请在收案中给出");

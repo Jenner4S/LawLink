@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -59,7 +60,7 @@ function normalizeStoredParsed(rawText: string, parsedJson: Prisma.JsonValue): P
 
 export async function parseAndSaveSms(input: z.infer<typeof smsParseAndSaveSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsParseAndSaveSchema.parse(input);
+  const data = parseInput(smsParseAndSaveSchema, input);
 
   const messages = data.batch ? splitSmsBatch(data.rawText) : [data.rawText.trim()];
   if (messages.length === 0) throw new ActionError("没有可解析的内容");
@@ -180,7 +181,7 @@ export async function parseAndSaveSms(input: z.infer<typeof smsParseAndSaveSchem
 
 export async function extractSmsAttachments(input: z.infer<typeof smsIdSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsIdSchema.parse(input);
+  const data = parseInput(smsIdSchema, input);
 
   const sms = await prisma.smsMessage.findUnique({
     where: { id: data.id },
@@ -221,7 +222,7 @@ export async function extractSmsAttachments(input: z.infer<typeof smsIdSchema>) 
 
 export async function listSmsMessages(input?: z.input<typeof smsListFilterSchema>) {
   const session = await requireSession("matters.write");
-  const filter = smsListFilterSchema.parse(input ?? {});
+  const filter = parseInput(smsListFilterSchema, input ?? {});
 
   const where: Prisma.SmsMessageWhereInput = {};
   if (filter.scope === "mine") where.receivedById = session.user.id;
@@ -295,7 +296,7 @@ export async function getSmsMessage(id: string) {
 
 export async function matchSmsToMatter(input: z.infer<typeof smsMatchToMatterSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsMatchToMatterSchema.parse(input);
+  const data = parseInput(smsMatchToMatterSchema, input);
   const sms = await prisma.smsMessage.findUnique({ where: { id: data.smsId }, select: { receivedById: true, matchedMatterId: true } });
   if (!sms) throw new ActionError("短信不存在");
   if (sms.receivedById !== session.user.id) {
@@ -409,7 +410,7 @@ export async function uploadSmsInboundFile(formData: FormData) {
 
 export async function generateHearingFromSms(input: z.infer<typeof smsGenerateHearingSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsGenerateHearingSchema.parse(input);
+  const data = parseInput(smsGenerateHearingSchema, input);
   // 幂等：同一条短信只允许生成一次开庭，双击/重放直接返回既有产物，避免重复实体与重复责任行
   const existing = await prisma.smsMessage.findUnique({ where: { id: data.smsId }, select: { generatedHearingId: true } });
   if (existing?.generatedHearingId) throw new ActionError("该短信已生成过开庭，请勿重复生成");
@@ -462,7 +463,7 @@ export async function generateHearingFromSms(input: z.infer<typeof smsGenerateHe
 
 export async function generateDeadlineFromSms(input: z.infer<typeof smsGenerateDeadlineSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsGenerateDeadlineSchema.parse(input);
+  const data = parseInput(smsGenerateDeadlineSchema, input);
   // 幂等：同一条短信只允许生成一次期限
   const existingDeadline = await prisma.smsMessage.findUnique({ where: { id: data.smsId }, select: { generatedDeadlineId: true } });
   if (existingDeadline?.generatedDeadlineId) throw new ActionError("该短信已生成过期限，请勿重复生成");
@@ -515,7 +516,7 @@ export async function generateDeadlineFromSms(input: z.infer<typeof smsGenerateD
 
 export async function markSmsProcessed(input: z.infer<typeof smsIdSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsIdSchema.parse(input);
+  const data = parseInput(smsIdSchema, input);
 
   // 对象级校验（与 deleteSms 同口径）：仅收件人可标记，防止跨收件箱篡改处理状态
   const sms = await prisma.smsMessage.findUnique({
@@ -552,7 +553,7 @@ export async function markSmsProcessed(input: z.infer<typeof smsIdSchema>) {
 
 export async function deleteSms(input: z.infer<typeof smsIdSchema>) {
   const session = await requireSession("matters.write");
-  const data = smsIdSchema.parse(input);
+  const data = parseInput(smsIdSchema, input);
 
   const sms = await prisma.smsMessage.findUnique({
     where: { id: data.id },
@@ -592,7 +593,7 @@ export async function backfillCaseNumberFromSms(
   input: z.infer<typeof smsBackfillCaseNumberSchema>
 ) {
   const session = await requireSession("matters.write");
-  const data = smsBackfillCaseNumberSchema.parse(input);
+  const data = parseInput(smsBackfillCaseNumberSchema, input);
 
   const sms = await prisma.smsMessage.findUnique({
     where: { id: data.smsId },

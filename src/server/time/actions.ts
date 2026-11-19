@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 
 import { ActionError } from "@/lib/action-error";
 import { assertMatterWritable } from "@/lib/archive/guard";
@@ -98,7 +99,7 @@ export type MatterTimeBoard = {
 /** 登记一条工时 */
 export async function addTimeEntry(input: TimeEntryCreateInput): Promise<TimeEntryMutationResult> {
   const session = await requireSession("matters.write");
-  const data = timeEntryCreateSchema.parse(input);
+  const data = parseInput(timeEntryCreateSchema, input);
 
   await assertCanHandleMatter(session.user, data.matterId);
   // 归档只读门禁。allowPrincipal 与上面的 assertCanHandleMatter 同口径（合伙人可办全所案件）：

@@ -1,5 +1,6 @@
 "use server";
 import {assertIntakeDocumentChange,intakeWorkflowReady} from "@/server/intakes/workflow";
+import { parseInput } from "@/lib/parse-input";
 import type {RoleUser} from "@/lib/roles/catalog";
 import { roleMutation } from "@/lib/roles/service";
 
@@ -79,7 +80,7 @@ export async function uploadDocument(formData: FormData) {
   if (!matterId && !intakeId) throw new ActionError("matterId 或 intakeId 至少需要一个");
 
   if (typeof name !== "string" || !name.trim()) throw new ActionError("材料名称必填");
-  const parsedCategory = documentCategorySchema.parse(category || "OTHER");
+  const parsedCategory = parseInput(documentCategorySchema, category || "OTHER");
   const tags =
     typeof tagsRaw === "string" && tagsRaw
       ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
@@ -332,7 +333,7 @@ const docListQuerySchema = z.object({
 
 export async function listAllDocuments(input: Partial<z.infer<typeof docListQuerySchema>> = {}) {
   const session = await requireSession("documents.read");
-  const query = docListQuerySchema.parse(input);
+  const query = parseInput(docListQuerySchema, input);
 
   const visFilter = session.user.role === "FINANCE" ? matterAssociationFilter(session.user.id) : matterVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions);
   const where: Prisma.DocumentWhereInput = {

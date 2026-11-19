@@ -4,6 +4,7 @@
  * 期限引擎据此顺延届满日（src/lib/calendar/holidays.ts）。
  */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { isSystemAdmin } from "@/lib/auth/system-role";
@@ -43,7 +44,7 @@ export async function listHolidays(year?: number) {
 
 export async function saveHolidayBatch(input: z.input<typeof batchSchema>) {
   const session = await requireAdmin();
-  const data = batchSchema.parse(input);
+  const data = parseInput(batchSchema, input);
   let upserted = 0;
   await prisma.$transaction(async (tx) => {
     for (const e of data.entries) {

@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -37,7 +38,7 @@ export async function listFoldersByMatter(matterId: string) {
 
 export async function createFolder(input: z.infer<typeof folderCreateSchema>) {
   const session = await requireSession("documents.write");
-  const data = folderCreateSchema.parse(input);
+  const data = parseInput(folderCreateSchema, input);
   await requireFolderEditor(data.matterId, session);
   await assertMatterWritable(data.matterId);
 
@@ -80,7 +81,7 @@ export async function createFolder(input: z.infer<typeof folderCreateSchema>) {
 
 export async function renameFolder(input: z.infer<typeof folderRenameSchema>) {
   const session = await requireSession("documents.write");
-  const data = folderRenameSchema.parse(input);
+  const data = parseInput(folderRenameSchema, input);
 
   const folder = await prisma.documentFolder.findUnique({
     where: { id: data.id },
@@ -116,7 +117,7 @@ export async function renameFolder(input: z.infer<typeof folderRenameSchema>) {
 
 export async function deleteFolder(input: z.infer<typeof folderDeleteSchema>) {
   const session = await requireSession("documents.write");
-  const data = folderDeleteSchema.parse(input);
+  const data = parseInput(folderDeleteSchema, input);
 
   const folder = await prisma.documentFolder.findUnique({
     where: { id: data.id },
@@ -151,7 +152,7 @@ export async function deleteFolder(input: z.infer<typeof folderDeleteSchema>) {
 
 export async function reorderFolders(input: z.infer<typeof folderReorderSchema>) {
   const session = await requireSession("documents.write");
-  const data = folderReorderSchema.parse(input);
+  const data = parseInput(folderReorderSchema, input);
   await requireFolderEditor(data.matterId, session);
   await assertMatterWritable(data.matterId);
 
@@ -170,7 +171,7 @@ export async function reorderFolders(input: z.infer<typeof folderReorderSchema>)
 
 export async function moveDocumentToFolder(input: z.infer<typeof moveDocumentToFolderSchema>) {
   const session = await requireSession("documents.write");
-  const data = moveDocumentToFolderSchema.parse(input);
+  const data = parseInput(moveDocumentToFolderSchema, input);
 
   const doc = await prisma.document.findUnique({
     where: { id: data.documentId },

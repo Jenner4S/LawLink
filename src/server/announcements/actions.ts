@@ -1,5 +1,6 @@
 "use server";
 import { roleMutation } from "@/lib/roles/service";
+import { parseInput } from "@/lib/parse-input";
 
 /**
  * v0.27: 服务中心 - 律所公告
@@ -67,7 +68,7 @@ export async function listActiveBanners() {
 export async function createAnnouncement(input: z.infer<typeof announcementCreateSchema>) {
   const session = await requireSession("announcements.manage");
   assertCanManage(session.user);
-  const data = announcementCreateSchema.parse(input);
+  const data = parseInput(announcementCreateSchema, input);
 
   const created = await roleMutation(session.user, "announcements.manage", async roleDb => roleDb.announcement.create({
     data: {
@@ -95,7 +96,7 @@ export async function createAnnouncement(input: z.infer<typeof announcementCreat
 export async function updateAnnouncement(input: z.infer<typeof announcementUpdateSchema>) {
   const session = await requireSession("announcements.manage");
   assertCanManage(session.user);
-  const data = announcementUpdateSchema.parse(input);
+  const data = parseInput(announcementUpdateSchema, input);
 
   const updated = await roleMutation(session.user, "announcements.manage", async roleDb => roleDb.announcement.update({
     where: { id: data.id },

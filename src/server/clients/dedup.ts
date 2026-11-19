@@ -10,6 +10,7 @@
  *   中的身份快照；被合并档案软删并在审计中保留映射与依据。
  */
 import { prisma } from "@/lib/prisma";
+import { parseInput } from "@/lib/parse-input";
 import { requireSession } from "@/lib/auth/session";
 import { isManager } from "@/lib/permissions";
 import { auditTx } from "@/server/audit";
@@ -89,7 +90,7 @@ export async function mergeClients(input: z.infer<typeof mergeSchema>) {
   if (session.user.role !== "CUSTOM" && !isManager(session.user.role)) {
     throw new ActionError("仅管理员可合并客户档案");
   }
-  const data = mergeSchema.parse(input);
+  const data = parseInput(mergeSchema, input);
 
   const result = await prisma.$transaction(async tx => {
     const [keep, merge] = await Promise.all([

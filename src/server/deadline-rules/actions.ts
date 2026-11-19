@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { assertCanAccessMatter } from "@/lib/permissions";
@@ -14,7 +15,7 @@ const procedureIdSchema = z.object({ procedureId: z.string().cuid() });
  */
 export async function listDeadlineRulesForProcedure(input: { procedureId: string }) {
   const session = await requireSession("schedule.read");
-  const { procedureId } = procedureIdSchema.parse(input);
+  const { procedureId } = parseInput(procedureIdSchema, input);
 
   const procedure = await prisma.matterProcedure.findUnique({
     where: { id: procedureId },

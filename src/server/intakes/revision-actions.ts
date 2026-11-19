@@ -1,5 +1,6 @@
 'use server';
 import {z} from 'zod';
+import { parseInput } from "@/lib/parse-input";
 import {hasCustomPermission} from '@/lib/roles/catalog';
 import {decryptIdNumber} from '@/lib/clients/id-number-crypto';
 import {readWorkRows} from '@/server/reminders/responsibility';
@@ -33,7 +34,7 @@ export async function getIntakeEditForm(id:string){
  });
 }
 export async function saveIntakeRevision(id:string,revision:number,input:IntakeCreateInput){
- const session=await requireSession('matters.write'),data=intakeCreateSchema.parse(input);z.number().int().nonnegative().parse(revision);
+ const session=await requireSession('matters.write'),data=parseInput(intakeCreateSchema, input);z.number().int().nonnegative().parse(revision);
  assertAgencyAllowedForProcedure(data.firstAgency,data.firstProcedureType);
  await assertCauseAllowedForSelection({causeId:data.causeId,category:data.category,procedureType:data.firstProcedureType});
  await approvalTransaction(async db=>{

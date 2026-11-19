@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
+import { parseInput } from "@/lib/parse-input";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireSystemAdmin } from "@/lib/auth/session";
@@ -34,7 +35,7 @@ export async function listReadableTeams() {
 
 export async function saveTeam(input: TeamInput) {
   const session = await requireSystemAdmin();
-  const data = teamInputSchema.parse(input);
+  const data = parseInput(teamInputSchema, input);
   const memberMap = new Map(data.members.map((m) => [m.userId, m.canViewAllMatters]));
   memberMap.set(data.leaderId, true);
   try {

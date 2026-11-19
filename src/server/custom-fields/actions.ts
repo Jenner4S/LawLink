@@ -6,6 +6,7 @@
  * - 字段值存于实体的 customValues JSON（本期落地 MATTER）
  */
 import { randomUUID } from "crypto";
+import { parseInput } from "@/lib/parse-input";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { CustomFieldEntity } from "@prisma/client";
@@ -46,7 +47,7 @@ export async function listCustomFieldDefs(
 
 export async function createCustomFieldDef(input: z.input<typeof defCreateSchema>) {
   const session = await requireSystemAdmin();
-  const data = defCreateSchema.parse(input);
+  const data = parseInput(defCreateSchema, input);
   if (data.fieldType === "SELECT" && data.options.length === 0) {
     throw new ActionError("下拉类型至少需要一个选项值");
   }
@@ -79,7 +80,7 @@ export async function createCustomFieldDef(input: z.input<typeof defCreateSchema
 
 export async function updateCustomFieldDef(input: z.input<typeof defUpdateSchema>) {
   await requireSystemAdmin();
-  const { id, ...rest } = defUpdateSchema.parse(input);
+  const { id, ...rest } = parseInput(defUpdateSchema, input);
   if (rest.fieldType === "SELECT" && rest.options && rest.options.length === 0) {
     throw new ActionError("下拉类型至少需要一个选项值");
   }

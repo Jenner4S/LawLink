@@ -12,6 +12,7 @@
  * UI 入口待 A 线接入（报告 §6.3 第二阶段做报告内嵌引用）。
  */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { auditTx } from "@/server/audit";
@@ -37,7 +38,7 @@ export type CreateEvidenceItemInput = z.input<typeof createSchema>;
 /** 新建证据项。来源文档必须未删除且归属同一案件（收案阶段材料不参与挂链）。 */
 export async function createEvidenceItem(input: CreateEvidenceItemInput) {
   const session = await requireSession("matters.write");
-  const data = createSchema.parse(input);
+  const data = parseInput(createSchema, input);
 
   // 证据项属结构性案件写入（P1-1）：合伙人全所口径，其余岗位（含管理权）须经办。
   await assertCanHandleMatter(session.user, data.matterId);

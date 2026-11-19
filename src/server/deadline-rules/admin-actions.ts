@@ -9,6 +9,7 @@
  * 期限不回溯，重算守卫见 @/server/deadlines/confirm。
  */
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSystemAdmin } from "@/lib/auth/session";
 import { auditTx } from "@/server/audit";
@@ -46,7 +47,7 @@ export async function listDeadlineRulesAdmin() {
 
 export async function createDeadlineRule(input: DeadlineRuleInput) {
   const session = await requireSystemAdmin();
-  const data = ruleInputSchema.parse(input);
+  const data = parseInput(ruleInputSchema, input);
   const code = `CUSTOM-${Date.now().toString(36).toUpperCase()}`;
 
   const created = await prisma.$transaction(async tx => {
@@ -84,7 +85,7 @@ export async function createDeadlineRule(input: DeadlineRuleInput) {
 export async function updateDeadlineRule(input: DeadlineRuleInput & { id: string }) {
   const session = await requireSystemAdmin();
   const { id, ...rest } = input;
-  const data = ruleInputSchema.parse(rest);
+  const data = parseInput(ruleInputSchema, rest);
 
   const existing = await prisma.deadlineRule.findUnique({ where: { id }, select: { isBuiltIn: true, code: true } });
   if (!existing) throw new ActionError("规则不存在");

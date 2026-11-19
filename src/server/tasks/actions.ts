@@ -1,5 +1,6 @@
 "use server";
 import {approvalTransaction} from "@/lib/approvals/service";
+import { parseInput } from "@/lib/parse-input";
 import {changeWorkTx,readWorkRows,responsibilityReady} from "@/server/reminders/responsibility";
 import { roleMutation } from "@/lib/roles/service";
 
@@ -43,7 +44,7 @@ async function assertTaskStage(matterId: string, stageId?: string) {
 
 export async function createTask(input: TaskCreateInput) {
   const session = await requireSession("schedule.write");
-  const data = taskCreateSchema.parse(input);
+  const data = parseInput(taskCreateSchema, input);
   await assertCanAssociateMatter(session.user.id, data.matterId);
   await assertMatterWritable(data.matterId);
   await assertTaskStage(data.matterId, data.stageId);
@@ -97,7 +98,7 @@ export async function createTask(input: TaskCreateInput) {
 
 export async function updateTask(input: TaskUpdateInput) {
   const session = await requireSession("schedule.write");
-  const data = taskUpdateSchema.parse(input);
+  const data = parseInput(taskUpdateSchema, input);
   const current = await prisma.task.findUnique({
     where: { id: data.id },
     select: { matterId: true, assigneeId: true }

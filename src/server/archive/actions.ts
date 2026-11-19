@@ -1,5 +1,6 @@
 "use server";
 import {assertClosureReady,closureReady} from "./closure";
+import { parseInput } from "@/lib/parse-input";
 import {buildArchiveManifest} from "./export";
 import {scopeFor} from "@/lib/roles/catalog";
 import { roleMutation, checkRoleMutation, resolveRoleUser } from "@/lib/roles/service";
@@ -47,7 +48,7 @@ import { ActionError } from "@/lib/action-error";
  */
 export async function archiveMatter(input: ArchiveSubmitInput) {
   const session = await requireSession("archive.submit");
-  const data = archiveSubmitSchema.parse(input);
+  const data = parseInput(archiveSubmitSchema, input);
 
   const initial=await prisma.matter.findUniqueOrThrow({where:{id:data.matterId},select:{status:true}});
   const supplement=initial.status==='ARCHIVED';
@@ -313,7 +314,7 @@ export async function archiveMatter(input: ArchiveSubmitInput) {
  */
 export async function approveArchiveRecord(input: ArchiveApproveInput) {
   const session = await requireSession("approval");
-  const data = archiveApproveSchema.parse(input);
+  const data = parseInput(archiveApproveSchema, input);
   await assertApprovalItem(session.user.id, "ARCHIVE_APPROVE", data.archiveId);
 
   const record = await prisma.archiveRecord.findUnique({
