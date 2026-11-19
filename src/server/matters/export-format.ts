@@ -185,9 +185,16 @@ export function resolveDateBoundary(input: string | undefined, endOfDay: boolean
   if (!match) return undefined;
   // 2026-09-20 第五轮审计时区修复：导出过滤边界按上海日界（此前服务器本地构造，
   // UTC 容器用户选 2026-09-20 实际筛上海 09-20 08:00 起，漏当日 0-8 点）
-  return endOfDay
-    ? new Date(`${input}T23:59:59.999+08:00`)
-    : new Date(`${input}T00:00:00+08:00`);
+  const at = endOfDay ? `${input}T23:59:59.999+08:00` : `${input}T00:00:00+08:00`;
+  const parsed = new Date(at);
+  // 2026-11-20：格式合规但**日期不存在**的输入会被 V8 静默滚动，必须回验。
+  // 实测 `2026-02-30` → 上海 3 月 2 日、`2026-02-29`（非闰年）→ 3 月 1 日、
+  // `2026-04-31` → 5 月 1 日。界面用的是 <input type="date">，浏览器会拦住，
+  // 但直接调接口（脚本、导入、桌面端）不经过那一层 —— 于是用户以为筛的是
+  // 2 月 30 日，实际拿到别的日期区间，且没有任何提示。
+  // 回验方式：把解析结果按上海日取回 key，必须与输入逐字相同。
+  if (Number.isNaN(parsed.getTime()) || shDayKey(parsed) !== input) return undefined;
+  return parsed;
 }
 
 export function formatDate(date: Date | null | undefined) {
