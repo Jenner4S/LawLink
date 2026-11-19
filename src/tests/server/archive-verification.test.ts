@@ -614,7 +614,7 @@ describe("verifyArchiveSnapshotDocuments", () => {
     expect(err.message).toBe("归档材料快照结构不完整，请退回补正");
   });
 
-  it("加密材料密文被篡改 → 拒绝（GCM 认证失败；当前抛原生加密错误，非友好 ActionError，见报告 D3）", async () => {
+  it("加密材料密文被篡改 → 抛 ActionError 并给出中文可行动文案（2026-11-19 已修 D3）", async () => {
     const user = await seedUser();
     const matter = await seedMatter(user.id);
     const plain = Buffer.from("加密的起诉状正文");
@@ -629,8 +629,12 @@ describe("verifyArchiveSnapshotDocuments", () => {
     await putFile(doc.path, ciphertext);
 
     const err = await captureError(() => verifyArchiveSnapshotDocuments(snapshot, matter.id));
-    expect(err.name).not.toBe("ActionError");
-    expect(String(err.message)).toMatch(/bad decrypt|authenticate|Unsupported state/i);
+    // 修复前：抛原生 Error（GCM 认证失败），Flight 脱敏后审批人只看到
+    // "Minified React error #441"。现在统一转 ActionError，文案指出损坏/密钥更换。
+    expect(err.name).toBe("ActionError");
+    expect(String(err.message)).toMatch(/解密失败.*内容可能已损坏或加密密钥已更换/);
+    // digest 通道：生产脱敏下客户端能看到的正是这条
+    expect((err as { digest?: string }).digest).toMatch(/^ACTION_ERROR:/);
   });
 });
 
@@ -709,8 +713,10 @@ describe("verifyArchivePolicySource", () => {
     rmSync(path.join(storageRoot, policy.path), { force: true });
 
     const err = await captureError(() => verifyArchivePolicySource(snapshot));
-    expect(err.name).not.toBe("ActionError");
-    expect(String(err.message)).toMatch(/ENOENT/);
+    // 说明：verifyArchivePolicySource 读制度文件走的是 policy 模块自己的读取路径，
+    // 本轮未纳入统一转义（见报告「未覆盖」），故此处仍是原生 Error。
+    // 若后续把该路径也接入 readDecryptedBlob，本断言应改为 ActionError。
+    expect(String(err.message)).toMatch(/ENOENT|读取失败/);
   });
 });
 
@@ -870,13 +876,13 @@ describe("readArchiveDocument", () => {
 
     const errIv = await captureError(() => readArchiveDocument(rowIv as never));
     expect(errIv.name).toBe("ActionError");
-    expect(errIv.message).toBe("材料“缺IV.pdf”的加密元数据损坏");
+    expect(errIv.message).toBe("材料“缺IV.pdf”的加密元数据损坏，请联系管理员");
 
     const errTag = await captureError(() => readArchiveDocument(rowTag as never));
-    expect(errTag.message).toBe("材料“缺Tag.pdf”的加密元数据损坏");
+    expect(errTag.message).toBe("材料“缺Tag.pdf”的加密元数据损坏，请联系管理员");
   });
 
-  it("密文被篡改 → 拒绝（GCM 认证失败，不会返回错误内容）", async () => {
+  it("密文被篡改 → 抛 ActionError，且绝不返回错误内容（2026-11-19 已统一转义）", async () => {
     const user = await seedUser();
     const matter = await seedMatter(user.id);
     const doc = await seedDocument({ matterId: matter.id, uploadedById: user.id, name: "被篡改.pdf", content: "原件内容", encrypted: true });
@@ -885,8 +891,8 @@ describe("readArchiveDocument", () => {
     await putFile(doc.path, ciphertext);
 
     const err = await captureError(() => readArchiveDocument(doc as never));
-    expect(err.name).not.toBe("ActionError");
-    expect(String(err.message)).toMatch(/bad decrypt|authenticate|Unsupported state/i);
+    expect(err.name).toBe("ActionError");
+    expect(String(err.message)).toMatch(/解密失败.*内容可能已损坏或加密密钥已更换/);
   });
 
   it("不承载任何权限判断：孤立材料（无案件归属）与跨案路径同样可读，可见性只能由调用方保证", async () => {
@@ -914,13 +920,14 @@ describe("readArchiveDocument", () => {
     expect(readArchiveDocument.length).toBe(1);
   });
 
-  it("存储文件缺失 → 拒绝（ENOENT，调用方需自行兜底）", async () => {
+  it("存储文件缺失 → 抛 ActionError 并提示文件可能已被移动或删除（2026-11-19 已修 D3）", async () => {
     const user = await seedUser();
     const matter = await seedMatter(user.id);
     const doc = await seedDocument({ matterId: matter.id, uploadedById: user.id, name: "丢失材料.pdf", content: "内容" });
     rmSync(path.join(storageRoot, doc.path), { force: true });
 
     const err = await captureError(() => readArchiveDocument(doc as never));
-    expect(String(err.message)).toMatch(/ENOENT/);
+    expect(err.name).toBe("ActionError");
+    expect(String(err.message)).toMatch(/读取失败.*文件可能已被移动或删除/);
   });
 });

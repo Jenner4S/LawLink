@@ -12,6 +12,7 @@ import { storage } from "@/lib/storage";
 import { assertMatterWritable } from "@/lib/archive/guard";
 import { assertCanLeadMatter } from "@/lib/permissions";
 import { decryptBuffer, encryptBuffer, sha256 } from "@/lib/storage/crypto";
+import { readDecryptedBlob } from "@/lib/storage/read-decrypted";
 import { buildContext, renderDocxBuffer, detectMissing, extractDocxVariables } from "@/lib/template-engine";
 import { suggestFolderByTemplateCategory } from "@/lib/default-folders";
 import {
@@ -128,10 +129,17 @@ export async function renderTemplate(input: z.infer<typeof templateRenderSchema>
   });
   if (!matter) throw new ActionError("案件不存在");
 
-  const rawCt = await storage.readFile(tmpl.docxBlob.path);
-  const templateBuffer = tmpl.docxBlob.encrypted
-    ? decryptBuffer(rawCt, tmpl.docxBlob.iv ?? "", tmpl.docxBlob.authTag ?? "")
-    : rawCt;
+  // 2026-11-19：统一安全读取（文件缺失/解密失败转 ActionError，
+  // 否则模板套打失败时用户只看到 Minified React error）
+  const rawCt = await readDecryptedBlob((path) => storage.readFile(path), {
+    path: tmpl.docxBlob.path,
+    name: tmpl.name ?? "文书模板",
+    // 模板本体与归档材料同构：需要 encrypted/iv/authTag 才能解密
+    encrypted: tmpl.docxBlob.encrypted,
+    iv: tmpl.docxBlob.iv ?? null,
+    authTag: tmpl.docxBlob.authTag ?? null
+  });
+  const templateBuffer = rawCt;
 
   // 上下文（应用 overrides 行内补全）
   const context = await buildContext({

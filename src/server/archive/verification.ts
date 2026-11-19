@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
-import { decryptBuffer, sha256 } from "@/lib/storage/crypto";
+import { sha256 } from "@/lib/storage/crypto";
+import { readDecryptedBlob } from "@/lib/storage/read-decrypted";
 import {
   archiveSnapshotDocumentIds,
   parseArchiveSnapshot,
@@ -29,10 +30,16 @@ type StoredArchiveDocument = {
 };
 
 export async function readArchiveDocument(doc: StoredArchiveDocument): Promise<Buffer> {
-  const stored = await storage.readFile(doc.path);
-  if (!doc.encrypted) return stored;
-  if (!doc.iv || !doc.authTag) throw new ActionError(`材料“${doc.name}”的加密元数据损坏`);
-  return decryptBuffer(stored, doc.iv, doc.authTag);
+  // 2026-11-19：改走统一的安全读取。此前文件缺失（ENOENT）与解密失败
+  //（authTag 不匹配 / 密钥轮换）都会抛原生 Error，Flight 脱敏后审批人只看到
+  //「Minified React error #441」，不知道是「请退回补正」还是系统故障。
+  return readDecryptedBlob((path) => storage.readFile(path), {
+    path: doc.path,
+    name: doc.name,
+    encrypted: doc.encrypted,
+    iv: doc.iv,
+    authTag: doc.authTag
+  });
 }
 
 export async function createArchiveDocumentSnapshots(input: {
