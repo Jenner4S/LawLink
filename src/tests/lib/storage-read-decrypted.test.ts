@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest"
 
 import { ActionError } from "@/lib/action-error";
 import { readDecryptedBlob } from "@/lib/storage/read-decrypted";

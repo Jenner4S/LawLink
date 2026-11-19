@@ -3,6 +3,7 @@
 import type { IntakeStatus, ConflictSeverity } from "@prisma/client";
 import { matterCategoryLabel, matterCategoryShort, intakeStatusLabel } from "@/lib/enums";
 import { formatDate } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 export type IntakeRow = {
   id: string;
@@ -29,6 +30,7 @@ export function IntakesTable({
   items: IntakeRow[];
   kind?: "intake" | "revision";
 }) {
+  const router = useRouter();
   if (items.length === 0) {
     return (
       <div className="empty">
@@ -70,7 +72,7 @@ export function IntakesTable({
             const pendingConclusion = it.conflictChecks.some((c) => c.conclusion === "PENDING");
             const spine = hasBlocking ? "red" : "amber";
             return (
-              <tr key={it.id} data-spine={spine} className="is-link" onClick={() => { window.location.href = `/intakes/${it.id}`; }}>
+              <tr key={it.id} data-spine={spine} className="is-link" onClick={() => router.push(`/intakes/${it.id}`)}>
                 <td style={{ paddingLeft: 20 }}>
                   <a href={`/intakes/${it.id}`} className="block min-w-0 no-underline" onClick={(e) => e.stopPropagation()}>
                     <span className="block truncate text-[13px] font-semibold leading-5 text-foreground">{it.title}</span>

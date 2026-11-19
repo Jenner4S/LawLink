@@ -46,7 +46,6 @@ import { createInvoiceRequest, createFeeEntry, confirmFeeEntry, rejectFeeEntry, 
 import { commissionPlanSetSchema } from "@/server/finance/schemas";
 import { allocateCommissions } from "@/server/finance/commissions";
 import { clientVisibilityFilter, intakeVisibilityFilter, matterFinanceVisibilityFilter, matterReadVisibilityFilter, matterVisibilityFilter } from "@/lib/permissions";
-import { ethicalWallExclusion } from "@/lib/permissions/ethical-wall";
 
 /** 固定判定时刻：隔离墙条件含时间比较，共用同一时刻才能做深度相等断言 */
 const WALL_NOW = new Date("2026-11-19T00:00:00.000Z");

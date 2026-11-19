@@ -2,12 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
 import { sha256 } from "@/lib/storage/crypto";
 import { readDecryptedBlob } from "@/lib/storage/read-decrypted";
-import {
-  archiveSnapshotDocumentIds,
-  parseArchiveSnapshot,
-  type ArchiveDocumentSnapshot,
-  type ArchiveReviewSnapshot
-} from "@/lib/archive/snapshot";
+import { parseArchiveSnapshot, type ArchiveDocumentSnapshot, type ArchiveReviewSnapshot } from "@/lib/archive/snapshot"
 import { ActionError } from "@/lib/action-error";
 
 type StoredArchiveDocument = {

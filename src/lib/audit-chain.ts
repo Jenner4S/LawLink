@@ -81,6 +81,16 @@ export interface ChainVerifyResult {
   forks: { previousHash: string; ids: string[]; actions: string[] }[] | null;
   /** 未被任何路径覆盖到的带摘要记录数；>0 说明链有分支没走完 */
   unchecked: number;
+  /**
+   * 不可达记录的具体位置（2026-11-20 补）。
+   *
+   * 此前只有一个 `unreachable` 局部变量算出这批记录，注释写着「逐条报出」，
+   * 但**从未被使用**（eslint 报 unused）——结果是审计页只显示「N 条未校验」，
+   * 却不说是哪几条，运维拿到数字也无法定位。
+   * 现在把 id / action 一并返回，与 unchecked 的减法口径互补：
+   * `unchecked` 保证「缺口总量不会被藏起来」，这里回答「缺口在哪」。
+   */
+  unreachable: { id: string; action: string; previousHash: string | null }[] | null;
 }
 
 type AuditRow = {
@@ -234,6 +244,9 @@ export async function verifyAuditChain(db: {
     skippedLegacy,
     brokenAt: firstBroken,
     forks: forks.length ? forks : null,
-    unchecked: allHashed.length - checked
+    unchecked: allHashed.length - checked,
+    unreachable: unreachable.length
+      ? unreachable.map((r) => ({ id: r.id, action: r.action, previousHash: r.previousHash }))
+      : null
   };
 }

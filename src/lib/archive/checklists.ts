@@ -82,12 +82,6 @@ const LEGAL_COUNSEL: ArchiveChecklist = {
   ]
 };
 
-const CHECKLISTS: Record<ArchiveChecklistKind, ArchiveChecklist> = {
-  LITIGATION,
-  NON_LITIGATION,
-  LEGAL_COUNSEL
-};
-
 export function checklistForCategory(category: MatterCategory): ArchiveChecklist {
   switch (category) {
     case "CIVIL_COMMERCIAL":
@@ -107,8 +101,9 @@ export function checklistForCategory(category: MatterCategory): ArchiveChecklist
 }
 
 // getChecklist 已于 2026-11-20 删除：零调用。
-// 清单查询实际走 checklistForCategory(category)（在 actions.ts 使用），
-// 它内部直接取 CHECKLISTS[kind]，不需要这个中间层。
+// 清单查询实际走 checklistForCategory(category)，它用 switch 直接返回常量。
+// （2026-11-20 二次核对：原注释说「内部直接取 CHECKLISTS[kind]」与实现不符，
+//  那个中间表本身就没人用，eslint 报了 unused，已一并删除。）
 
 /**
  * 评估勾选状态：返回缺项 + 是否阻断警告

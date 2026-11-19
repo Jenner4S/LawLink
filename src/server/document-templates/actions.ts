@@ -11,7 +11,7 @@ import { shDayKey } from "@/lib/ui/sh-time";
 import { storage } from "@/lib/storage";
 import { assertMatterWritable } from "@/lib/archive/guard";
 import { assertCanLeadMatter } from "@/lib/permissions";
-import { decryptBuffer, encryptBuffer, sha256 } from "@/lib/storage/crypto";
+import { encryptBuffer, sha256 } from "@/lib/storage/crypto"
 import { readDecryptedBlob } from "@/lib/storage/read-decrypted";
 import { buildContext, renderDocxBuffer, detectMissing, extractDocxVariables } from "@/lib/template-engine";
 import { suggestFolderByTemplateCategory } from "@/lib/default-folders";
