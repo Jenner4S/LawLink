@@ -23,7 +23,10 @@ cd "$(dirname "$0")/.."
 SKIP_TESTS=0
 [ "${1:-}" = "--skip-tests" ] && SKIP_TESTS=1
 
-BUILD_ID="b$(date +%Y%m%d%H%M%S)"
+# 2026-11-21：允许外部覆盖，否则第 5 步的三项验证【不可测】。
+# 原来无条件生成，导致想验证「BUILD_ID=dev 时能不能拦住」根本做不到 ——
+# 传进去的 dev 会被这里覆盖掉。可测性不是装饰：不可测的检查等于没检查。
+BUILD_ID="${BUILD_ID:-b$(date +%Y%m%d%H%M%S)}"
 export BUILD_ID
 
 echo "==> BUILD_ID = ${BUILD_ID}"
@@ -89,10 +92,18 @@ docker compose --profile full build app
 docker compose --profile full up -d --force-recreate --no-deps app
 
 echo "    等待健康..."
+HEALTHY=0
 for i in $(seq 1 30); do
-  if curl -s --max-time 3 http://localhost:3000/api/version >/dev/null 2>&1; then break; fi
+  if curl -s --max-time 3 http://localhost:3000/api/version >/dev/null 2>&1; then HEALTHY=1; break; fi
   sleep 2
 done
+# 2026-11-21：原来超时后静默继续，问题会在第 5 步以「BUILD_ID 不匹配」的面貌出现，
+# 让人以为是构建标识的问题而不是「服务根本没起来」。这里显式报出来。
+if [ "$HEALTHY" -eq 0 ]; then
+  echo "    ❌ 等待 60 秒后 /api/version 仍无响应，服务未起来" >&2
+  echo "       排查：docker logs lawlink-app --tail 50" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------
 echo
@@ -105,6 +116,9 @@ echo "    镜像: ${PREV_IMAGE:-（无）} → ${NEW_IMAGE}"
 echo "    BUILD_ID: 期望 ${BUILD_ID}，实际 ${ACTUAL_BUILD_ID}"
 
 FAIL=0
+# 2026-11-21：先判「有没有读到值」。否则服务不可达时 ACTUAL_BUILD_ID 为空，
+# 会被下面的「不匹配」分支拦住，但提示是「BUILD_ID 不匹配」—— 误导排查方向。
+[ -z "$ACTUAL_BUILD_ID" ] && { echo "    ❌ 读不到 /api/version 的 buildId，服务可能不可达" >&2; FAIL=1; }
 [ "$NEW_IMAGE" = "${PREV_IMAGE:-}" ] && { echo "    ❌ 镜像 ID 未变化，说明没有真正重建" >&2; FAIL=1; }
 [ "$ACTUAL_BUILD_ID" = "dev" ] && { echo "    ❌ BUILD_ID 是 dev，进程未拿到构建标识" >&2; FAIL=1; }
 [ "$ACTUAL_BUILD_ID" != "$BUILD_ID" ] && { echo "    ❌ BUILD_ID 不匹配（期望 ${BUILD_ID}）" >&2; FAIL=1; }
