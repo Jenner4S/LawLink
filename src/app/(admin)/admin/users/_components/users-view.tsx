@@ -1,6 +1,6 @@
 "use client";
 
-import { isManager } from "@/lib/permissions";
+import { isManager } from "@/lib/permissions/is-manager";
 import { useState, useTransition } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";

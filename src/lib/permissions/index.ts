@@ -9,10 +9,11 @@ import { ActionError } from "@/lib/action-error";
  * 2026-09-19 与岗位解耦）。系统管理身份不自动获得业务权限。
  * 传岗位字符串时仅认合伙人；有用户对象时请整体传入。
  */
-export function isManager(roleOrUser: string | { role: string; managerAuthorized?: boolean | null }): boolean {
-  if (typeof roleOrUser === "string") return roleOrUser === "PRINCIPAL_LAWYER";
-  return roleOrUser.role === "PRINCIPAL_LAWYER" || roleOrUser.managerAuthorized === true;
-}
+// 2026-11-20：实现已移到 ./is-manager（纯函数，客户端可安全引用）。
+// 本模块引用 prisma，属服务端；客户端组件必须从 @/lib/permissions/is-manager 取。
+// import 供本文件内部使用，export 供既有调用方（@/lib/permissions）保持兼容。
+import { isManager } from "./is-manager";
+export { isManager } from "./is-manager";
 
 /** 内置岗位用户携带全所范围授权（业务管理权合成的 grants）时，按该范围放开可见性。 */
 export function hasAllScope(grants: RoleGrant[] | undefined, key: PermissionKey): boolean {

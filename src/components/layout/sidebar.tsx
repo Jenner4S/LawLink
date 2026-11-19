@@ -5,7 +5,7 @@
  * 品牌（律所名 + LawLink）/ 工作区·业务·知识·资料 四段导航（带计数）/ 底部用户卡。
  * 计数经 getNavCounts 按当前账号权限异步获取，失败不显示；路由切换后刷新。
  */
-import { isManager } from "@/lib/permissions";
+import { isManager } from "@/lib/permissions/is-manager";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
