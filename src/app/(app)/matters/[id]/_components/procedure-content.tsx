@@ -311,7 +311,7 @@ function ImportantItemsCard({
 
       {currentCount === 0 ? (
         <p className="flex flex-1 items-center justify-center px-4 py-6 text-center text-xs text-muted-foreground">
-          暂无{currentLabel}
+          {canManage ? `暂无${currentLabel}，点右上「添加」录入第一条。` : `暂无${currentLabel}。`}
         </p>
       ) : (
         <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto px-4 py-2">

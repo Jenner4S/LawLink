@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { confirmDialog } from "@/components/patterns/confirm-dialog";
 import { useTopbarAction } from "@/components/layout/topbar-action";
 import { actionErrorMessage } from "@/lib/action-error";
+import { EmptyState } from "@/components/patterns/moan";
 
 type AnnouncementItem = {
   id: string;
@@ -62,9 +63,19 @@ export function AnnouncementsView({
       </header>
 
       {active.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border bg-background py-8 text-center text-xs text-muted-foreground">
-          暂无公告
-        </p>
+        <EmptyState
+          title="还没有发布过公告"
+          description={
+            isManager
+              ? "公告会置顶显示在全站顶部公告栏。点右上「发布公告」写下第一条，可设置置顶与过期时间。"
+              : "公告会显示在全站顶部公告栏。有公告管理权限的同事发布后，会出现在这里。"
+          }
+          action={
+            isManager ? (
+              <Button size="sm" variant="outline" onClick={() => { setEditing(null); setDialogOpen(true); }}>发布公告</Button>
+            ) : undefined
+          }
+        />
       ) : (
         <ul className="space-y-2">
           {active.map((a) => {

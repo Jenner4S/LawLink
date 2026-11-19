@@ -10,6 +10,7 @@ import {
   DialogFooter
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/patterns/moan";
 import type {
   CauseRecommendation,
   CauseConfidence
@@ -70,9 +71,11 @@ export function CauseRecommendationDialog({
               )}
             </div>
           ) : candidates.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              暂无推荐
-            </p>
+            <EmptyState
+              compact
+              title="暂无推荐"
+              description="案情描述不足以推出规范案由。关闭本窗后可在「案由」栏手动检索选择，或补充案情后重试。"
+            />
           ) : (
             candidates.map((c) => {
               const conf = confidenceStyle[c.confidence];

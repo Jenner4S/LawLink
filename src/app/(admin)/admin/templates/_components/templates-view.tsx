@@ -25,6 +25,7 @@ import {
 import { upsertStageTemplate } from "@/server/settings/actions";
 import { procedureTypeLabel } from "@/lib/enums";
 import { AdminPageHeader } from "@/components/layout/admin-page-header";
+import { EmptyState } from "@/components/patterns/moan";
 import { actionErrorMessage } from "@/lib/action-error";
 
 const ALL_PROCEDURE_TYPES: ProcedureType[] = [
@@ -97,9 +98,11 @@ export function TemplatesView({ templates }: { templates: StageTemplate[] }) {
         </div>
 
         {!current ? (
-          <div className="rounded-md border border-dashed border-border bg-background py-8 text-center text-sm text-muted-foreground">
-            该程序类型还没有默认模板
-          </div>
+          <EmptyState
+            compact
+            title="该程序类型还没有默认模板"
+            description="点上方「新建模板」定义该程序类型的环节顺序，之后新建这类程序会自动套用；已建程序不受影响。"
+          />
         ) : (
           <ol className="space-y-2">
             {((current.steps ?? []) as unknown as Step[])

@@ -2485,7 +2485,9 @@ function PreservationWorkflowContent({
 
               <div className="space-y-3 p-3">
                 {item.targets.length === 0 ? (
-                  <p className="py-3 text-center text-xs text-muted-foreground">暂无被保全人</p>
+                  <p className="py-3 text-center text-xs text-muted-foreground">
+                    {canManage ? "暂无被保全人，点上方「+ 被保全人」录入姓名与证件后再登记财产。" : "暂无被保全人。"}
+                  </p>
                 ) : (
                   item.targets.map((target) => (
                     <div key={target.id} className="space-y-2">
@@ -2503,7 +2505,7 @@ function PreservationWorkflowContent({
                         )}
                       </div>
                       {target.properties.length === 0 ? (
-                        <p className="pl-6 text-[11px] text-muted-foreground">暂无财产</p>
+                        <p className="pl-6 text-[11px] text-muted-foreground">{canManage ? "暂无财产，点「+ 添加财产」登记标的类型与到期日。" : "暂无财产"}</p>
                       ) : (
                         <div className="space-y-1.5 pl-6">
                           {target.properties.map((property) => (

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioChips } from "@/components/ui/radio-chips";
-import { MetricCard, Segmented } from "@/components/patterns/moan";
+import { EmptyState, MetricCard, Segmented } from "@/components/patterns/moan";
 import { formatDate } from "@/lib/utils";
 import { moneyKindLabels, dueLabels } from "@/lib/finance/ledger-labels";
 import { allocateLedger, type getFinanceLedger } from "@/server/finance/ledger-actions";
@@ -108,7 +108,7 @@ export function LedgerWorkspace({ data, canWrite, canConfirm, canCorrect, canSet
         <p className="mb-3 text-xs text-muted-foreground">未结清 {openReceivables.length} 项 · 共 {data.receivables.length} 条{data.receivables.length > TABLE_LIMIT && !showAllReceivables ? ` · 当前显示前 ${TABLE_LIMIT} 条` : ""}</p>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-muted-foreground"><th className="p-2">案件 / 应收</th><th>款项性质</th><th>原额 / 调整</th><th>待收</th><th>到期情况</th></tr></thead><tbody>
           {receivableRows.map(r => <tr key={r.id} className="border-b"><td className="p-2"><div>{r.title}</div><div className="text-xs text-muted-foreground">{matterName(r.matterId)}</div></td><td>{moneyKindLabels[r.moneyKind]}</td><td>{yuan(r.amount)} / {yuan(r.adjustmentAmount)}</td><td>{yuan(r.outstanding)}</td><td>{r.status === "CANCELLED" ? "已作废" : r.status === "SETTLED" ? "已结清" : dueLabels[r.dueBucket]}{r.dueDate ? <div className="text-xs">到期日 {formatDate(r.dueDate)}</div> : null}{r.dueCondition ? <div className="text-xs">{r.dueCondition}</div> : null}</td></tr>)}
-          {!data.receivables.length ? <tr><td colSpan={5} className="p-5 text-muted-foreground">暂无应收计划</td></tr> : null}
+          {!data.receivables.length ? <tr><td colSpan={5}><EmptyState compact title="暂无应收计划" description="在案件「委托与财务」登记应收后，这里按到期日列出待收与余额。" /></td></tr> : null}
           <ShowMoreFooter colSpan={5} total={data.receivables.length} expanded={showAllReceivables} onToggle={() => setShowAllReceivables(!showAllReceivables)} />
         </tbody></table></div>
       </section>
@@ -117,7 +117,7 @@ export function LedgerWorkspace({ data, canWrite, canConfirm, canCorrect, canSet
         <p className="mb-3 text-xs text-muted-foreground">未核销 {unallocatedPayments.length} 笔 · 共 {data.payments.length} 条{data.payments.length > TABLE_LIMIT && !showAllPayments ? ` · 当前显示前 ${TABLE_LIMIT} 条` : ""}</p>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-muted-foreground"><th className="p-2">案件 / 日期</th><th>款项性质</th><th>原始收款 / 退款</th><th>未核销</th><th>操作</th></tr></thead><tbody>
           {paymentRows.map(p => <tr key={p.id} className="border-b"><td className="p-2">{matterName(p.matterId)}<div className="text-xs text-muted-foreground">{formatDate(p.occurredAt)}</div></td><td>{moneyKindLabels[p.moneyKind]}</td><td>{yuan(p.amount)} / {yuan(p.refundedAmount)}</td><td>{yuan(p.unallocated)}</td><td>{canWrite && writable(p.matterId) ? <button className="btn btn-secondary btn-sm" onClick={() => startAllocation(p)}>分配收款</button> : "仅查看"}</td></tr>)}
-          {!data.payments.length ? <tr><td colSpan={5} className="p-5 text-muted-foreground">暂无实收记录；待确认款不列入此表</td></tr> : null}
+          {!data.payments.length ? <tr><td colSpan={5}><EmptyState compact title="暂无实收记录" description="登记实收后须经财务确认到账才计入本表；待确认款不列入此表。" /></td></tr> : null}
           <ShowMoreFooter colSpan={5} total={data.payments.length} expanded={showAllPayments} onToggle={() => setShowAllPayments(!showAllPayments)} />
         </tbody></table></div>
       </section>
@@ -127,7 +127,7 @@ export function LedgerWorkspace({ data, canWrite, canConfirm, canCorrect, canSet
       <section className="rounded-xl border bg-card p-4">
         <h2 className="font-semibold">发票金额关联</h2>
         <p className="mb-3 text-xs text-muted-foreground">这里仅按已建立的金额关系计算；未关联金额不直接等于客户欠款。共 {data.invoices.length} 张{data.invoices.length > LIST_LIMIT && !showAllInvoices ? ` · 当前显示前 ${LIST_LIMIT} 张` : ""}</p>
-        <ul className="divide-y">{invoiceRows.map(i => <li key={i.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><span>{matterName(i.matterId!)} · {i.invoiceNo ?? "未填写发票号"}</span><span>有效票面 {yuan(i.amount)} · 已关联 {yuan(i.linked)} · 未关联 {yuan(i.outstanding)}</span></li>)}{!data.invoices.length ? <li className="py-3 text-sm text-muted-foreground">暂无已开具发票</li> : null}</ul>
+        <ul className="divide-y">{invoiceRows.map(i => <li key={i.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><span>{matterName(i.matterId!)} · {i.invoiceNo ?? "未填写发票号"}</span><span>有效票面 {yuan(i.amount)} · 已关联 {yuan(i.linked)} · 未关联 {yuan(i.outstanding)}</span></li>)}{!data.invoices.length ? <li><EmptyState compact title="暂无已开具发票" description="开票申请通过并上传电子发票后，这里按票面金额与已关联金额列出。" /></li> : null}</ul>
         {data.invoices.length > LIST_LIMIT ? (
           <div className="pt-2 text-center">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAllInvoices(!showAllInvoices)}>

@@ -15,7 +15,7 @@ import {
   rejectExternalContact
 } from "@/server/external-contacts/actions";
 import { toast } from "sonner";
-import { PageHeader, Segmented } from "@/components/patterns/moan";
+import { EmptyState, PageHeader, Segmented } from "@/components/patterns/moan";
 import { confirmDialog, promptDialog } from "@/components/patterns/confirm-dialog";
 import { actionErrorMessage } from "@/lib/action-error";
 
@@ -203,9 +203,11 @@ export function ContactsView({
         </div>
 
         {filteredExternal.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-background py-8 text-center text-xs text-muted-foreground">
-            暂无匹配联系人
-          </p>
+          <EmptyState
+            compact
+            title="暂无匹配联系人"
+            description="点右上「新增」录入法院、仲裁机构、公证处或他所律师；新增后需行政审核，通过后对全所展示。"
+          />
         ) : (
           <ul className="space-y-1.5">
             {filteredExternal.map((c) => {

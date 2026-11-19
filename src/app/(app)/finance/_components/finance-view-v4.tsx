@@ -15,7 +15,7 @@ import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { InvoiceManagementSection } from "./invoice-management";
 import { InvoiceCreateDialog } from "./invoice-create-dialog";
 import { RecordFeeLauncher } from "./record-fee-launcher";
-import { MetricCard, PageHeader, Segmented } from "@/components/patterns/moan";
+import { EmptyState, MetricCard, PageHeader, Segmented } from "@/components/patterns/moan";
 import { FilterSelect } from "@/components/patterns/filter-select";
 import { confirmFeeEntry, rejectFeeEntry } from "@/server/finance/actions";
 import { promptDialog } from "@/components/patterns/confirm-dialog";
@@ -234,7 +234,7 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
                 <button type="button" className="t-sm t-mute" onClick={() => setTab("invoices")}>开票管理 →</button>
               </div>
               {invoiceRows.length === 0 && overdueRows.length === 0 ? (
-                <div className="empty mo-empty-compact"><div className="mo-empty-title">暂无开票申请</div></div>
+                <EmptyState compact title="暂无开票申请" description="在「开票管理」提交申请后，审批与开票进度会显示在这里。" />
               ) : (
                 <>
                   {invoiceRows.slice(0, overdueRows.length ? 3 : 4).map((r) => (
@@ -466,7 +466,7 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
               <span className="t-xs t-mute">分成方案在案件详情「财务明细」中维护</span>
             </div>
             {commissionEntries.length === 0 ? (
-              <div className="empty mo-empty-compact"><div className="mo-empty-title">暂无分成记录</div></div>
+              <EmptyState compact title="暂无分成记录" description="在案件详情「财务明细」维护分成方案后，计提与支付会按日期记入这里。" />
             ) : (
               <div className="mo-scroll-x">
                 <table className="mo-table" style={{ minWidth: 720 }}>
@@ -505,7 +505,7 @@ export function FinanceViewV4({ entries, monthly, aging, stats, invoiceRequests,
               <span className="t-xs t-mute">余额 = 应收金额 − 已核销；按到期日排序</span>
             </div>
             {aging.items.length === 0 ? (
-              <div className="empty mo-empty-compact"><div className="mo-empty-title">暂无未核销应收</div></div>
+              <EmptyState compact title="暂无未核销应收" description="所有应收已结清，或尚未登记应收；登记后按到期日进入账龄分档。" />
             ) : (
               <div className="mo-scroll-x">
                 <table className="mo-table" style={{ minWidth: 760 }}>

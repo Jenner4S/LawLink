@@ -18,6 +18,7 @@ import { computeDeadlineDate } from "@/lib/deadline-rules";
 import { deadlineReminderOffsets } from "@/lib/deadline-reminders";
 import { procedureTypeLabel } from "@/lib/enums";
 import { FilterSelect } from "@/components/patterns/filter-select";
+import { EmptyState } from "@/components/patterns/moan";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -230,7 +231,7 @@ export function DeadlineRulesCard({ rules, rail, headerActions }: { rules: Admin
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={6}><div className="empty mo-empty-compact"><div className="mo-empty-title">{rules.length ? "没有匹配的规则" : "暂无规则"}</div></div></td></tr>
+                  <tr><td colSpan={6}><EmptyState compact title={rules.length ? "没有匹配的规则" : "暂无规则"} description={rules.length ? "调整上方的关键词、类别或程序筛选条件试试。" : "点右上「新建规则」添加自定义期限规则；内置规则随部署预置，可直接选用。"} /></td></tr>
                 ) : filtered.map((rule) => (
                   <tr
                     key={rule.id}

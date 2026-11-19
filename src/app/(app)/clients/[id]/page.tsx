@@ -13,7 +13,7 @@ import { decryptIdNumber } from "@/lib/clients/id-number-crypto";
 import { clientTypeLabel, cooperationStatusLabel, genderLabel, matterCategoryLabel, matterStatusLabel } from "@/lib/enums";
 import { matterHref } from "@/lib/matters/route";
 import { avatarTone, matterSpineTone, matterStatusTone } from "@/lib/ui/moan-tones";
-import { FieldGrid, FieldItem, InitialAvatar } from "@/components/patterns/moan";
+import { FieldGrid, FieldItem, InitialAvatar, EmptyState } from "@/components/patterns/moan";
 import { TopbarLinkAction } from "@/components/layout/topbar-link-action";
 import { ClientEditButton } from "./_components/client-edit-button";
 import { AddContactButton, MergeBanner } from "./_components/client-detail-parts";
@@ -153,7 +153,15 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               {canWrite && (isManager(session.user) || session.user.role === "CUSTOM") ? <AddContactButton clientId={client.id} /> : null}
             </div>
             {client.contacts.length === 0 ? (
-              <div className="empty mo-empty-compact"><div className="mo-empty-title">暂无联系人</div></div>
+              <EmptyState
+                compact
+                title="暂无联系人"
+                description={
+                  canWrite && (isManager(session.user) || session.user.role === "CUSTOM")
+                    ? "点右上「添加联系人」登记对接人、电话与职务，主要联系人会排在前面。"
+                    : "尚未登记联系人。可联系客户建档人或管理员补充对接人信息。"
+                }
+              />
             ) : (
               client.contacts.map((c) => (
                 <div key={c.id} className="contact">

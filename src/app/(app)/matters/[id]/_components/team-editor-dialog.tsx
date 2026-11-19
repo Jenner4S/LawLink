@@ -976,7 +976,7 @@ export function TeamEditorDialog({
 
               {parties.length === 0 ? (
                 <div className={cn(nestedPanelClass, "px-3 py-2 text-xs text-muted-foreground")}>
-                  暂无案件当事人
+                  暂无案件当事人，点上方「添加」录入主体后即可分配申辩地位。
                 </div>
               ) : (
                 <div className={cn(nestedPanelClass, "max-h-[440px] overflow-y-auto")}>

@@ -13,7 +13,7 @@ import { UploadDialog } from "./upload-dialog";
 import { PreviewDialog } from "./preview-dialog";
 import { confirmDialog } from "@/components/patterns/confirm-dialog";
 import { useTopbarAction } from "@/components/layout/topbar-action";
-import { Segmented } from "@/components/patterns/moan";
+import { Segmented, EmptyState } from "@/components/patterns/moan";
 import { actionErrorMessage } from "@/lib/action-error";
 
 type FileEntry = {
@@ -218,16 +218,25 @@ export function FirmFilesView({
 
       {/* 列表 */}
       {files.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card py-16 text-center">
-          <FolderArchive className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">
-            {currentSearch
+        <EmptyState
+          icon={FolderArchive}
+          title={
+            currentSearch
               ? `没有匹配「${currentSearch}」的资料`
               : currentCategory
                 ? `没有「${CATEGORY_META[currentCategory].label}」类资料`
-                : "还没有上传任何资料"}
-          </p>
-        </div>
+                : "还没有上传任何资料"
+          }
+          description={
+            currentSearch
+              ? "换个关键词，或清空搜索查看全部资料。"
+              : currentCategory
+                ? "切换到「全部」类别，或上传一份该类别资料。"
+                : canUpload
+                  ? "点右上「上传资料」建立律所制度、合同范本等公开资料的版本库，替代时保留历史版本。"
+                  : "目前还没有可查阅的所内资料；上传由管理员在右上「上传资料」完成。"
+          }
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {files.map((f) => {

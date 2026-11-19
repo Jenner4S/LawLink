@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, Gavel, Plus } from "lucide-react";
-import { PageHeader, RiskLadder, Segmented } from "@/components/patterns/moan";
+import { EmptyState, PageHeader, RiskLadder, Segmented } from "@/components/patterns/moan";
 import { useTopbarAction } from "@/components/layout/topbar-action";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -423,7 +423,7 @@ function ScheduleSideRail({
           <button type="button" onClick={onSwitchToList} className="t-xs t-mute hover:text-[var(--t-primary)]">列表视图 →</button>
         </div>
         {upcoming.length === 0 ? (
-          <div className="empty mo-empty-compact"><div className="mo-empty-title">暂无即将到来的日程</div></div>
+          <EmptyState compact title="暂无即将到来的日程" description="开庭与期限登记后，未来的事项会按时间顺序排在「列表视图」与这里。" />
         ) : (
           upcoming.map((it) => {
             const d = dayDiff(it.occurredAt);

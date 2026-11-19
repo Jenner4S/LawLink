@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/patterns/moan";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -100,9 +101,11 @@ export function ContractsCard({
         </span>
       </header>
       {rows.length === 0 ? (
-        <p className="py-6 text-center text-xs text-muted-foreground">
-          暂无合同或用印附件
-        </p>
+        <EmptyState
+          compact
+          title="暂无合同或用印附件"
+          description="收案时上传的委托合同、以及用印申请的草稿与盖章扫描件，会汇总到这里。"
+        />
       ) : (
         <ul className="space-y-1.5">
           {rows.map((r) => (
@@ -192,7 +195,11 @@ export function ExpressMiniCard({
         </div>
       </header>
       {expresses.length === 0 ? (
-        <p className="py-6 text-center text-xs text-muted-foreground">暂无快递记录</p>
+        <EmptyState
+          compact
+          title="暂无快递记录"
+          description={matterId ? "点上方「添加」登记本案寄出或收到的快递单号，物流状态随单号更新。" : "本案还没有关联快递记录。"}
+        />
       ) : (
         <ul className="space-y-1.5">
           {expresses.slice(0, 6).map((e) => (

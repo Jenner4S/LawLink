@@ -30,6 +30,7 @@ import {
 import { uploadDocumentTemplate, toggleTemplate } from "@/server/document-templates/actions";
 import { VARIABLE_LABEL_CN } from "@/app/(app)/matters/[id]/_components/folder-types";
 import { AdminPageHeader } from "@/components/layout/admin-page-header";
+import { EmptyState } from "@/components/patterns/moan";
 import { formatDate } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
 
@@ -84,7 +85,12 @@ export function DocumentTemplatesView({ templates }: { templates: AdminTemplateR
           </h3>
         </header>
         {templates.length === 0 ? (
-          <p className="px-4 py-6 text-center text-[13px] text-muted-foreground">暂无模板</p>
+          <EmptyState
+            icon={FileText}
+            title="还没有文书模板"
+            description={"上传 .docx 模板后，办案时「生成文书」可一键套打；正文里的 {{变量}} 会在生成时自动填充。"}
+            action={<Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}><Upload />上传模板</Button>}
+          />
         ) : (
           <div className="divide-y divide-border/60">
             {templates.map(t => (

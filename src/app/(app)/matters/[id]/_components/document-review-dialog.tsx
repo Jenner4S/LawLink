@@ -22,6 +22,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/patterns/moan";
 import { reviewDocument, type ReviewResult } from "@/server/ai/review-document";
 import { saveReviewToMatter } from "@/server/ai/save-review";
 import {
@@ -241,9 +242,11 @@ export function DocumentReviewDialog({
                 {loadingHistory ? (
                   <p className="py-6 text-center text-xs text-muted-foreground">加载中…</p>
                 ) : history.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-muted-foreground">
-                    还没有 AI 审查记录
-                  </p>
+                  <EmptyState
+                    compact
+                    title="还没有 AI 审查记录"
+                    description="点上方「开始 AI 审查」并选择材料，审查结果会保存在这里，可随时回看。"
+                  />
                 ) : (
                   <ul className="space-y-1.5">
                     {history.map((h) => (

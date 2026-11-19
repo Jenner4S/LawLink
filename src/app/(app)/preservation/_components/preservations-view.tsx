@@ -24,7 +24,7 @@ import {
   type MatterOption,
   type UserOption
 } from "./preservation-types";
-import { PageHeader, Segmented } from "@/components/patterns/moan";
+import { PageHeader, Segmented, EmptyState } from "@/components/patterns/moan";
 import { confirmDialog } from "@/components/patterns/confirm-dialog";
 import { useTopbarAction } from "@/components/layout/topbar-action";
 
@@ -110,10 +110,15 @@ export function PreservationsView({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card py-16 text-center">
-          <Shield className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">{search ? `没有匹配「${search}」的保全记录` : "还没有保全记录"}</p>
-        </div>
+        <EmptyState
+          icon={Shield}
+          title={search ? `没有匹配「${search}」的保全记录` : "还没有保全记录"}
+          description={
+            search
+              ? "换个关键词，或清空搜索、切换状态筛选查看全部。"
+              : "点右上「新建保全」登记被保全人与财产，到期前会按档位持续提醒。"
+          }
+        />
       ) : (
         <div className="space-y-3">
           {filtered.map((cs) => (
@@ -173,7 +178,7 @@ function CaseCard({ caseData: cs, expanded, onToggle, matters, users }: { caseDa
       {expanded && (
         <div className="border-t border-border px-4 py-3 space-y-4">
           {cs.targets.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">还没有被保全人</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">还没有被保全人，点下方「添加被保全人」录入姓名与证件后即可登记财产。</p>
           ) : cs.targets.map((target) => (
             <div key={target.id} className="space-y-2">
               <div className="flex items-center gap-2">
@@ -182,7 +187,7 @@ function CaseCard({ caseData: cs, expanded, onToggle, matters, users }: { caseDa
                 <button type="button" onClick={() => setAddPropOpen(target.id)} className="ml-auto text-[11px] text-primary hover:underline">+ 添加财产</button>
               </div>
               {target.properties.length === 0 ? (
-                <p className="pl-6 text-xs text-muted-foreground">暂无财产记录</p>
+                <p className="pl-6 text-xs text-muted-foreground">暂无财产记录，点右上方「+ 添加财产」登记标的类型与到期日。</p>
               ) : (
                 <div className="pl-6 space-y-1.5">
                   {target.properties.map((prop) => {

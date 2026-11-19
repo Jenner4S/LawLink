@@ -3,7 +3,7 @@ import { Bell, CheckCheck } from "lucide-react";
 import { getNotifications, markAllNotificationsRead } from "@/server/notifications/actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { PageHeader } from "@/components/patterns/moan";
+import { EmptyState, PageHeader } from "@/components/patterns/moan";
 import { shMonthDayTime } from "@/lib/ui/sh-time";
 
 const typeLabels: Record<string, string> = {
@@ -54,10 +54,11 @@ export default async function NotificationsPage() {
 
       <div className="ll-surface overflow-hidden rounded-lg">
         {notifications.length === 0 ? (
-          <div className="p-12 text-center text-sm text-muted-foreground">
-            <Bell className="mx-auto mb-2 h-6 w-6 opacity-40" />
-            暂无通知
-          </div>
+          <EmptyState
+            icon={Bell}
+            title="暂无通知"
+            description="用章进展、期限与庭审提醒、法院短信到达和系统消息都会投递到这里；有新消息时右上角铃铛会亮起。"
+          />
         ) : (
           <div className="divide-y divide-border">
             {notifications.map((n) => {

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { confirmDialog } from "@/components/patterns/confirm-dialog";
+import { EmptyState } from "@/components/patterns/moan";
 import { actionErrorMessage } from "@/lib/action-error";
 
 type PeriodKey = "month" | "quarter" | "year" | "lastYear" | "custom";
@@ -259,7 +260,11 @@ export function ReportsView({
       <section className="ll-surface p-5">
         <h3 className="mb-3 text-sm font-medium">本期新收 · 类别分布</h3>
         {data.byCategory.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">本期暂无新收案件</p>
+          <EmptyState
+            compact
+            title="本期暂无新收案件"
+            description="所选统计周期内没有新收案件。可切换上方周期查看其他区间，或先完成收案登记。"
+          />
         ) : (
           <ul className="space-y-2">
             {data.byCategory.map((c) => {
@@ -295,7 +300,11 @@ export function ReportsView({
         <section className="ll-surface p-4">
           <h3 className="mb-3 text-sm font-medium">客户来源渠道 · 存量</h3>
           {data.byClientSource.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">暂无客户数据</p>
+            <EmptyState
+              compact
+              title="暂无客户数据"
+              description="客户建档时登记「来源渠道」后按渠道汇总；可在客户详情「编辑资料」补充来源。"
+            />
           ) : (
             <ul className="space-y-2">
               {data.byClientSource.slice(0, 8).map((s) => {
@@ -324,7 +333,7 @@ export function ReportsView({
         <section className="ll-surface p-4">
           <h3 className="mb-3 text-sm font-medium">律师产出 · 本期</h3>
           {data.byLawyer.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">本期无产出数据</p>
+            <EmptyState compact title="本期无产出数据" description="按经办人统计本期产出；登记办案记录或生成文书后会计入。可切换上方周期查看其他区间。" />
           ) : (
             <div className="overflow-hidden rounded border border-border">
               <table className="w-full text-xs">
@@ -360,7 +369,11 @@ export function ReportsView({
         <section className="ll-surface p-4">
           <h3 className="mb-3 text-sm font-medium">{data.financeReady?"客户应收 · 当前余额":"客户应收 · 本期"}</h3>
           {data.byClientReceivable.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">暂无应收数据</p>
+            <EmptyState
+              compact
+              title="暂无应收数据"
+              description="在案件「委托与财务」登记应收后，这里按客户汇总未结余额。"
+            />
           ) : (
             <div className="overflow-hidden rounded border border-border">
               <table className="w-full text-xs">
@@ -403,7 +416,7 @@ export function ReportsView({
       <section className="ll-surface p-5">
         <h3 className="mb-3 text-sm font-medium">办案周期 · 本期已结案件（收案 → 结案）</h3>
         {cycle.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">本期无已结案件</p>
+          <EmptyState compact title="本期无已结案件" description="按结案时间统计办案周期；本期没有结案，可切换周期查看已结案件耗时。" />
         ) : (
           <div className="overflow-hidden rounded border border-border">
             <table className="w-full text-xs">

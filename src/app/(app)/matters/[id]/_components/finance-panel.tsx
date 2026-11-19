@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Wallet, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/patterns/moan";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { InvoiceRequestSheet } from "./invoice-request-sheet";
 import type { FinancePayload, UserOption } from "./matter-detail-tabs";
@@ -93,9 +94,11 @@ export function FinancePanel({
       ) : null}
 
       {received.length === 0 ? (
-        <p className="py-6 text-center text-xs text-muted-foreground">
-          暂无到账记录
-        </p>
+        <EmptyState
+          compact
+          title="暂无到账记录"
+          description="律师费实收经财务确认到账后计入这里；本页只读，登记由财务人员在财务页完成。"
+        />
       ) : (
         <ul className="divide-y divide-border">
           {received.map((e) => (

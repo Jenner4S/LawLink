@@ -11,6 +11,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/patterns/moan";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -149,9 +150,11 @@ export function TemplatePickerDialog({
             </Label>
             <div className="mt-2 max-h-[280px] overflow-y-auto rounded border border-border">
               {grouped.length === 0 ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">
-                  该案件类型暂无可用模板
-                </p>
+                <EmptyState
+                  compact
+                  title="该案件类型暂无可用模板"
+                  description="模板按适用案件类别筛选。请管理员在「文书模板」中把模板适用到该案件类别，或直接上传一份新模板。"
+                />
               ) : (
                 grouped.map(([cat, items]) => (
                   <div key={cat}>
