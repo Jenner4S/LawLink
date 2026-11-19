@@ -84,6 +84,25 @@ export async function assertDocumentWritable(
   if (!matterId) return;
   const matter = await findWritableMatter(matterId, opts);
   if (!matter) throw new ActionError("案件不存在或无权处理");
+
+  // 隔离墙（2026-11-20 补，与 assertLedgerWrite 同批）。
+  //
+  // 读取侧 matterReadVisibilityFilter 的注释写着「隔离墙对全所生效（含合伙人/管理员）……
+  // 这是执业合规要求，不是权限设置」，但写入侧只查成员关系（matterAssociationFilter
+  // 不含墙），于是「看得见的限制、碰得到的自由」——被墙隔离的人读不到该案材料，
+  // 却能上传、修改、删除它的材料。上传材料是最直接的「接触案件内容」。
+  //
+  // 为什么只加在这里、不加在 findWritableMatter（那会让 assertMatterWritable 的 101 处
+  // 调用全部变化）：assertMatterWritable 覆盖结案、归档、交接等生命周期操作，
+  // 而被墙者「把案件交接出去」恰恰是解决冲突的正常途径，一刀切会把人堵死。
+  // 那部分需要按场景逐个确认语义，已在台账登记为待产品判断项。
+  {
+    const session = opts?.actor ? { user: opts.actor } : await requireSession("personal");
+    const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
+    if (await isMatterWalledFor(prisma, { matterId, userId: session.user.id, role: session.user.role })) {
+      throw new ActionError("案件不存在或无权处理");
+    }
+  }
   if (matter.status !== "ARCHIVED") return;
 
   const session = opts?.actor ? { user: opts.actor } : await requireSession("personal");
