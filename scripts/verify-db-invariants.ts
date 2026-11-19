@@ -174,6 +174,63 @@ async function main() {
     record("borrow-grant", "生效中的借阅单必须有对应归档记录", rows.map((r) => `borrowId=${r.id}`));
   }
 
+  // ── 9. 金额链路：应收余额与核销明细一致 ──────────────────
+  // 规则来源**不是我自己想的**：`ledger-mutations.ts` 在每次核销前就有
+  //   SELECT COALESCE(SUM(amount-"reversedAmount"),0) FROM "Allocation" WHERE "receivableId"=…
+  //   if (!linked.amount.eq(ar.settledAmount)) throw "应收核销明细与余额不符，请先核对"
+  // 也就是说这是**写入时已强制的规则**，这里只是把它从「单笔写入前」升级为
+  // 「全库随时可查」。
+  //
+  // 为什么要升级：`settledAmount` 是冗余汇总字段（明细在 Allocation），
+  // 冗余汇总与明细漂移是最经典的一类脏数据；一旦漂移，界面上的未收余额是错的，
+  // 律师会去追一笔其实已经收到的钱，或者漏收。而写入时的断言只在那一次写入时生效，
+  // 拦不住历史脏账与绕过写入的改动（代码注释里就提到过「某笔实收存在历史脏账」）。
+  {
+    const rows = await prisma.$queryRaw<
+      { title: string; matter: string; settled: string; linked: string }[]
+    >`
+      SELECT r.title, m."internalCode" AS matter,
+             r."settledAmount"::text AS settled,
+             COALESCE(SUM(a.amount - a."reversedAmount"), 0)::text AS linked
+      FROM "Receivable" r
+      JOIN "Matter" m ON m.id = r."matterId"
+      LEFT JOIN "Allocation" a ON a."receivableId" = r.id
+      WHERE m."deletedAt" IS NULL
+      GROUP BY r.id, r.title, r."settledAmount", m."internalCode"
+      HAVING r."settledAmount" <> COALESCE(SUM(a.amount - a."reversedAmount"), 0)
+      LIMIT 20`;
+    record(
+      "receivable-settled-total",
+      "应收已核销额与核销明细合计一致",
+      rows.map((r) => `${r.matter} / ${r.title}：账面 ${r.settled}，明细合计 ${r.linked}`)
+    );
+  }
+
+  // ── 10. 金额链路：实收已分配合计与明细一致 ───────────────
+  // 同源规则：`assertAllocationTotals`
+  //   SELECT amount-"reversedAmount" FROM "Allocation" WHERE "paymentId"=…
+  //   if (!total(...).eq(payment.allocatedAmount)) throw "实收核销明细与余额不符，请先核对"
+  {
+    const rows = await prisma.$queryRaw<
+      { matter: string; allocated: string; linked: string }[]
+    >`
+      SELECT m."internalCode" AS matter,
+             p."allocatedAmount"::text AS allocated,
+             COALESCE(SUM(a.amount - a."reversedAmount"), 0)::text AS linked
+      FROM "Payment" p
+      JOIN "Matter" m ON m.id = p."matterId"
+      LEFT JOIN "Allocation" a ON a."paymentId" = p.id
+      WHERE m."deletedAt" IS NULL
+      GROUP BY p.id, p."allocatedAmount", m."internalCode"
+      HAVING p."allocatedAmount" <> COALESCE(SUM(a.amount - a."reversedAmount"), 0)
+      LIMIT 20`;
+    record(
+      "payment-allocated-total",
+      "实收已分配合计与核销明细一致",
+      rows.map((r) => `${r.matter}：账面 ${r.allocated}，明细合计 ${r.linked}`)
+    );
+  }
+
   // ── 7. 跨表状态一致：结案案件不得有未办结事项 ────────────
   // closeMatter 已用 closureReady 门禁拦截；这里守的是**绕过门禁**的情形
   //（直接改库、未来新增的写入路径、迁移脚本）。「A 表说结完了、B 表说还有活」
