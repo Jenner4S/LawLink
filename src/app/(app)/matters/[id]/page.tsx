@@ -24,6 +24,8 @@ import { matterHref } from "@/lib/matters/route";
 import { prisma } from "@/lib/prisma";
 import { nullableDecimalToNumber, serializeDecimals } from "@/lib/decimal";
 import { MatterDetailTabs } from "./_components/matter-detail-tabs";
+import { MatterSignalStrip } from "./_components/matter-signal-strip";
+import { getMatterSignals } from "@/server/matters/signals";
 import { TimePanel } from "./_components/time-panel";
 import { getMatterTimeBoard } from "@/server/time/actions";
 import { listNotes } from "@/server/notes/actions";
@@ -226,6 +228,13 @@ export default async function MatterDetailPage({ params }: PageProps) {
   // P0-1 阶段 1-b：工时页签（列表 + 三角汇总）。可见性由 getMatterTimeBoard 内部
   // 复用 assertCanReadMatter 判定，与本案详情页同一断言。
   const timeBoard = allowed("matters.read") ? await getMatterTimeBoard(matter.id).catch(() => null) : null;
+  // 墨案 04 ② 信号条：此前只存在于组件文件与注释里，页面从未渲染。
+  // 用专用聚合查询（src/server/matters/signals.ts）——详情页既有的 procedures select
+  // 是为程序卡片裁剪过的，塞不下信号条需要的四卡口径。
+  const signals = await getMatterSignals(matter.id).catch(() => ({ procedures: [], invoicePending: 0 }));
+  // 与 MatterDetailTabs 同口径：优先第一个未结案的程序，否则第一个
+  const signalCurrent = signals.procedures.find((p) => p.status !== "CONCLUDED") ?? signals.procedures[0] ?? null;
+  const currentSignalProcedures = signalCurrent ? [signalCurrent] : [];
   return (
     <>
       {/* 墨案 04 页面骨架由 MatterDetailTabs 统一承载：
@@ -268,6 +277,24 @@ export default async function MatterDetailPage({ params }: PageProps) {
         }}
         reviewNode={
           reviewSummary ? <ReviewSummaryCard summary={reviewSummary} matterId={matter.id} /> : undefined
+        }
+        signalNode={
+          <MatterSignalStrip
+            procedures={currentSignalProcedures as unknown as Parameters<typeof MatterSignalStrip>[0]["procedures"]}
+            allProcedures={signals.procedures as unknown as Parameters<typeof MatterSignalStrip>[0]["allProcedures"]}
+            finance={
+              finance?.stats
+                ? {
+                    contractAmount: Number(finance.stats.contractAmount ?? 0),
+                    received: Number(finance.stats.received ?? 0),
+                    receivable: Number(finance.stats.receivable ?? 0),
+                    invoiced: Number(finance.stats.invoiced ?? 0)
+                  }
+                : null
+            }
+            invoicePending={signals.invoicePending}
+            service={null}
+          />
         }
         timeNode={
           timeBoard ? (

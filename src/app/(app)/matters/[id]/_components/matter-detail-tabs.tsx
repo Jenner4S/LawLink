@@ -186,7 +186,7 @@ export function MatterDetailTabs({
   preservationCases,
   evidenceItems,
   notes,
-  reviewNode, responsibilityNode, closureNode, conflictNode, timeNode,
+  reviewNode, responsibilityNode, closureNode, conflictNode, timeNode, signalNode,
   capabilities = { aiReview: false, caseSearch: false }
 }: {
   matter: MatterPayload;
@@ -230,6 +230,9 @@ export function MatterDetailTabs({
   notes: WorkflowNote[];
   /** AI 审查总览（服务端渲染节点），归入「信息总览」 */
   reviewNode?: React.ReactNode;
+  /** 墨案 04 ② 信号条：最近期限 / 下次开庭 / 收费进度 / 本环节任务。
+   *  由页面组装（需要 procedures 与 finance），本组件只负责放置位置。 */
+  signalNode?: React.ReactNode;
   responsibilityNode?: React.ReactNode;
   closureNode?: React.ReactNode;
   conflictNode?: React.ReactNode;
@@ -450,6 +453,10 @@ export function MatterDetailTabs({
           </div>
         </div>
       </section>
+
+      {/* ② 信号条（墨案 04）：此前只存在于注释与组件文件里，页面从未渲染。
+          四卡固定：最近期限 / 下次开庭 / 收费进度 / 本环节任务。 */}
+      {signalNode}
 
       {/* 吸顶摘要：标题滚出视野后常驻案件身份与下一节点 */}
       <MatterStickyBar title={matter.title} caseNumber={currentProcedure?.caseNumber ?? null} procedures={engagedProcedures} />
