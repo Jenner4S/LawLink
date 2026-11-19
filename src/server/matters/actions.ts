@@ -152,10 +152,37 @@ export async function listMatters(input: Partial<MatterListQuery> = {}) {
     return compare(a as T, b as T);
   };
 
+  // 2026-11-20（A3 修复）：分页下推到数据库。
+  //
+  // 原实现一次 `findMany({ where })` 取**全部**案件（含 procedures/hearings/
+  // parties/members 等多层 include），再在内存里排序、切片。7 条数据时看不出问题，
+  // 几百条时每次翻页都要把全库案件的嵌套数据拉进内存。
+  //
+  // 关键判断：排序键里只有 `hearing` 是**计算值**（latestHearingAt 由
+  // procedures.hearings 推出，不是数据库列），其余 four 种
+  // （archivedAt / claimAmount / intakeDate / 默认 updatedAt）都是真实列。
+  // 所以：
+  //   - 非 hearing 排序 → 排序 + take/skip 全部下推，数据库只返回当前页
+  //   - hearing 排序   → 仍需内存排序（加 SAFE_CAP 上限保护）
+  const hearingSort = query.sortBy === "hearing";
+  // 每种排序都必须以**唯一键收尾**，否则同一排序值的多行在页间顺序不稳定，
+  // 会出现「第 2 页重复了第 1 页的某条」（2026-11-20 实测 claimAmount 即如此：
+  // 该列存在 null 与并列值，只按 [claimAmount, updatedAt] 排不足以定序）。
+  // id 是主键，加上它后排序是全序，分页才不会漂移。
+  const orderBy: Prisma.MatterOrderByWithRelationInput[] =
+    query.sortBy === "archivedAt" ? [{ archivedAt: query.sortDir }, { updatedAt: "desc" }, { id: "asc" }]
+    : query.sortBy === "claimAmount" ? [{ claimAmount: query.sortDir }, { updatedAt: "desc" }, { id: "asc" }]
+    : query.sortBy === "intakeDate" ? [{ intakeDate: query.sortDir }, { updatedAt: "desc" }, { id: "asc" }]
+    : [{ updatedAt: "desc" }, { id: "asc" }];
+  const pageStart = (query.page - 1) * query.pageSize;
+  /** hearing 排序无法下推时的兜底上限：超过它宁可只排前 N 条，也不把全库拉进内存 */
+  const SAFE_CAP: number = 2000;
+
   const [allItems, total] = await Promise.all([
     prisma.matter.findMany({
       where,
-      orderBy: [{ updatedAt: "desc" }],
+      orderBy: hearingSort ? [{ updatedAt: "desc" }] : orderBy,
+      ...(hearingSort ? { take: SAFE_CAP } : { take: query.pageSize, skip: pageStart }),
       include: {
         primaryClient: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
@@ -248,8 +275,9 @@ export async function listMatters(input: Partial<MatterListQuery> = {}) {
       return b.updatedAt.getTime() - a.updatedAt.getTime();
     });
 
-  const start = (query.page - 1) * query.pageSize;
-  const items = serializeDecimals(sorted.slice(start, start + query.pageSize));
+  // 非 hearing 排序：数据库已返回当前页，这里不再切片（再切就是空页）。
+  const paged = hearingSort ? sorted.slice(pageStart, pageStart + query.pageSize) : sorted;
+  const items = serializeDecimals(paged);
 
   return { items, total, page: query.page, pageSize: query.pageSize };
 }
