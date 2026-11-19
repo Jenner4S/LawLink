@@ -8,6 +8,21 @@ export async function getNotifications(params?: { unreadOnly?: boolean; limit?: 
   const session = await requireSession("personal");
   const limit = params?.limit ?? 30;
 
+  // 2026-11-20 审计记录（已知限制，非缺陷修复）：
+  //
+  // 这里**不按隔离墙过滤**。通知的 refType/refId 是多态的
+  // （WeeklyReport / ArchiveOverdue / WorkResponsibility / data.refType 动态传入），
+  // 要按墙过滤得对每种 refType 分别 join 回 Matter，成本远高于收益：
+  //
+  //   · 泄露面有限——只有**标题**（"某某案 · 举证期限明日到期"）会出现在列表里；
+  //   · 点击即被拦——链接指向 /matters/{id}，进入后 getMatterById 会走
+  //     assertCanReadMatter（含墙），被隔离者拿不到案件详情；
+  //   · 通知表当前为空（0 行），无法实测修复效果。
+  //
+  // 另一半更值得注意：**发送侧**同样不查墙——提醒收件人是待办责任人（assigneeId），
+  // 责任人若在分配之后被隔离，会持续收到该案件的提醒。修复要改
+  // src/server/reminders/urgent.ts:22 那条 INSERT ... SELECT（在 SQL 里 join EthicalWall），
+  // 属提醒链路重构，已登记为待办而非本轮改动。
   return prisma.notification.findMany({
     where: {
       userId: session.user.id,
