@@ -212,6 +212,61 @@ async function main() {
     );
   }
 
+  // ── 12. 金额链路：发票已关联金额不得超额 ─────────────────
+  // 规则出自 `ledger-mutations.ts` 的写入断言：
+  //   if (value > invoice.amount - adjusted - used) throw "分配金额超过发票未关联金额"
+  // 其中 used = SUM(InvoicePaymentAllocation.amount - reversedAmount)，
+  // adjusted = SUM(InvoiceAdjustment.amount)（红冲/作废/换开的调整合计）。
+  // 这是**上界**而非等式：票款关联是部分可选的，不要求全额关联。
+  // 但超过上界就意味着系统在一条发票上挂出了比它面额更多的收款，
+  // 对账时会出现「这张票收了两遍」的假象。
+  {
+    const rows = await prisma.$queryRaw<{ no: string; invoice: string; linked: string; capacity: string }[]>`
+      SELECT i."invoiceNo" AS no,
+             i.amount::text AS invoice,
+             COALESCE((SELECT SUM(a.amount - a."reversedAmount") FROM "InvoicePaymentAllocation" a
+                       WHERE a."invoiceId" = i.id), 0)::text AS linked,
+             (i.amount - COALESCE((SELECT SUM(adj.amount) FROM "InvoiceAdjustment" adj
+                       WHERE adj."invoiceId" = i.id), 0))::text AS capacity
+      FROM "InvoiceRequest" i
+      WHERE i."invoiceNo" IS NOT NULL
+        AND COALESCE((SELECT SUM(a.amount - a."reversedAmount") FROM "InvoicePaymentAllocation" a
+                      WHERE a."invoiceId" = i.id), 0)
+          > (i.amount - COALESCE((SELECT SUM(adj.amount) FROM "InvoiceAdjustment" adj
+                      WHERE adj."invoiceId" = i.id), 0))
+      LIMIT 20`;
+    record(
+      "invoice-linked-capacity",
+      "发票已关联金额不超过发票可关联额度",
+      rows.map((r) => `${r.no}：已关联 ${r.linked}，可关联 ${r.capacity}（面额 ${r.invoice}）`)
+    );
+  }
+
+  // ── 13. 金额链路：实收已关联票据不得超额 ─────────────────
+  // 同源断言：
+  //   if (amount > payment.amount - payment.refundedAmount - linked) throw "分配合计超过实收可关联票据余额"
+  // 超过就意味着同一笔钱被挂到了比它本身更多的发票上。
+  {
+    const rows = await prisma.$queryRaw<{ code: string; amount: string; refunded: string; linked: string }[]>`
+      SELECT m."internalCode" AS code,
+             p.amount::text AS amount,
+             p."refundedAmount"::text AS refunded,
+             COALESCE((SELECT SUM(a.amount - a."reversedAmount") FROM "InvoicePaymentAllocation" a
+                       WHERE a."paymentId" = p.id), 0)::text AS linked
+      FROM "Payment" p
+      JOIN "Matter" m ON m.id = p."matterId"
+      WHERE m."deletedAt" IS NULL
+        AND COALESCE((SELECT SUM(a.amount - a."reversedAmount") FROM "InvoicePaymentAllocation" a
+                      WHERE a."paymentId" = p.id), 0)
+          > (p.amount - p."refundedAmount")
+      LIMIT 20`;
+    record(
+      "payment-invoice-linked-capacity",
+      "实收已关联票据金额不超过实收可关联额度",
+      rows.map((r) => `${r.code}：已关联 ${r.linked}，可关联 ${(Number(r.amount) - Number(r.refunded)).toFixed(2)}`)
+    );
+  }
+
   // ── 9. 金额链路：应收余额与核销明细一致 ──────────────────
   // 规则来源**不是我自己想的**：`ledger-mutations.ts` 在每次核销前就有
   //   SELECT COALESCE(SUM(amount-"reversedAmount"),0) FROM "Allocation" WHERE "receivableId"=…
