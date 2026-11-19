@@ -32,7 +32,6 @@ import {
   Upload
 } from "lucide-react";
 import type {
-  DeadlineCategory,
   DocumentCategory,
   DocumentSourceOrigin,
   ProcedureType
@@ -99,7 +98,6 @@ import { confirmDialog } from "@/components/patterns/confirm-dialog";
 import { useDocActions } from "./doc-actions-context";
 import { EvidencePoints } from "./evidence-panel";
 import { evidenceKindLabel } from "@/lib/enums";
-import { shMonthDay, shMonthDayTime, shTime } from "@/lib/ui/sh-time";
 import { actionErrorMessage } from "@/lib/action-error";
 
 // 类型 / 常量 / 环节指引表已拆到同目录（2026-11-21）：
@@ -107,27 +105,37 @@ import { actionErrorMessage } from "@/lib/action-error";
 //   procedure-workflow-guides.ts  环节指引数据表（约 350 行静态映射）
 // 这里只保留渲染与交互。
 import {
-  DEFAULT_STAGE_GUIDE,
   DOCUMENT_CATEGORY_OPTIONS,
   SOURCE_MATERIAL_CATEGORIES,
-  STAGE_GUIDES
 } from "./procedure-workflow-guides";
 import {
   COURT_PROCEDURE_SOURCE,
   JUDGMENT_NOTE_TAG,
   stageNoteTag
 } from "./procedure-workflow-types";
+import {
+  actionWhen,
+  buildActionItems,
+  defaultInsertTarget,
+  formatBytes,
+  formatDateTimeShort,
+  parseInsertTarget,
+  shortDay,
+  stageChainDate,
+  stageGuideFor
+} from "./procedure-workflow-derive";
 import type {
+  ActionItem,
   DossierView,
-  StageGuide,
   WaitingItem,
   WorkflowApi,
   WorkflowDocument,
-  WorkflowItem,
   WorkflowMatter,
+  WorkflowItem,
   WorkflowNote,
   WorkflowPreservationCase,
   WorkflowProcedure,
+  StageGuide,
   WorkflowStage,
   WorkflowStageSource,
   WorkflowStageStatus,
@@ -477,14 +485,6 @@ export function ProcedureWorkflowPanel({
   );
 }
 
-function stageChainDate(stage: WorkflowStage, procedure: WorkflowProcedure | null): string | null {
-  const src = procedure?.stages.find((s) => s.id === stage.id);
-  if (src?.completedAt) return shortDay(src.completedAt);
-  const due = stage.tasks.filter((t) => !t.completed && t.dueAt).map((t) => new Date(t.dueAt!).getTime()).sort((a, b) => a - b)[0];
-  if (due) return shortDay(new Date(due));
-  if (src?.startedAt) return shortDay(src.startedAt);
-  return null;
-}
 
 function StageGlyph({ name, kind, className }: { name: string; kind: WorkflowStage["kind"]; className?: string }) {
   const p = { className, strokeWidth: 1.8 };
@@ -603,10 +603,6 @@ function noteStage(note: WorkflowNote) {
 }
 
 
-function formatDateTimeShort(date: Date) {
-  const d = new Date(date);
-  return shMonthDayTime(d);
-}
 
 const NOTE_CHANNEL_LABEL: Record<string, string> = {
   PHONE: "电话沟通",
@@ -769,118 +765,8 @@ function AddMenu({
 /* 待办：只放未完成的任务、法定期限与开庭                               */
 /* ------------------------------------------------------------------ */
 
-type ActionItem = {
-  key: string;
-  kind: "task" | "deadline" | "hearing" | "memo";
-  title: string;
-  at: Date | null;
-  days: number | null;
-  stageKey: string | null;
-  stageName: string | null;
-  meta: string;
-  priority: number;
-  taskId?: string;
-  deadlineId?: string;
-  memoId?: string;
-  pendingConfirm?: boolean;
-};
 
-function buildActionItems(procedure: WorkflowProcedure | null, stages: WorkflowStage[], users: UserOption[]): ActionItem[] {
-  if (!procedure) return [];
-  const nameOf = (id: string | null) => (id ? users.find((u) => u.id === id)?.name ?? null : null);
-  const items: ActionItem[] = [];
-  for (const stage of stages) {
-    for (const task of stage.tasks) {
-      if (task.completed) continue;
-      const assignee = nameOf(task.assigneeId);
-      items.push({
-        key: `t-${task.id}`,
-        kind: "task",
-        title: task.title,
-        at: task.dueAt,
-        days: task.dueAt ? daysUntil(task.dueAt) : null,
-        stageKey: stage.key,
-        stageName: stage.name,
-        meta: [assignee ? `指派 ${assignee}` : "未指派", task.description?.trim() || null].filter(Boolean).join(" · "),
-        priority: task.priority,
-        taskId: task.id
-      });
-    }
-  }
-  const stageForDeadline = (category: DeadlineCategory) => stages.find((s) => stageGuideFor(s.name).deadlineCategories.includes(category))
-    // 无映射类目（如「其他」）此前归 null，环节视图下待办区永不显示、确认/调整入口不可达
-    // （2026-09-21 全流程验收发现）——回退到当前推进环节，保证任何期限都可被看见与处置。
-    ?? stages.find((s) => s.status === "active")
-    ?? stages[0]
-    ?? null;
-  for (const deadline of procedure.deadlines) {
-    if (deadline.completed) continue;
-    const stage = stageForDeadline(deadline.category);
-    items.push({
-      key: `d-${deadline.id}`,
-      kind: "deadline",
-      title: deadline.title,
-      at: deadline.dueAt,
-      days: daysUntil(deadline.dueAt),
-      stageKey: stage?.key ?? null,
-      stageName: stage?.name ?? null,
-      meta: deadline.basis ?? "",
-      priority: 2,
-      deadlineId: deadline.id,
-      pendingConfirm: deadline.confirmStatus === "PENDING"
-    });
-  }
-  const hearingStage = stages.find((s) => /开庭|庭审|询问/.test(s.name)) ?? stages.find((s) => stageGuideFor(s.name).includeHearings) ?? null;
-  for (const hearing of procedure.hearings) {
-    const days = daysUntil(hearing.startsAt);
-    if (days < 0) continue;
-    items.push({
-      key: `h-${hearing.id}`,
-      kind: "hearing",
-      title: hearing.title,
-      at: hearing.startsAt,
-      days,
-      stageKey: hearingStage?.key ?? null,
-      stageName: hearingStage?.name ?? null,
-      meta: [hearing.room, hearing.address].filter(Boolean).join(" · "),
-      priority: 1
-    });
-  }
-  // 历史备忘＝无截止日的事项（2026-09-15 起不再新增）
-  for (const memo of procedure.memos ?? []) {
-    if (memo.done) continue;
-    items.push({
-      key: `m-${memo.id}`,
-      kind: "memo",
-      title: memo.content.split("\n")[0].slice(0, 80),
-      at: null,
-      days: null,
-      stageKey: null,
-      stageName: null,
-      meta: `备忘 · ${shortDay(memo.createdAt)} 记`,
-      priority: 0,
-      memoId: memo.id
-    });
-  }
-  const byTime = (a: ActionItem, b: ActionItem) => (a.at ? new Date(a.at).getTime() : Infinity) - (b.at ? new Date(b.at).getTime() : Infinity) || b.priority - a.priority;
-  return items.sort(byTime);
-}
 
-function actionWhen(item: ActionItem) {
-  const tone = item.days !== null && item.days < 0 ? "red" : item.kind === "hearing" ? "blue" : item.days !== null && item.days <= 7 ? "amber" : "slate";
-  const main =
-    item.kind === "hearing" && item.at
-      ? shortDay(item.at)
-      : item.days === null
-        ? "无期限"
-        : item.days < 0
-          ? `逾期 ${-item.days} 天`
-          : item.days === 0
-            ? "今天"
-            : `剩 ${item.days} 天`;
-  const sub = item.at ? (item.kind === "hearing" ? shTime(item.at) : `${shortDay(item.at)} 截止`) : "";
-  return { tone, main, sub };
-}
 
 function NextActions({
   compact = false,
@@ -1802,11 +1688,6 @@ function DocRow({ doc, compact = false }: { doc: WorkflowDocument; compact?: boo
   );
 }
 
-function formatBytes(size: number) {
-  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
-  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
-  return `${size} B`;
-}
 
 function PreservationWorkflowContent({
   matter,
@@ -2678,32 +2559,7 @@ function StageCreateDialog({
   );
 }
 
-function defaultInsertTarget(selectedItem: WorkflowItem | null) {
-  if (!selectedItem) return "START";
-  return selectedItem.id ? `AFTER_ID:${selectedItem.id}` : `AFTER_NAME:${selectedItem.name}`;
-}
 
-function parseInsertTarget(target: string, stages: WorkflowStage[]) {
-  if (target === "START") {
-    return { position: "START" as const, afterStageId: "", afterStageName: "" };
-  }
-  if (target.startsWith("AFTER_ID:")) {
-    return {
-      position: "AFTER" as const,
-      afterStageId: target.slice("AFTER_ID:".length),
-      afterStageName: ""
-    };
-  }
-  if (target.startsWith("AFTER_NAME:")) {
-    const name = target.slice("AFTER_NAME:".length);
-    return {
-      position: "AFTER" as const,
-      afterStageId: "",
-      afterStageName: stages.find((stage) => stage.name === name)?.name ?? name
-    };
-  }
-  return { position: "END" as const, afterStageId: "", afterStageName: "" };
-}
 
 function buildWorkflowStages(
   procedure: WorkflowProcedure | null,
@@ -2783,10 +2639,6 @@ function workflowStageFromName(
     removable: presetKind !== "required",
     badge: context ? stageBadge(name, kind, meta.tasks, context) : null
   };
-}
-
-function shortDay(date: Date): string {
-  return shMonthDay(date);
 }
 
 /** 徽标天数：逾期显示「逾期 N 天」，否则「N 天」 */
@@ -2876,10 +2728,6 @@ function statusForStage(
 
 
 
-function stageGuideFor(stageName: string) {
-  return STAGE_GUIDES.find((item) => item.keys.some((key) => stageName.includes(key)))?.guide ??
-    DEFAULT_STAGE_GUIDE;
-}
 
 function stageMaterialTag(stageName: string) {
   return `阶段:${stageName}`;

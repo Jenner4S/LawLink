@@ -240,3 +240,20 @@ export type DossierView = "archive" | "work" | "money" | "time" | "email" | "sea
 /** 待办「等待他人」：审批中的用印、归档等 */
 export type WaitingItem = { key: string; title: string; meta: string; onOpen?: () => void };
 
+
+/** 待办项（buildActionItems 的产物，渲染与派生共用的契约） */
+export type ActionItem = {
+  key: string;
+  kind: "task" | "deadline" | "hearing" | "memo";
+  title: string;
+  at: Date | null;
+  days: number | null;
+  stageKey: string | null;
+  stageName: string | null;
+  meta: string;
+  priority: number;
+  taskId?: string;
+  deadlineId?: string;
+  memoId?: string;
+  pendingConfirm?: boolean;
+};
