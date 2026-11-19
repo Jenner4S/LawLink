@@ -1,3 +1,4 @@
+import type { UserRole } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
@@ -71,7 +72,17 @@ export async function resolveRate(input: {
 
   // 4) 角色
   const byRole = await prisma.rateSchedule.findFirst({
-    where: { ...eff, scope: "ROLE", role: input.role as never },
+    // 2026-11-21：`as never` → `as UserRole`。
+    //
+    // `as never` 接受任何值，连"这个字符串是不是 UserRole"都不检查；
+    // `as UserRole` 至少要求它属于那个联合类型的运行时表达（仍是断言，
+    // 但强度高一级）。真正的根治是把 next-auth.d.ts 的 `role: string`
+    // 收窄成 UserRole —— 那会牵动全仓，属独立改动，本轮不做。
+    //
+    // 已知残留风险：`input.role` 若拼错（如 "LAWER"），这里不会报错，
+    // 只会让角色级费率**静默不命中**，落到默认费率。影响是算错钱，
+    // 不是崩溃，所以按 P3 处理。已登记。
+    where: { ...eff, scope: "ROLE", role: input.role as UserRole },
     orderBy: { effectiveFrom: "desc" }
   });
   if (byRole) return pick(byRole, "ROLE");

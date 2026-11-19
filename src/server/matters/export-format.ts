@@ -5,7 +5,6 @@ import type {
   PartyType,
   ProcedureEngagement,
   ProcedureOutcome,
-  ProcedureStatus,
   Prisma
 } from "@prisma/client";
 import { parseShDayEnd, parseShDayStart, shDayKey, shTime } from "@/lib/ui/sh-time";
@@ -30,11 +29,9 @@ const partyRoleLabel: Record<PartyRole, string> = {
   OTHER: "其他"
 };
 
-export const procedureStatusLabel: Record<ProcedureStatus, string> = {
-  PENDING: "未开始",
-  IN_PROGRESS: "进行中",
-  CONCLUDED: "已结束"
-};
+// 2026-11-21：定义已移到 lib/enums.ts（界面层也要用），此处保留 re-export 不破既有 import。
+import { procedureStatusLabel as _psl } from "@/lib/enums";
+export { procedureStatusLabel } from "@/lib/enums";
 
 export const procedureEngagementLabel: Record<ProcedureEngagement, string> = {
   ENGAGED: "承办",
@@ -69,7 +66,7 @@ export function formatProcedureSummary(procedures: MatterExportRow["procedures"]
         procedure.customLabel,
         procedure.caseNumber,
         procedure.handlingAgency,
-        procedure.status ? procedureStatusLabel[procedure.status] : "",
+        procedure.status ? _psl[procedure.status] : "",
         procedure.acceptedAt ? `受理:${formatDate(procedure.acceptedAt)}` : "",
         procedure.concludedAt ? `结案:${formatDate(procedure.concludedAt)}` : "",
         procedure.outcome ? `结果:${procedureOutcomeLabel[procedure.outcome]}` : ""

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
 
 /**
@@ -111,9 +112,18 @@ type AuditRow = {
  * 校验整条链。按 createdAt 升序逐条重算，比对 integrityHash 与 previousHash。
  * 返回首个断裂点，便于审计时定位。
  */
-export async function verifyAuditChain(db: {
-  auditLog: { findMany: (args: unknown) => Promise<AuditRow[]> };
-}): Promise<ChainVerifyResult> {
+// 2026-11-21：入参契约从手写结构改成 Prisma 的 Pick。
+//
+// 原先写的是 `auditLog: { findMany: (args: unknown) => Promise<AuditRow[]> }` ——
+// PrismaClient 的 findMany 是泛型方法，手写的非泛型签名无法被它满足，
+// 于是**两个调用点都必须 `prisma as never`**：
+//   src/app/api/audit/verify/route.ts:31
+//   src/app/(admin)/admin/audit/_components/chain-integrity-card.tsx:33
+// 两处都脏，说明该改的是契约而不是调用方。改成 Pick 后零断言。
+// 手法与 ethical-wall.ts 的 `db: Pick<Prisma.TransactionClient, "ethicalWall">` 一致。
+export async function verifyAuditChain(
+  db: Pick<Prisma.TransactionClient, "auditLog">
+): Promise<ChainVerifyResult> {
   const rows = await db.auditLog.findMany({
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: {

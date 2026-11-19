@@ -94,7 +94,11 @@ export async function isMatterWalledFor(
               denyType: "TEAM",
               team: { members: { some: { userId: input.userId, active: true } } }
             },
-            { denyType: "ROLE", role: input.role as never }
+            // role 为空时不生成该条件：`role` 在 schema 里是 UserRole 枚举，
+            // 传空字符串会被 Prisma 当成无效枚举值抛 PrismaClientValidationError。
+            // 2026-11-20 在 ethicalWallExclusion 里踩过一次（那里已加守卫），
+            // 但同一个坑在 isMatterWalledFor 这处漏了 —— 2026-11-21 补上。
+            ...(input.role ? [{ denyType: "ROLE" as const, role: input.role as never }] : [])
           ]
         }
       }

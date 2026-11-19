@@ -28,7 +28,7 @@ export async function GET() {
     return NextResponse.json({ error: "无权访问" }, { status: 403 });
   }
 
-  const result = await verifyAuditChain(prisma as never);
+  const result = await verifyAuditChain(prisma);
   return NextResponse.json(
     {
       ...result,

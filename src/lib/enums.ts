@@ -12,6 +12,7 @@ import type {
   IntakeStatus,
   UserRole,
   ProcedureType,
+  ProcedureStatus,
   LitigationStanding,
   FeeType,
   InvoiceRequestStatus,
@@ -353,3 +354,17 @@ export function procedureToStandingOptions(
       return Object.keys(litigationStandingLabel) as LitigationStanding[];
   }
 }
+
+/**
+ * 程序状态 / 结果的中文标签（2026-11-21 从 `server/matters/export-format.ts` 收进这里）。
+ *
+ * 为什么要收：`src/app` 下的团队只读视图自己手写过一份 `PROC_STATUS_LABEL`，
+ * 键写成 NOT_STARTED / SUSPENDED（枚举里根本没有），却漏了真正的 PENDING，
+ * 于是未开始的程序在界面上显示英文 "PENDING"。
+ * 放在 lib 层、用 Record<Enum, string> 强制覆盖全部枚举值，这类漏键就编译不过。
+ */
+export const procedureStatusLabel: Record<ProcedureStatus, string> = {
+  PENDING: "未开始",
+  IN_PROGRESS: "进行中",
+  CONCLUDED: "已结束"
+};

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { BookOpen, CalendarClock, ChevronLeft, Eye, Landmark, Users } from "lucide-react";
 import type { getMatterById } from "@/server/matters/actions";
 import { listNotes } from "@/server/notes/actions";
-import { matterStatusLabel, matterCategoryLabel, matterCategoryKind, procedureTypeLabel, litigationStandingLabel } from "@/lib/enums";
+import { matterStatusLabel, matterCategoryLabel, matterCategoryKind, procedureTypeLabel, litigationStandingLabel, procedureStatusLabel } from "@/lib/enums";
 import { avatarTone, matterStatusTone } from "@/lib/ui/moan-tones";
 import { getWallSummaryForMatter } from "@/server/ethical-walls/read";
 import { EthicalWallBanner } from "./ethical-wall-banner";
@@ -11,7 +11,10 @@ import { cn, formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
 
 type Matter = NonNullable<Awaited<ReturnType<typeof getMatterById>>>;
 const shortDate = (value: Date | null) => (value ? formatDate(new Date(value)).slice(5) : null);
-const PROC_STATUS_LABEL: Record<string, string> = { NOT_STARTED: "未开始", IN_PROGRESS: "进行中", CONCLUDED: "已结", SUSPENDED: "中止" };
+// 2026-11-21：原先这里手写了一份 map，键写成 NOT_STARTED / SUSPENDED（枚举里根本没有），
+// 却漏了真正的 PENDING —— 未开始的程序在团队只读视图里显示英文 "PENDING"。
+// 改用 lib/enums.ts 的 procedureStatusLabel（Record<ProcedureStatus, string>，漏键编译不过）。
+const PROC_STATUS_LABEL = procedureStatusLabel;
 
 /**
  * 团队只读视图（与案件详情同一套墨案版式：案卷头 + 程序栏 + 主栏/侧栏）。

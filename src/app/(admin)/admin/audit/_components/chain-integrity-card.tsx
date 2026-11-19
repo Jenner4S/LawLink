@@ -30,7 +30,7 @@ export async function ChainIntegrityCard() {
   try {
     // 审计表异常不应让整个「安全与审计」页打不开
     [result, total] = await Promise.all([
-      verifyAuditChain(prisma as never),
+      verifyAuditChain(prisma),
       prisma.auditLog.count({ where: { integrityHash: { not: null } } })
     ]);
   } catch (err) {
