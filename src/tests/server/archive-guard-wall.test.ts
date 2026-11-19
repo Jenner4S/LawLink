@@ -26,7 +26,7 @@
  */
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const HOLDER = vi.hoisted(() => {
