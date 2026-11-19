@@ -7,6 +7,7 @@ import { ChevronLeft, Folder, Users, CreditCard, UserRound } from "lucide-react"
 import { getClientById, getClientFinanceSummary } from "@/server/clients/actions";
 import { getClientInsights } from "@/server/clients/insights";
 import { isManager } from "@/lib/permissions";
+import { RevealField, maskIdNumber } from "./_components/reveal-field";
 import { decryptIdNumber } from "@/lib/clients/id-number-crypto";
 import { clientTypeLabel, cooperationStatusLabel, genderLabel, matterCategoryLabel, matterStatusLabel } from "@/lib/enums";
 import { matterHref } from "@/lib/matters/route";
@@ -78,7 +79,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             <div className="ch-meta">
               <div className="m">
                 <span className="k">{isIndividual ? (!client.idType || client.idType === "ID_CARD" ? "身份证号" : clientIdTypeLabel[client.idType]) : "统一社会信用代码"}</span>
-                {idNumber ? <span className="v mono">{idNumber}</span> : <span className="v t-faint">未登记</span>}
+                {/* 2026-11-19：默认脱敏，点「查看」才触发 revealClientIdNumber（写 CLIENT_ID_REVEAL 审计）。
+                    此前直接把 decryptIdNumber 的结果渲染进 HTML，打开页面即读取敏感信息且无留痕。 */}
+                <RevealField kind="clientIdNumber" targetId={client.id} masked={maskIdNumber(idNumber)} />
               </div>
               {!isIndividual ? <div className="m"><span className="k">法定代表人</span><span className="v">{client.legalRep || "—"}</span></div> : null}
               <div className="m"><span className="k">建档</span><span className="v mono">{ymd(client.createdAt)}</span></div>
@@ -93,6 +96,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
+          {/* 编辑表单需要预填当前值：这是用户主动发起的编辑动作，编辑本身在 clientUpdateSchema
+              路径上写审计，故此处保留明文（而非走 reveal 通道重复计一次「查看」）。 */}
           {canWrite ? <ClientEditButton client={{ ...client, idNumber: idNumber || null }} /> : null}
           <Link href={`/conflicts?name=${encodeURIComponent(client.name)}`} className="btn btn-secondary btn-sm">冲突预检</Link>
           {canMerge && insights.suspects.length === 0 ? <MergeBanner keepId={client.id} keepName={client.name} suspects={[]} canMerge={canMerge} /> : null}
@@ -156,7 +161,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                       {c.title ? <span className="badge b-white" style={{ fontSize: 10 }}>{c.title}</span> : null}
                     </div>
                     <div className="ct-meta flex flex-wrap items-center gap-x-1.5">
-                      {c.phone ? <span className="mono">{c.phone}</span> : null}
+                      {/* 2026-11-19：手机号同属敏感个人信息，改为按需揭示（写 CONTACT_PHONE_REVEAL 审计） */}
+                      {c.phone ? (
+                        <RevealField
+                          kind="contactPhone"
+                          targetId={c.id}
+                          masked={c.phone.length > 4 ? `${c.phone.slice(0, 3)}****${c.phone.slice(-2)}` : "****"}
+                        />
+                      ) : null}
                       {c.email ? <span>· {c.email}</span> : null}
                     </div>
                   </div>
