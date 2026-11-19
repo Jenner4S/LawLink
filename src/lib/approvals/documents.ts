@@ -40,7 +40,15 @@ export async function canReadDocument(userId: string, doc: { id: string; uploade
   // 上传者通道只覆盖无归属材料：挂在案件/收案上的材料须经 :29 起的归属分支——
   // 否则被移出案件的成员凭历史上传关系仍可长期下载该案材料（内置角色同样适用）
   if (canReadBusiness && doc.uploadedById === userId && !doc.matterId && !doc.intakeId) return true;
-  if (canReadBusiness && doc.matterId && await prisma.matter.count({ where: { id: doc.matterId, OR: [{ ownerId: userId }, { members: { some: { userId } } }] } })) return true;
+  // 2026-11-20（A6 修复）：加 deletedAt 条件，与列表口径一致。
+  //
+  // 此前这里只查归属，不看案件是否已被软删。而 listMatters / assertCanReadMatter
+  // 都带 `deletedAt: null` —— 于是出现「列表里看不到这个案件，但知道材料 ID
+  // 就能下载它的材料」。这不是设计选择，是口径不一致。
+  //
+  // 软删可恢复：案件恢复（deletedAt 置回 null）后，材料自动重新可下载，
+  // 与「删除不销毁数据」的既有语义不冲突。
+  if (canReadBusiness && doc.matterId && await prisma.matter.count({ where: { id: doc.matterId, deletedAt: null, OR: [{ ownerId: userId }, { members: { some: { userId } } }] } })) return true;
   if (doc.intakeId) {
     const intake = await prisma.intake.findUnique({ where: { id: doc.intakeId }, select: { createdById: true, ownerUserId: true, coUserIds: true, status: true } });
     if (intake?.createdById === userId) return true;

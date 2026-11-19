@@ -309,6 +309,22 @@ export async function hardDeleteDocument(id: string) {
   await assertDocumentNotInPendingArchive(id);
   await assertDocumentWritable(doc.matterId, { kind: "modify" });
 
+  // 2026-11-20（A7）：有审核记录的材料不允许彻底删除。
+  //
+  // ReviewRecord.document 是 onDelete: Cascade —— 删材料会把审核记录一并删掉，
+  // 而那是「谁在何时审过这份材料」的合规证据，属于律师执业留痕的一部分。
+  // 材料内容可以销毁，审过这件事不该被抹掉。
+  //
+  // 这里选择「拦下并说明」而不是改 onDelete 为 SetNull：后者要把 documentId
+  // 改成可空、牵动迁移与多处查询；先加运行时保护，语义清楚且零迁移风险。
+  // 若产品上确实需要「销毁材料但保留审核记录」，再单独做 SetNull 方案。
+  const reviews = await prisma.reviewRecord.count({ where: { documentId: id } });
+  if (reviews > 0) {
+    throw new ActionError(
+      `该材料已有 ${reviews} 条审核记录，不能彻底删除——审核留痕属合规证据。如确需销毁内容，请先联系管理员导出审核记录。`
+    );
+  }
+
   await documentMutation(session.user,doc, async roleDb => {
     await storage.deleteFile(doc.path);
     return roleDb.document.delete({ where: { id } });
