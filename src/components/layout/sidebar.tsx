@@ -5,6 +5,7 @@
  * 品牌（律所名 + LawLink）/ 工作区·业务·知识·资料 四段导航（带计数）/ 底部用户卡。
  * 计数经 getNavCounts 按当前账号权限异步获取，失败不显示；路由切换后刷新。
  */
+import { isManager } from "@/lib/permissions";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -88,7 +89,7 @@ export function NavContent({ firm, onOpenTools }: { firm: FirmBrand; onOpenTools
     if (!PERMISSION_BY_HREF[item.href]) return true;
     if (!user) return false;
     // 报表页按页面同口径判定（内置岗位仅主任律师可进入），避免入口可见但点进去被重定向回工作台
-    if (item.href === "/reports") return customOrLegacy(user, "reports.read", user.role === "PRINCIPAL_LAWYER" || user.managerAuthorized === true);
+    if (item.href === "/reports") return customOrLegacy(user, "reports.read", isManager(user));
     return hasCustomPermission(user, PERMISSION_BY_HREF[item.href]);
   };
   const countOf = (item: NavItem): { n: number; alert?: boolean } | null => {

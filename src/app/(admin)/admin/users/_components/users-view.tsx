@@ -1,5 +1,6 @@
 "use client";
 
+import { isManager } from "@/lib/permissions";
 import { useState, useTransition } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -325,7 +326,7 @@ function UserRow({
             {user.systemRole === "SUPER_ADMIN" ? "系统超级管理员" : "无"}
           </Badge>
           <Badge
-            variant={user.managerAuthorized || user.role === "PRINCIPAL_LAWYER" ? "secondary" : "outline"}
+            variant={isManager(user) ? "secondary" : "outline"}
             className={`text-[10px] ${user.managerAuthorized && user.role !== "PRINCIPAL_LAWYER" ? "text-[#1A7F45]" : "text-muted-foreground"}`}
           >
             {user.role === "PRINCIPAL_LAWYER" ? "岗位自带" : user.managerAuthorized ? "业务管理权" : "无业务管理权"}

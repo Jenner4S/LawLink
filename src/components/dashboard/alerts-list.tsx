@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Inbox, Shield, Stamp, AlertTriangle, ArrowRight } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth/session";
-import { matterVisibilityFilter } from "@/lib/permissions";
+import { matterVisibilityFilter, isManager } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { matterHref } from "@/lib/matters/route";
 
@@ -28,7 +28,8 @@ export async function loadAlerts(userId: string | null, role: string | null, man
   const now = new Date();
   const in30 = new Date();
   in30.setDate(in30.getDate() + 30);
-  const isManager = role === "PRINCIPAL_LAWYER" || managerAuthorized;
+  // 2026-11-20：改用统一判断，避免各处手写同一条件（口径漂移风险）
+  const managerView = role ? isManager({ role, managerAuthorized }) : false;
 
   const [preservationProperties, unprocessedSms, pendingSeals] = await Promise.all([
     userId && role
@@ -78,7 +79,7 @@ export async function loadAlerts(userId: string | null, role: string | null, man
         })
       : Promise.resolve([]),
     // 待审批用章申请（仅管理员 / 主任律师可见，作为审批人提醒）
-    isManager
+    managerView
       ? prisma.sealRequest.findMany({
           where: { status: "PENDING" },
           orderBy: { requestedAt: "asc" },
