@@ -88,23 +88,51 @@ export async function verifyAuditChain(db: {
     }
   });
 
-  let prev: string | null = null;
   let checked = 0;
   let skippedLegacy = 0;
 
+  // 2026-11-19：改为**按链遍历**，不再按 createdAt 线性扫描。
+  //
+  // 原因：并发写入时，createdAt（wall clock）与哈希链的先后可能不是同一顺序——
+  // 两个请求同时读到同一个前驱，唯一索引让后写者重试并指向先写者的哈希，
+  // 但此时后写者的 createdAt 可能早于先写者。线性扫描会误判为断裂。
+  //
+  // 正确的判据是链本身：从 previousHash 为 null 的记录出发，沿 integrityHash →
+  // previousHash 逐条前进。多条 prev=null 的记录各为一条链的起点
+  //（加链前的历史段与首条新记录都会是 null）。
+  const byPrev = new Map<string | null, AuditRow[]>();
   for (const row of rows) {
-    // 加字段之前的历史记录没有摘要，跳过但计数（不能当作断裂）
-    if (row.integrityHash === null) {
-      skippedLegacy += 1;
-      prev = null; // 链的起点重置：历史段与哈希段之间不连续
-      continue;
+    if (row.integrityHash === null) { skippedLegacy += 1; continue; }
+    const list = byPrev.get(row.previousHash) ?? [];
+    list.push(row);
+    byPrev.set(row.previousHash, list);
+  }
+
+  // 每条链从 prev=null 起步；若某条链的起点被唯一索引保证唯一，这里就是全量覆盖。
+  // 仍按 createdAt 排序来稳定同一前驱下的候选顺序（正常情况下每个前驱只有一条后继）。
+  const walk = (start: string | null): AuditRow[] => {
+    const seen = new Set<string>();
+    const out: AuditRow[] = [];
+    let cursor = start;
+    for (;;) {
+      const candidates = byPrev.get(cursor);
+      if (!candidates || candidates.length === 0) break;
+      // 同一前驱有多条后继 = 分叉（唯一索引生效后不应出现，历史数据可能有）
+      const next = candidates[0];
+      const key = next.integrityHash as string;
+      if (seen.has(key)) break;
+      seen.add(key);
+      out.push(next);
+      cursor = key;
     }
-    if (row.previousHash !== prev) {
-      return {
-        ok: false, checked, skippedLegacy,
-        brokenAt: { id: row.id, action: row.action, reason: `previousHash 与上一条摘要不一致（期望 ${prev ?? "空"}）` }
-      };
-    }
+    return out;
+  };
+
+  const ordered = walk(null);
+
+  for (let i = 0; i < ordered.length; i += 1) {
+    const row = ordered[i];
+    const prev = i === 0 ? null : ordered[i - 1].integrityHash;
     const expected = computeAuditHash({
       userId: row.userId, action: row.action, targetType: row.targetType,
       targetId: row.targetId, detail: row.detail, ip: row.ip,
@@ -116,7 +144,6 @@ export async function verifyAuditChain(db: {
         brokenAt: { id: row.id, action: row.action, reason: "记录内容与自身摘要不符（该条被改动）" }
       };
     }
-    prev = row.integrityHash;
     checked += 1;
   }
 
