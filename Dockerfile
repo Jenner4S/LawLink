@@ -49,11 +49,35 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# 把 seed 打成单文件（2026-11-21）：生产镜像没有 src/ 也没有 tsx，
+# 而 prisma/seed.ts 会相对引用 src/lib/template-builder 等应用代码。
+# 只留 node_modules 里必然存在的包为 external，其余全部内联。
+# 产物 prisma/seed.bundle.cjs 随下方 `COPY --from=builder /app/prisma` 进镜像。
+RUN npx esbuild prisma/seed.ts \
+      --bundle --platform=node --format=cjs \
+      --outfile=prisma/seed.bundle.cjs \
+      --external:@prisma/client --external:bcryptjs \
+      --log-level=warning \
+ && ls -lh prisma/seed.bundle.cjs
+
 # 生产依赖裁剪（2026-11-19 法务清查发现）：此前 runner 直接复制 builder 的
 # node_modules，把 402 个开发依赖（typescript / eslint / vitest / tailwind 链等）
 # 一起打进镜像——不影响运行，但扩大合规面（许可证清单要覆盖这些包）与镜像体积。
 # 这里在 builder 之后 prune 一次：.prisma 引擎已生成，prisma CLI 已移入 dependencies
 # 供运维在容器内执行 migrate，dev-only 包全部移除。
+#
+# 2026-11-21：seed 改为**构建期打包**，所以这里仍然可以放心 prune。
+#
+# 起因：`prisma db seed` 在生产镜像里根本跑不起来 ——
+#   ① tsx 在 devDependencies 被 prune 掉，连带 esbuild 平台二进制消失
+#      （Cannot find module '@esbuild/linux-arm64'）
+#   ② 修掉①后又撞上 prisma/seeds 里 `../../src/lib/template-builder` 的相对引用，
+#      而 runner **不复制 src/**（Cannot find module '../../src/lib/template-builder'）
+# 而 fresh install 必须跑 seed 才有第一个管理员 —— 按文档操作会卡在最后一米。
+#
+# 解法在 builder 阶段（见下方 esbuild 那步）：把 prisma/seed.ts 连同它引用的
+# src 代码打成一个 CJS 单文件 prisma/seed.bundle.cjs，随 prisma 目录一起进镜像。
+# 生产只需要 node，不需要 tsx，也不需要 src/。
 FROM builder AS prod-deps
 RUN npm prune --omit=dev && npm cache clean --force
 

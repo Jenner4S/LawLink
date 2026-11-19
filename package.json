@@ -94,7 +94,7 @@
     "vitest": "^4.1.11"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "node scripts/run-seed.mjs"
   },
   "overrides": {
     "postcss": "^8.5.28",

@@ -50,18 +50,40 @@ const PASSWORD = process.env.VERIFY_PASSWORD ?? process.env.LAWYER_PASSWORD ?? "
 /* ---------------------------------------------------------------- 结果收集 */
 
 const results = [];
+// 三态（2026-11-21）：通过 / 失败 / 跳过。
+//
+// 加「跳过」是因为**空系统**：全新部署按 README 就是没有客户与案件的
+// （不塞演示数据是刻意的开源设计），此时「客户详情链接可定位」必然找不到链接。
+// 把它记成失败，会让每一个新用户第一次跑巡检就看到 2 个红叉，
+// 而他其实什么都没做错 —— 这与 deploy.sh 里「不让人拿到一台看不懂的系统」
+// 是同一个出发点。
+//
+// 跳过不算通过也不算失败，单独计数并显示原因，绝不静默忽略。
 function record(group, name, ok, detail = "") {
-  results.push({ group, name, ok, detail });
+  results.push({ group, name, ok, detail: detail ?? "" });
   const mark = ok ? "✅" : "❌";
   console.log(`  ${mark} ${name}${detail ? `  ${detail}` : ""}`);
+}
+function skip(group, name, reason) {
+  results.push({ group, name, ok: null, detail: reason });
+  console.log(`  ⚠️  ${name}  ${reason}`);
 }
 function section(title) {
   console.log(`\n=== ${title} ===`);
 }
 function summary() {
-  const fail = results.filter((r) => !r.ok);
+  const fail = results.filter((r) => r.ok === false);
+  const skipped = results.filter((r) => r.ok === null);
+  const passed = results.filter((r) => r.ok === true);
   console.log(`\n${"─".repeat(56)}`);
-  console.log(`合计 ${results.length} 项，通过 ${results.length - fail.length}，失败 ${fail.length}`);
+  console.log(
+    `合计 ${results.length} 项，通过 ${passed.length}，失败 ${fail.length}` +
+      (skipped.length ? `，跳过 ${skipped.length}` : "")
+  );
+  if (skipped.length) {
+    console.log("\n跳过项（不算失败，多半是空系统或环境限制）：");
+    for (const r of skipped) console.log(`  ⚠️  [${r.group}] ${r.name}  ${r.detail}`);
+  }
   if (fail.length) {
     console.log("\n失败项：");
     fail.forEach((f) => console.log(`  [${f.group}] ${f.name}  ${f.detail}`));
@@ -440,7 +462,18 @@ async function checkFlow(ctx) {
   // 客户
   await goto(ctx, "/clients");
   const clientHref = await pick(ctx, "/^\\/clients\\/c[a-z0-9]+$/");
-  record("flow", "客户详情链接可定位", !!clientHref, clientHref ?? "未找到（列表是否为空？）");
+  if (clientHref) {
+    record("flow", "客户详情链接可定位", true, clientHref);
+  } else {
+    // 区分「空系统」与「选择器失效」：页面上出现空态文案才是空系统。
+    // 全新部署按 README 就是没有客户（刻意不塞演示数据），此时找不到详情链接
+    // 是正确行为，记成失败会让每个新用户第一次跑巡检就看到红叉。
+    const empty = await ctx.evaluate(
+      `(function(){var t=document.body.innerText||"";return /没有符合条件的客户|暂无客户|还没有客户/.test(t);})()`
+    );
+    if (empty) skip("flow", "客户详情链接可定位", "空系统（尚无客户，符合全新部署预期）");
+    else record("flow", "客户详情链接可定位", false, "未找到（页面非空态，疑似选择器失效）");
+  }
   if (clientHref) {
     await goto(ctx, clientHref);
     record("flow", "客户详情无报错", !(await hasError(ctx)));
@@ -466,7 +499,15 @@ async function checkFlow(ctx) {
   // 案件
   await goto(ctx, "/matters");
   const matterHref = await pick(ctx, "/^\\/matters\\/LL-/");
-  record("flow", "案件详情链接可定位", !!matterHref, matterHref ?? "未找到（排除 /api/ 后仍无）");
+  if (matterHref) {
+    record("flow", "案件详情链接可定位", true, matterHref);
+  } else {
+    const empty = await ctx.evaluate(
+      `(function(){var t=document.body.innerText||"";return /没有匹配的案件|暂无案件|还没有案件/.test(t);})()`
+    );
+    if (empty) skip("flow", "案件详情链接可定位", "空系统（尚无案件，符合全新部署预期）");
+    else record("flow", "案件详情链接可定位", false, "未找到（页面非空态，疑似选择器失效）");
+  }
   if (matterHref) {
     await goto(ctx, matterHref, { minChars: 80 });
     record("flow", "案号显示", await ctx.evaluate("/LL-\\d{4}-/.test(document.body.innerText)"));
