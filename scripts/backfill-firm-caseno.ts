@@ -12,7 +12,19 @@ import { matterCategoryCode } from "../src/lib/procedures-by-category";
 import { shParts } from "../src/lib/ui/sh-time";
 import { renderCaseNoTemplate } from "../src/lib/matters/firm-caseno";
 
+const DRY_RUN = !process.argv.includes("--yes");
+if (!process.argv.includes("--yes") && !process.argv.includes("--dry-run")) {
+  console.log("（未指定 --yes，按 dry-run 处理；确认无误后加 --yes 真正写入）\n");
+}
+
 async function main() {
+  // 2026-11-20：与 backfill-client-codes 同款防护。
+  // 本脚本改写 Matter.firmCaseNo —— 这是对外可见的案号（归档、报表、卷宗封面都用它），
+  // 误跑一次就直接改标识，且无法简单回退。
+  const target = (process.env.DATABASE_URL ?? "").replace(/:[^:@]*@/, ":***@");
+  console.log(`目标库：${target || "（未设置 DATABASE_URL）"}`);
+  console.log(DRY_RUN ? "模式：DRY-RUN（不写库）\n" : "模式：写入\n");
+
   const profile = await getFirmProfile();
   const matters = await prisma.matter.findMany({
     where: { firmCaseNo: null },
@@ -42,7 +54,9 @@ async function main() {
       categoryWord: profile.categoryWords[m.category],
       seq
     });
-    await prisma.matter.update({ where: { id: m.id }, data: { firmCaseNo } });
+    if (!DRY_RUN) {
+      await prisma.matter.update({ where: { id: m.id }, data: { firmCaseNo } });
+    }
     updated++;
   }
 
