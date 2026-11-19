@@ -32,7 +32,14 @@ echo "==> BUILD_ID = ${BUILD_ID}"
 echo
 echo "==> [1/5] 静态检查"
 # ---------------------------------------------------------------
-npx tsc --noEmit
+# 2026-11-21：原先这一行只写 `npx tsc --noEmit` 然后无条件 echo「类型 0 错误」——
+# tsc 失败时脚本仍然宣称零错误，只是靠 set -e 意外退出、没有明确提示。
+# 变异验证（故意引入类型错误）发现了它：退出码是 tsc 的 2，日志里只有原始的
+# TS2322，看不到「静态检查失败」。现在显式判退出码。
+if ! npx tsc --noEmit; then
+  echo "    ❌ 类型检查失败，终止。先跑：npx tsc --noEmit" >&2
+  exit 1
+fi
 echo "    类型 0 错误"
 if npx eslint src 2>&1 | grep -qE "error|warning"; then
   echo "    ❌ eslint 未归零，终止。先跑：npx eslint src" >&2
