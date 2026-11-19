@@ -1,3 +1,23 @@
+-- ============================================================================
+-- v1.3.x → v1.4.0 结构增量
+--
+-- 【重要】本脚本**不可重复执行**，也不做 IF NOT EXISTS 保护（2026-11-20 实测）：
+--   在已部分执行或结构不符的库上重跑，会在第 1 条 CREATE TYPE 处报
+--   `ERROR: type "ClientIdType" already exists` 并中止（ON_ERROR_STOP=1）。
+--   这是刻意的——已有该枚举说明目标库不是 v1.3.x，继续执行会产出半套结构。
+--   PostgreSQL 的 CREATE TYPE 不支持 IF NOT EXISTS，包 DO/EXCEPTION 会把
+--   「结构不匹配」这一重要信号吞掉，反而更难排查。
+--
+-- 执行前请确认：
+--   1. 目标库确实是 v1.3.0 / v1.3.1 / v1.3.2 / v1.4.0 之前的版本
+--      （`select count(*) from pg_type where typname='ClientIdType'` 应为 0）
+--   2. 已备份数据库、storage/ 与 .env，并停止业务写入
+--   3. 在备份副本上先演练一遍
+--
+-- 若在第 1 条就报 type already exists：**停止**，回到 docs/RELEASE-GUIDE-v1.3.md
+-- 核对该库的真实版本，不要手工删枚举后重跑。
+-- ============================================================================
+
 -- CreateEnum
 CREATE TYPE "ClientIdType" AS ENUM ('ID_CARD', 'USCC', 'PASSPORT', 'OTHER', 'HK_MACAO_MAINLAND_PERMIT', 'TAIWAN_MAINLAND_PERMIT', 'FOREIGN_PERMANENT_ID');
 
