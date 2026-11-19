@@ -12,7 +12,12 @@ const { db, notify, auditMock, approveCtx, scheduleRegister } = vi.hoisted(() =>
     archiveRecord: { findUnique: vi.fn(), findMany: vi.fn() },
     matter: { findFirst: vi.fn() },
     notification: { findFirst: vi.fn() },
-    reminderDelivery: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn(), createMany: vi.fn() }
+    reminderDelivery: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn(), createMany: vi.fn() },
+    // 2026-11-21：createArchiveBorrow 改为「事务 + 归档记录行锁」做在途去重
+    // （原来是 findFirst→create 的 check-then-create，双击会生成两条）。
+    // 这里让 $transaction 直接跑回调，$queryRaw 当无操作 —— 测试关注的是去重逻辑本身。
+    $transaction: vi.fn(async (fn: any) => fn(db)),
+    $queryRaw: vi.fn(async () => [{ locked: 1 }])
   },
   notify: vi.fn(),
   auditMock: vi.fn(),

@@ -13,10 +13,10 @@
  * 但会误导后续审计以为"文档夹功能还活着"。
  */
 import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
+import { isPrismaError } from "@/lib/prisma-errors";
 import { parseInput } from "@/lib/parse-input";
 
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { audit } from "@/server/audit";
@@ -74,7 +74,7 @@ export async function createFolder(input: z.infer<typeof folderCreateSchema>) {
       }
     }));
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    if (isPrismaError(e, "P2002")) {
       throw new ActionError(`已有同名卷宗「${data.name.trim()}」`);
     }
     throw e;
@@ -110,7 +110,7 @@ export async function renameFolder(input: z.infer<typeof folderRenameSchema>) {
       data: { name: data.name.trim() }
     }));
   } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    if (isPrismaError(e, "P2002")) {
       throw new ActionError(`已有同名卷宗「${data.name.trim()}」`);
     }
     throw e;

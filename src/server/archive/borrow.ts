@@ -147,25 +147,41 @@ export async function createArchiveBorrow(input: z.input<typeof createSchema>) {
   if (data.scope === "LISTED" && (!data.documentIds || data.documentIds.length === 0)) {
     throw new ActionError("指定材料范围时至少选择一份材料");
   }
-  // 在途去重：同案同申请人已有待审或未到期借阅
-  const active = await prisma.archiveBorrowRequest.findFirst({
-    where: {
-      archiveRecordId: record.id,
-      applicantId: session.user.id,
-      OR: [{ status: "PENDING" }, { status: "APPROVED", accessUntil: { gte: new Date() } }]
-    },
-    select: { id: true }
-  });
-  if (active) throw new ActionError("该案卷已有在途借阅（待审或未到期），请先等待处理或归还");
-
-  const created = await prisma.archiveBorrowRequest.create({
-    data: {
-      archiveRecordId: record.id,
-      applicantId: session.user.id,
-      reason: data.reason,
-      scope: data.scope,
-      documentIds: data.documentIds ?? undefined
-    }
+  // 在途去重：同案同申请人已有待审或未到期借阅。
+  //
+  // 2026-11-21 修复（P2，多智能体审计「并发安全」维度）：
+  // 原来是「findFirst 查 → create」，两步之间没有锁也没有唯一约束。
+  // 用户双击、或网络重试，两个请求都通过检查 → 两条在途借阅单。
+  // 两条都被批准的话，还会登记两份到期提醒、开两个有效访问窗口。
+  //
+  // 修法：把「查 + 建」放进一个事务，并先对该归档记录行加锁，
+  // 把同一案卷的借阅申请串行化。第二次请求会等第一次提交，
+  // 那时它能看见刚建的 PENDING 单，正确拒绝。
+  //
+  // 不加部分唯一索引的原因：去重条件带状态与时效
+  // （PENDING，或 APPROVED 且未到期），部分索引表达不了「时间」这一维；
+  // 而且已归还/已过期的历史单允许重复存在。行锁不动 Schema，语义也更直观。
+  const created = await prisma.$transaction(async db => {
+    // 锁归档记录行，串行化同一案卷的借阅申请
+    await db.$queryRaw`SELECT 1 AS locked FROM "ArchiveRecord" WHERE id = ${record.id} FOR UPDATE`;
+    const active = await db.archiveBorrowRequest.findFirst({
+      where: {
+        archiveRecordId: record.id,
+        applicantId: session.user.id,
+        OR: [{ status: "PENDING" }, { status: "APPROVED", accessUntil: { gte: new Date() } }]
+      },
+      select: { id: true }
+    });
+    if (active) throw new ActionError("该案卷已有在途借阅（待审或未到期），请先等待处理或归还");
+    return db.archiveBorrowRequest.create({
+      data: {
+        archiveRecordId: record.id,
+        applicantId: session.user.id,
+        reason: data.reason,
+        scope: data.scope,
+        documentIds: data.documentIds ?? undefined
+      }
+    });
   });
   await audit({
     userId: session.user.id,

@@ -7,6 +7,7 @@
  * 唯一兜底，重复投递直接覆盖未执行任务（= 改期取消旧内容）。
  */
 import { prisma } from "@/lib/prisma";
+import { isPrismaError } from "@/lib/prisma-errors";
 import { Prisma, type JobQueue } from "@prisma/client";
 
 export type QueueJob = Pick<
@@ -83,7 +84,7 @@ export async function enqueueJob(input: {
     });
   } catch (error) {
     // 并发同键入队撞唯一键（find-then-create 竞态）：按已存在处理，不得炸给扫描调用方
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    if (isPrismaError(error, "P2002")) {
       const raced = await prisma.jobQueue.findUnique({
         where: { dedupeKey: input.dedupeKey },
         select: { id: true, status: true }

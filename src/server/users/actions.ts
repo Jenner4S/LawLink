@@ -1,5 +1,6 @@
 "use server";
 import {responsibilityCounts,recordOffboardingRisk} from "@/server/reminders/offboarding";
+import { isPrismaError, uniqueViolationOn } from "@/lib/prisma-errors";
 import { parseInput } from "@/lib/parse-input";
 
 import { readBuiltinPresentations } from "@/lib/roles/presentation";
@@ -7,7 +8,6 @@ import { roleTablesReady } from "@/lib/roles/service";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireSystemAdmin } from "@/lib/auth/session";
 import { approvalTransaction, approvalAudit } from "@/lib/approvals/service";
@@ -191,9 +191,8 @@ export async function createUser(formData: FormData) {
       return user;
     });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      const target = String(error.meta?.target ?? "");
-      throw new Error(target.includes("identityDocument") ? "该类型的证件号码已登记" : "邮箱已被使用");
+    if (isPrismaError(error, "P2002")) {
+      throw new Error(uniqueViolationOn(error, "identityDocument") ? "该类型的证件号码已登记" : "邮箱已被使用");
     }
     throw error;
   }
