@@ -41,7 +41,19 @@ const LIST_ONLY = process.argv.includes("--list");
 
 const MONEY_MODEL = /(receivable|payment|allocation|commissionSettlement|feeEntry|billing|invoiceRequest|invoicePaymentAllocation|financeCorrection)\.(create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/;
 const MONEY_SQL = /(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"(Receivable|Payment|Allocation|CommissionSettlement|FeeEntry|Billing|InvoiceRequest|InvoicePaymentAllocation|FinanceCorrection)"/i;
-const AUDIT = /\b(?:audit|auditTx|approvalAudit)\s*\(/;
+/**
+ * 五种等价的审计写法（2026-11-22 逐个核对全仓后确认）。
+ *
+ * 每漏一种就会把「已经写审计」的函数误报成缺口 —— 这一天之内我在这上面
+ * 误报了四次：先漏 approvalAudit（开票三动作全误报），
+ * 再把 `auditTx?` 写成「auditT + 可选 x」连普通 audit 都匹配不到，
+ * 然后漏 auditStrict，最后漏 auditLog.create（roles/actions 直接写库）。
+ * 新增写法请同步加到这里，否则这个门禁会开始误伤。
+ *
+ * **不计入**：`runWithFailureAudit` —— 它只在失败时审计（cron/scheduler.ts），
+ * 成功路径不留痕，不能算「有审计」。
+ */
+const AUDIT = /\b(?:audit|auditTx|auditStrict|approvalAudit)\s*\(|\bauditLog\.create\s*\(/;
 
 /** 事务内 helper：审计由调用方在同一事务里写，因此基线豁免 */
 const BASELINE_HELPERS = new Set([
