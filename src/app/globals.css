@@ -35,15 +35,15 @@
     --popover: 0 0% 100%;
     --popover-foreground: 211 53% 10%;
 
-    --primary: 182 100% 25%;           /* teal #007B7F */
+    --primary: 182 100% 24%;           /* teal #00767A —— 2026-11-19 由 25% 调深：原值在 bg-sunken 上 4.29，差 0.21 未达 AA 正文；现 4.87/4.59/5.42 三底全部达标 */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 150 10% 92%;          /* bg-sunken #E9EDEB */
     --secondary-foreground: 211 53% 10%;
 
     --muted: 150 10% 92%;              /* bg-sunken #E9EDEB */
-    --muted-foreground: 209 10% 45%;   /* t-muted #68747F */
-    --muted-subtle: 209 11% 64%;       /* t-faint #98A3AD */
+    --muted-foreground: 209 10% 42%;   /* t-muted #606B76 —— 2026-11-19 由 45% 调深：原值在画布/下沉底上仅 4.35/4.11，未达 WCAG AA 正文 4.5；现 4.88/4.60 全部达标 */
+    --muted-subtle: 209 11% 52%;       /* t-faint #778592 —— 2026-11-19 由 64% 调深：原值对比度仅 2.15–2.54，远低于 WCAG AA 正文 4.5、甚至低于大字 3.0，辅助文字几乎读不清；现 3.20–3.78 达大字标准，并与 t-muted(42%) 保持 10 个点的层级差 */
 
     --accent: 140 12% 95%;             /* bg-hover #F1F4F2 */
     --accent-foreground: 211 53% 10%;
@@ -55,7 +55,7 @@
     --border-strong: 147 8% 73%;       /* bd-strong #B4BFB9 */
     --hairline: 150 10% 92%;           /* bd-hair #E8ECEA */
     --input: 150 9% 83%;               /* bd-default #CFD7D3 */
-    --ring: 182 100% 25%;
+    --ring: 182 100% 24%;
 
     --radius: 0.5rem;                  /* 8px */
     --radius-sm: 0.375rem;             /* 6px */

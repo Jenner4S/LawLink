@@ -66,7 +66,10 @@ export function CaseListHeader({
           : showIntakeDateColumn
             ? MATTER_ROW_GRID_WITH_INTAKE
             : MATTER_ROW_GRID,
-        "hidden border-b border-border bg-[#FAFBFA] px-5 py-2.5 text-[10.5px] font-semibold tracking-[0.05em] text-[#98A3AD] lg:grid"
+        // 表头文字改用 token（2026-11-19）：原硬编码 #98A3AD 在 #FAFBFA 底上仅 2.5，
+        // 远低于 AA 4.5，且绕过了已调深的 --muted-subtle。表头虽是小字，
+        // 但它是列含义的唯一线索，读不清等于表格不可用。
+        "hidden border-b border-border bg-[#FAFBFA] px-5 py-2.5 text-[10.5px] font-semibold tracking-[0.05em] text-muted-subtle lg:grid"
       )}
     >
       {showArchiveDateColumn ? (
