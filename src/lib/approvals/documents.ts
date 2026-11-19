@@ -10,6 +10,17 @@ export async function canReadDocument(userId: string, doc: { id: string; uploade
   if (!user?.active || doc.deletedAt) return false;
   const access = await resolveRoleUser(userId, user.role);
   if (!access.enabled) return false;
+
+  // 隔离墙（2026-11-20 补）：这是**下载/预览**的统一判定，22 处调用点覆盖
+  // /api/documents/[id]/download、/preview、桌面端签出、全局搜索逐条过滤等。
+  // 此前全仓只有读取列表用了墙（matterReadVisibilityFilter），单份材料的下载判定
+  // 只查成员关系 —— 于是被墙隔离的人在看板上看不到该案件，却能直接下载它的材料全文。
+  // 读取侧注释明写「隔离墙对全所生效（含合伙人/管理员）……执业合规要求」。
+  // 墙检查放在一切放行分支之前，顺序与 canReviewDocument 一致。
+  if (doc.matterId) {
+    const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
+    if (await isMatterWalledFor(prisma, { matterId: doc.matterId, userId, role: user.role })) return false;
+  }
   if(scopeFor(access,'finance.correct')==='ALL'&&await financeLedgerReady(prisma)){
     const [basis]=await prisma.$queryRaw<{n:bigint}[]>`SELECT COUNT(*) AS n FROM "BillingAttachment" a JOIN "Billing" b ON b.id=a."billingId" WHERE a."documentId"=${doc.id} AND b.status IN ('DRAFT','ACTIVE')`;
     if(Number(basis.n))return true;

@@ -30,6 +30,25 @@ export async function canReviewDocument(
   if (!user?.active) return false;
   const access = await resolveRoleUser(userId, user.role);
   if (!access.enabled) return false;
+
+  // 隔离墙必须先于一切放行判断（2026-11-20 补）。
+  //
+  // 这是「外发」出口，比下载更敏感：正文会被解密后发给外部模型服务商。
+  // 此前这里没有墙检查，且下一行 `isManager` 直接让合伙人直通全所案件 ——
+  // 而读取侧 matterReadVisibilityFilter 的注释明写「隔离墙对全所生效
+  // （含合伙人/管理员），这是执业合规要求，不是权限设置」。
+  //
+  // 后果：被墙隔离的主办/成员能看到自己案件的 AI 入口，被墙隔离的合伙人更是
+  // 全所直通；读取侧拦住了「看」，AI 侧却没拦住「发」。外发之后无法收回。
+  //
+  // 放在 isManager 之前是刻意的：墙对合伙人同样生效，不能被管理权短路。
+  if (doc.matterId) {
+    const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
+    if (await isMatterWalledFor(prisma, { matterId: doc.matterId, userId, role: user.role })) {
+      return false;
+    }
+  }
+
   if (isManager(access.role)) return true;
   if (doc.matterId && await prisma.matter.count({
     where: { id: doc.matterId, deletedAt: null, OR: [{ ownerId: userId }, { members: { some: { userId } } }] }

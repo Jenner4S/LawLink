@@ -19,6 +19,9 @@ const { db, session, canRead } = vi.hoisted(() => {
     document: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0), findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
     systemSetting: { findUnique: vi.fn(async () => null) },
+    // 2026-11-20：AI 外发入口新增隔离墙检查，需 mock ethicalWall.findFirst。
+    // 默认返回 null（无墙），个别用例可改返回值验证「有墙时拒绝」。
+    ethicalWall: { findFirst: vi.fn(async () => null) },
     jobQueue: { updateMany: vi.fn(async () => ({ count: 0 })) }
   };
   return {
@@ -117,6 +120,7 @@ describe("② AI 审查：全文外发资格按材料归属逐件判断（P1-2�
   });
 
   it("案件材料按主办/成员判断：非成员的管理权用户被拒绝，成员放行", async () => {
+    db.ethicalWall.findFirst.mockResolvedValue(null); // 无墙
     const matterDoc = { id: DOCID, matterId: "cmatter00000000000000000001", intakeId: null };
     db.document.findUnique.mockResolvedValue({ ...matterDoc, uploadedById: OTHER, deletedAt: null });
     session.user.role = "LAWYER";
@@ -125,6 +129,31 @@ describe("② AI 审查：全文外发资格按材料归属逐件判断（P1-2�
     await expect(assertCanReviewDocument(session, matterDoc)).rejects.toThrow("无权审查该材料");
     db.matter.count.mockResolvedValue(1);
     await expect(assertCanReviewDocument(session, matterDoc)).resolves.toBeUndefined();
+  });
+
+  it("隔离墙先于一切放行：被墙的主办/成员与合伙人都不得经 AI 外发全文", async () => {
+    const matterDoc = { id: DOCID, matterId: "cmatter00000000000000000002", intakeId: null };
+    db.document.findUnique.mockResolvedValue({ ...matterDoc, uploadedById: OTHER, deletedAt: null });
+    // 命中隔离墙
+    db.ethicalWall.findFirst.mockResolvedValue({ id: "cwall", matterId: matterDoc.matterId });
+
+    // ① 案件成员也不行 —— 墙比成员关系优先
+    session.user.role = "LAWYER";
+    db.user.findUnique.mockResolvedValue({ role: "LAWYER", active: true, managerAuthorized: false });
+    db.matter.count.mockResolvedValue(1);
+    await expect(assertCanReviewDocument(session, matterDoc)).rejects.toThrow("无权审查该材料");
+
+    // ② 合伙人也不行 —— 读取侧注释写明「墙对全所生效（含合伙人/管理员）」，
+    //    此处是外发出口，不能被 isManager 短路
+    session.user.role = "PRINCIPAL_LAWYER";
+    db.user.findUnique.mockResolvedValue({ role: "PRINCIPAL_LAWYER", active: true });
+    await expect(assertCanReviewDocument(session, matterDoc)).rejects.toThrow("无权审查该材料");
+
+    // ③ 撤墙后恢复正常 —— 证明拒绝来自墙而不是别的
+    db.ethicalWall.findFirst.mockResolvedValue(null);
+    await expect(assertCanReviewDocument(session, matterDoc)).resolves.toBeUndefined();
+
+    db.matter.count.mockResolvedValue(0);
   });
 
   it("无归属材料仅上传者本人可审查", async () => {

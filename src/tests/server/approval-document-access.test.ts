@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { db, canApprove } = vi.hoisted(() => ({ db: {
   systemSetting: { findUnique: vi.fn() }, user: { findUnique: vi.fn() }, matter: { count: vi.fn() }, intake: { findUnique: vi.fn() },
-  document: { findUnique: vi.fn() }, sealRequest: { findFirst: vi.fn() }, invoiceRequest: { findMany: vi.fn() }, archiveRecord: { findMany: vi.fn() }
+  document: { findUnique: vi.fn() }, sealRequest: { findFirst: vi.fn() }, invoiceRequest: { findMany: vi.fn() }, archiveRecord: { findMany: vi.fn() },
+  // 2026-11-20：canReadDocument（下载/预览统一判定）新增隔离墙检查，需 mock。
+  // 默认 null = 无墙；要验证「墙内不可下载」的用例可改返回值。
+  ethicalWall: { findFirst: vi.fn() }
 }, canApprove: vi.fn() }));
 vi.mock("@/lib/approvals/history-access", () => ({ hasHandledApproval: vi.fn(async () => false) }));
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
@@ -11,7 +14,7 @@ const doc = { id: "doc-id", uploadedById: "uploader", matterId: null, intakeId: 
 beforeEach(() => {
   vi.resetAllMocks(); db.user.findUnique.mockResolvedValue({ active: true, role: "LAWYER" });
   db.matter.count.mockResolvedValue(0); db.document.findUnique.mockResolvedValue({ status: "DRAFT" });
-  db.sealRequest.findFirst.mockResolvedValue(null); db.invoiceRequest.findMany.mockResolvedValue([]); db.archiveRecord.findMany.mockResolvedValue([]); canApprove.mockResolvedValue(false);
+  db.sealRequest.findFirst.mockResolvedValue(null); db.invoiceRequest.findMany.mockResolvedValue([]); db.archiveRecord.findMany.mockResolvedValue([]); db.ethicalWall.findFirst.mockResolvedValue(null); canApprove.mockResolvedValue(false);
 });
 describe("审批附件对象级访问", () => {
   it("没有案件和收案关联的文件仍需授权，猜中文件 ID 不可下载", async () => { expect(await canReadDocument("outsider", doc)).toBe(false); expect(await canReadDocument("uploader", doc)).toBe(true); });
