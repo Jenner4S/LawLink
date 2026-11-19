@@ -694,8 +694,18 @@ export async function createInvoiceRequest(input: {
       });
       if (docs.length !== new Set(evidenceDocIds).size) throw new ActionError("开票依据不存在或已删除");
     }
-    for (const id of evidenceDocIds) {
-      const doc = await prisma.document.findUnique({ where: { id } });
+    // 2026-11-20 性能：上面已按 id 批量查过一次，这里不再逐条 findUnique。
+    // 原实现是 N+1 —— 每份开票依据多打一次库，5 份依据就是 5 次往返，
+    // 而数据其实已经在手。改为一次性取出 canReadDocument 需要的字段，
+    // 权限判定仍然逐条执行（语义不变，只是数据来源从数据库换成内存）。
+    const docIds = [...new Set(evidenceDocIds)];
+    const docRows = await prisma.document.findMany({
+      where: { id: { in: docIds } },
+      select: { id: true, uploadedById: true, matterId: true, intakeId: true, deletedAt: true }
+    });
+    const docById = new Map(docRows.map((d) => [d.id, d]));
+    for (const id of docIds) {
+      const doc = docById.get(id);
       if (!doc || !await canReadDocument(session.user.id, doc)) throw new ActionError("开票依据不存在或无权访问");
     }
   }
