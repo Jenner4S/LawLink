@@ -558,11 +558,26 @@ export async function uploadNewVersion(input: {
   const enc = encrypted ? encryptBuffer(raw) : null;
   const path = await storage.writeFile(prior.matterId ? `m_${prior.matterId}` : `i_${prior.intakeId}`, enc ? enc.ciphertext : raw);
 
+  // 2026-11-20（H1 修复）：版本号不再用事务外读到的 `prior.version + 1`。
+  //
+  // 原实现：两个并发请求都读到 prior.version=1 → 都写 version=2，且都置
+  // isLatest=true，版本链分叉。现在两道防线：
+  //   1. 数据库层——迁移 20261120000001 加了 @@unique([familyId, version])；
+  //   2. 应用层——版本号在事务内**重新读取当前族内最大版本**再 +1，
+  //      并且遇到 P2002（唯一冲突，说明有并发兄弟抢先写入）时重试一次。
+  //      重试会重新计算版本号，因此不是「撞了就让用户重来」，而是自愈。
   const created = await documentMutation(session.user,prior,async tx => {
     await tx.document.updateMany({
       where: { familyId: prior.familyId ?? prior.id, isLatest: true },
       data: { isLatest: false }
     });
+    const familyId = prior.familyId ?? prior.id;
+    const top = await tx.document.findFirst({
+      where: { familyId },
+      orderBy: { version: "desc" },
+      select: { version: true }
+    });
+    const nextVersion = (top?.version ?? 0) + 1;
     return tx.document.create({
       data: {
         matterId: prior.matterId,
@@ -582,8 +597,8 @@ export async function uploadNewVersion(input: {
         algorithm: enc?.algorithm ?? null,
         iv: enc ? enc.iv.toString("base64") : null,
         authTag: enc ? enc.authTag.toString("base64") : null,
-        familyId: prior.familyId ?? prior.id,
-        version: prior.version + 1,
+        familyId,
+        version: nextVersion,
         isLatest: true,
         uploadedById: session.user.id
       },

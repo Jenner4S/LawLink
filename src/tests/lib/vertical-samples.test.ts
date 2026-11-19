@@ -22,6 +22,16 @@ const { db, session } = vi.hoisted(() => {
   const db = {
     document: {
       findUnique: vi.fn(async ({ where }: any) => docState[where.id] ?? null),
+      // 2026-11-20（H1）：版本号改为事务内取 max(version)+1，需要 findFirst。
+      // 按 familyId 找族内最大版本；首版本（familyId 为 null）返回 null。
+      findFirst: vi.fn(async ({ where }: any) => {
+        const family = where?.familyId?.equals ?? where?.familyId ?? null;
+        const rows = Object.values(docState).filter((r: any) =>
+          (r.familyId ?? null) === (family ?? null)
+        ) as any[];
+        if (!rows.length) return null;
+        return rows.reduce((a: any, b: any) => (b.version > a.version ? b : a));
+      }),
       updateMany: vi.fn(async ({ where, data }: any) => {
         // 翻转同族旧版本 isLatest（where.familyId 真实参与过滤）
         const family = where?.familyId?.equals ?? null;

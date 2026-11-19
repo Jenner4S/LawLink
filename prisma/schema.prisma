@@ -1386,6 +1386,16 @@ model Document {
   @@index([intakeId])
   @@index([procedureId])
   @@index([familyId])
+  // 2026-11-20（H1）：材料版本链的数据库级唯一性。
+  //
+  // 此前 (familyId, version) 只有普通索引，应用层用 `version: prior.version + 1`
+  // 计算新版本号——两个并发「上传新版本」请求都读到 prior.version=1，
+  // 都写成 version=2，于是同一族出现两条 version=2、两条 isLatest=true。
+  // 版本链就此分叉：历史回溯看到两个「最新版」，归档快照取到哪条取决于查询顺序。
+  //
+  // familyId 为 null 的是首版本（尚未成族），PostgreSQL 的唯一索引允许多个 null，
+  // 所以首版本不受此约束影响——这正是需要的行为。
+  @@unique([familyId, version])
   @@index([folderId])
   @@index([templateId])
   @@index([matterId, archiveChecklistItemId])
