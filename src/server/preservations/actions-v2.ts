@@ -1,5 +1,5 @@
 "use server";
-import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
+import { roleMutation } from "@/lib/roles/service";
 import { parseInput } from "@/lib/parse-input";
 import { isManager } from "@/lib/permissions";
 import { computeDeadlineDate } from "@/lib/deadline-rules";
@@ -196,7 +196,10 @@ export async function updatePreservationCase(input: z.infer<typeof caseUpdateSch
       });
       await voidPendingPreservation(props.map((p) => p.id), "SUPERSEDED", "CASE_MUTATED", roleDb);
     }
-  });
+  }, { atomic: true });
+  // ↑ atomic：这一回调写了「案件更新」+「作废旧档位登记」两件事。
+  // 拆开提交时，若第二步失败，案件已改（remindDays/负责人变了）而旧档位登记还在，
+  // 投递器会按旧档位发出已经不该发的提醒。
 
   await audit({
     userId: session.user.id,
@@ -394,8 +397,7 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
   // 顺序也调了：先更新到期日、再写续封记录。
   // 万一中途失败，宁可「保全已延期但台账少一条」（有利方向），
   // 不能「台账写了延期但保全没延」（危险方向）。
-  await prisma.$transaction(async db => {
-    await checkRoleMutation(db, session.user, "matters.write");
+  await roleMutation(session.user, "matters.write", async db => {
     const updated = await db.preservationProperty.updateMany({
       where: { id: data.propertyId, expiryDate: prop.expiryDate, status: { not: "LIFTED" } },
       data: { expiryDate: newExpiryDate, status: "RENEWED" }
@@ -417,7 +419,8 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
     });
     // F-1 阶段一：续封改期后旧档位登记全部作废（到期日变了，旧档位提醒失效）
     await voidPendingPreservation([data.propertyId], "SUPERSEDED", "RENEWED", db);
-  });
+  }, { atomic: true });
+  // ↑ atomic：CAS 更新 + 续封台账 + 作废旧档位，三件事必须一起生效。
 
   revalidatePath("/preservation");
   if (prop.target.case.matterId) await revalidateMatter(prop.target.case.matterId);
@@ -443,7 +446,8 @@ export async function liftProperty(propertyId: string) {
     });
     // F-1 阶段一：解除后不再有续封提醒，残余 PENDING 登记取消
     await voidPendingPreservation([propertyId], "CANCELLED", "LIFTED", roleDb);
-  });
+  }, { atomic: true });
+  // ↑ atomic：解除状态与提醒作废必须一起生效，否则会「已解除但仍收到续封提醒」。
 
   revalidatePath("/preservation");
   if (prop.target.case.matterId) await revalidateMatter(prop.target.case.matterId);
@@ -464,7 +468,8 @@ export async function deleteProperty(id: string) {
     await roleDb.preservationProperty.delete({ where: { id } });
     // F-1 阶段一：对象删除，残余 PENDING 登记取消（台账行保留作历史）
     await voidPendingPreservation([id], "CANCELLED", "OBJECT_DELETED", roleDb);
-  });
+  }, { atomic: true });
+  // ↑ atomic：对象已删而登记未作废时，投递器会为一个不存在的对象发提醒。
   revalidatePath("/preservation");
   return { ok: true };
 }

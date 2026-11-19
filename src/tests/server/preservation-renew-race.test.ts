@@ -96,7 +96,7 @@ vi.mock("@/lib/notifications/approval", () => ({ notifyRoleApprovers: async () =
 // revalidatePath 需要 Next.js 的 static generation store，测试环境没有 → mock 掉
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {} }));
 
-const { renewProperty } = await import("@/server/preservations/actions-v2");
+const { renewProperty, liftProperty } = await import("@/server/preservations/actions-v2");
 const { ActionError } = await import("@/lib/action-error");
 
 /**
@@ -194,5 +194,63 @@ describe("renewProperty · 并发续封不得丢失续期（真库）", () => {
     ).rejects.toBeInstanceOf(ActionError);
     const after = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: propertyId } });
     expect(shDay(after.expiryDate)).toBe("2027-01-01"); // 未变
+  });
+});
+
+/* ==================================================================
+ * 下半部分：`atomic` 选项真的把「状态 + 提醒作废」绑在一起了吗
+ *
+ * 上面 4 例验证的是并发不丢续期（靠 CAS，单条语句本身就原子）。
+ * 但保全的解除/删除/改档位还多一步「作废旧档位登记」——
+ * 那一步失败时，状态必须跟着回滚，否则会出现
+ * 「已解除保全却仍收到续封提醒」这种执业风险。
+ *
+ * 这里的做法：在临时库装一个让 ReminderDelivery 更新必失败的触发器，
+ * 再调 liftProperty，断言状态没有被改掉。
+ * ================================================================== */
+
+describe("liftProperty · 提醒作废失败时状态必须回滚（atomic 选项）", () => {
+  it("作废提醒抛错 → 保全仍是 ACTIVE，不会「已解除但仍提醒」", async () => {
+    const { propertyId } = await seedProperty(new Date(Date.now() + 86_400_000));
+    // 造一条 PENDING 登记，让 void 有东西可改
+    await prisma.reminderDelivery.create({
+      data: {
+        objectType: "PRESERVATION_PROPERTY" as never,
+        objectId: propertyId,
+        kind: "OFFSET" as never,
+        offset: 7,
+        channel: "IN_APP" as never,
+        dayKey: "2026-12-01",
+        userId: CURRENT_USER,
+        status: "PENDING" as never,
+        registeredAt: new Date()
+      }
+    });
+
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION rd_fail_probe() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'forced void failure'; END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER rd_fail_probe_trg BEFORE UPDATE ON "reminder_delivery"
+      FOR EACH ROW EXECUTE FUNCTION rd_fail_probe();
+    `);
+
+    try {
+      await expect(liftProperty(propertyId)).rejects.toBeTruthy();
+
+      const after = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: propertyId } });
+      // 关键：状态没被改成 LIFTED —— 事务把「改状态」一起回滚了
+      expect(after.status).toBe("ACTIVE");
+
+      const still = await prisma.reminderDelivery.count({
+        where: { objectId: propertyId, status: "PENDING" as never }
+      });
+      expect(still).toBe(1);
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS rd_fail_probe_trg ON "reminder_delivery"`);
+      await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS rd_fail_probe()`);
+    }
   });
 });

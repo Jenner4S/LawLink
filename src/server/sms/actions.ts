@@ -1,5 +1,5 @@
 "use server";
-import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
+import { roleMutation } from "@/lib/roles/service";
 import { parseInput } from "@/lib/parse-input";
 
 import { revalidatePath } from "next/cache";
@@ -438,8 +438,7 @@ export async function generateHearingFromSms(input: z.infer<typeof smsGenerateHe
   //   `updateMany({ where: { id, generatedHearingId: null } })` 抢到才继续；
   //   抢输方 count=0 → 抛错 → 整个事务（含刚建的开庭）回滚，不留孤儿。
   let hearingId = "";
-  await prisma.$transaction(async db => {
-    await checkRoleMutation(db, session.user, "matters.write");
+  await roleMutation(session.user, "matters.write", async db => {
     const created = await db.hearing.create({
       data: {
         procedureId: data.procedureId,
@@ -459,7 +458,8 @@ export async function generateHearingFromSms(input: z.infer<typeof smsGenerateHe
       throw new ActionError("该短信已生成过开庭，请勿重复生成");
     }
     hearingId = created.id;
-  });
+  }, { atomic: true });
+  // ↑ atomic：「建开庭」与「回写 generatedHearingId」必须一起生效，否则留孤儿开庭。
 
   await audit({
     userId: session.user.id,
@@ -498,8 +498,7 @@ export async function generateDeadlineFromSms(input: z.infer<typeof smsGenerateD
   // 期限重复比开庭更危险：两条一样的期限会让「办结一条」后另一条仍报逾期，
   // 律师无法判断哪条才是真的。
   let deadlineId = "";
-  await prisma.$transaction(async db => {
-    await checkRoleMutation(db, session.user, "matters.write");
+  await roleMutation(session.user, "matters.write", async db => {
     const created = await db.deadline.create({
       data: {
         procedureId: data.procedureId,
@@ -518,7 +517,8 @@ export async function generateDeadlineFromSms(input: z.infer<typeof smsGenerateD
       throw new ActionError("该短信已生成过期限，请勿重复生成");
     }
     deadlineId = created.id;
-  });
+  }, { atomic: true });
+  // ↑ atomic：同上，避免重复期限。
 
   await audit({
     userId: session.user.id,
