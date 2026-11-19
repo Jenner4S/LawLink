@@ -311,3 +311,42 @@ npx vitest run
 3. **唯一需要人拍板的事？** `buffers@0.1.1` 无许可声明——接受「披露 + 低风险容忍」，还是走「消除依赖」（需改 `package.json` + 全量回归）。
 4. **最大意外发现？** 部署镜像里实际打包了 402 个开发依赖（含 MPL 的 `axe-core`、`typescript`），扩大了合规面但不构成违规。
 5. **任务书的两处前提不成立**：`lightningcss` 不存在；包数不是 671 而是 901。
+
+---
+
+## 更新（2026-11-19 晚）：buffers 已消除，法务风险项清零
+
+### 处置动作
+
+原 P1 风险项 `buffers@0.1.1`（无 license 字段、上游 `github.com/substack/node-buffers` 已 404）
+的成因是依赖链：
+
+```
+lawlink → exceljs@4.4.0 → unzipper@0.10.14 → binary@0.3.0 → buffers@0.1.1
+```
+
+处置方式不是自研替代，而是**升级中间层**：`unzipper@0.12.5` 已移除 `binary` 依赖，
+整条链上的 `buffers` 随之消失。
+
+```json
+// package.json
+"overrides": { "unzipper": "^0.12.5" }
+```
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `npm ls buffers` | `(empty)` —— 已移除 |
+| `npm ls unzipper` | `exceljs@4.4.0 → unzipper@0.12.5`（无 binary） |
+| 全量依赖重扫（715 包） | **未知 / AGPL / SSPL / CC-BY-NC / UNLICENSED：0 个** |
+| exceljs 真实读写 | 生成模板 8674 字节 → 读回 15 列（含「案号」）→ 写入再读回一致 |
+| 测试套件 | 110 files / 863 tests 全绿 |
+
+跨版本风险已实测排除：exceljs@4.4.0 在 unzipper@0.12.5 下 xlsx 解压、读取、写入均正常。
+
+### 结论
+
+**许可证层面已无任何阻断项**（原「无条件可用 / 19 有条件可用 / 0 不可用」中的 1 个 P1 已消除）。
+剩余仅有需声明事项（LGPL 的 sharp-libvips、MPL 的 axe-core、CC-BY-4.0 的 caniuse-lite），
+均由 `THIRD-PARTY-NOTICES.md` 承担声明义务。

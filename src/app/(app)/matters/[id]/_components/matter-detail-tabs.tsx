@@ -36,6 +36,8 @@ import { LifecycleActions } from "./lifecycle-actions";
 import { AddBillingSheet } from "./finance-forms";
 import { EvidenceItemDialog, type EvidenceItemRow } from "./evidence-panel";
 import { ArchiveStatusBanner } from "./archive-status-banner";
+import { EthicalWallBanner } from "./ethical-wall-banner";
+import type { EthicalWallSummary } from "@/server/ethical-walls/read";
 import { ArchiveWizardDialog } from "./archive-wizard";
 import { TeamEditorDialog } from "./team-editor-dialog";
 import type { FolderPayload, FolderDocument, TemplateSummary } from "./folder-types";
@@ -176,6 +178,8 @@ export function MatterDetailTabs({
   sealContracts,
   expresses,
   latestArchive,
+  wallSummary,
+  canOpenWallAdmin,
   customFieldDefs,
   preservationCases,
   evidenceItems,
@@ -207,6 +211,10 @@ export function MatterDetailTabs({
     archivedBy: string;
     missingItems: string[];
   } | null;
+  /** 隔离墙摘要（页首合规提示条用；无墙时 hasWall=false，组件不渲染） */
+  wallSummary: EthicalWallSummary;
+  /** 是否显示「查看详情」管理入口：系统管理员或合伙人（isSystemAdmin / isManager） */
+  canOpenWallAdmin: boolean;
   customFieldDefs: {
     id: string;
     key: string;
@@ -503,6 +511,15 @@ export function MatterDetailTabs({
           {engagedProcedures.length === 0 && !(canAssociateThisMatter && !isArchived) ? <span className="t-xs t-mute">暂无程序</span> : null}
         </div>
       </section>
+
+      {/* 隔离墙合规提示：仅在该案有生效中的墙时出现（无墙时组件返回 null，不占位）。
+          位置刻意放在程序栏之下、页签之上——程序卡以 -60px 上提压在头版下缘，
+          若插在头版与程序栏之间会被压住；本位置仍属页首信息区，且与归档状态 banner 同一套放法。 */}
+      {wallSummary.hasWall ? (
+        <div style={{ margin: "14px 0 0" }}>
+          <EthicalWallBanner summary={wallSummary} canOpenAdmin={canOpenWallAdmin} />
+        </div>
+      ) : null}
 
       {latestArchive && latestArchive.status !== "APPROVED" ? (
         <div style={{ margin: "14px 0 0" }}>

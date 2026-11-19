@@ -18,8 +18,8 @@ describe("自定义角色的默认拒绝与权限范围", () => {
     );
     expect(matterVisibilityFilter("u", "CUSTOM")).toEqual({ id: { in: [] } });
     expect(clientVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual({ id: { in: [] } });
-    expect(matterFinanceVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual(
-      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM")] }
+    expect(matterFinanceVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS, now)).toEqual(
+      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM", now)] }
     );
   });
   it("行政开放日常事务，不隐式开放财务、下载、审批或系统权限", () => {
@@ -33,18 +33,20 @@ describe("自定义角色的默认拒绝与权限范围", () => {
   it("全所财务授权不会变为全所案件正文授权", () => {
     const grants = [{ permissionKey: "finance.read" as const, scope: "ALL" as const }];
     // 全所财务授权 + 隔离墙（隔离墙不受授权影响）
-    expect(matterFinanceVisibilityFilter("u", "CUSTOM", grants)).toEqual(
-      { AND: [{}, ethicalWallExclusion("u", "CUSTOM")] }
+    const now2 = new Date();
+    expect(matterFinanceVisibilityFilter("u", "CUSTOM", grants, now2)).toEqual(
+      { AND: [{}, ethicalWallExclusion("u", "CUSTOM", now2)] }
     );
-    expect(matterReadVisibilityFilter("u", "CUSTOM", grants)).toEqual(
-      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM")] }
+    expect(matterReadVisibilityFilter("u", "CUSTOM", grants, now2)).toEqual(
+      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM", now2)] }
     );
   });
   it("全所案件查看不会变为下载或写入权限", () => {
     const user = { role: "CUSTOM", rolePermissions: [{ permissionKey: "matters.read" as const, scope: "ALL" as const }] };
     // 全所案件查看授权：角色层放行（customMatterFilter 返回 {}），但隔离墙仍然生效
-    expect(matterReadVisibilityFilter("u", user.role, user.rolePermissions)).toEqual(
-      { AND: [{}, ethicalWallExclusion("u", user.role)] }
+    const now3 = new Date();
+    expect(matterReadVisibilityFilter("u", user.role, user.rolePermissions, now3)).toEqual(
+      { AND: [{}, ethicalWallExclusion("u", user.role, now3)] }
     );
     expect(hasCustomPermission(user, "matters.write")).toBe(false);
     expect(hasCustomPermission(user, "documents.download")).toBe(false);

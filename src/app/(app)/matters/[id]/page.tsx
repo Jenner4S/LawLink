@@ -5,7 +5,9 @@ import {WorkResponsibilityPanel} from "@/components/matters/work-responsibility-
 import {readMatterReview} from "@/server/conflicts/matter-review";
 import {MatterConflictReview} from "./_components/conflict-review";
 import { hasCustomPermission } from "@/lib/roles/catalog";
-import { hasMatterBusinessAccess } from "@/lib/permissions";
+import { hasMatterBusinessAccess, isManager } from "@/lib/permissions";
+import { isSystemAdmin } from "@/lib/auth/system-role";
+import { getWallSummaryForMatter } from "@/server/ethical-walls/read";
 import { TeamMatterOverview } from "./_components/team-matter-overview";
 import { notFound, redirect } from "next/navigation";
 import { getMatterById } from "@/server/matters/actions";
@@ -215,6 +217,12 @@ export default async function MatterDetailPage({ params }: PageProps) {
   const preservationCasesForClient = serializeDecimals(preservationCases);
 
   const conflictReview=await readMatterReview(prisma,matter.id);
+  // 隔离墙知情提示（P0-3 ⑤）：能看本案的人应当知道本案挡了谁，否则会把材料转给被隔离的同事。
+  // 注意 getWallSummaryForMatter 本身不做鉴权——上面的 getMatterById 已保证调用方有权读本案。
+  // 管理入口只给能进 /admin 的人（与 AdminLayout 的 canEnterAdminWorkspace 同一口径：
+  // isSystemAdmin || PRINCIPAL_LAWYER || managerAuthorized）。
+  const wallSummary = await getWallSummaryForMatter(matter.id);
+  const canOpenWallAdmin = isSystemAdmin(session.user) || isManager(session.user);
   // P0-1 阶段 1-b：工时页签（列表 + 三角汇总）。可见性由 getMatterTimeBoard 内部
   // 复用 assertCanReadMatter 判定，与本案详情页同一断言。
   const timeBoard = allowed("matters.read") ? await getMatterTimeBoard(matter.id).catch(() => null) : null;
@@ -248,6 +256,8 @@ export default async function MatterDetailPage({ params }: PageProps) {
         sealContracts={sealContracts}
         expresses={expresses}
         latestArchive={latestArchive}
+        wallSummary={wallSummary}
+        canOpenWallAdmin={canOpenWallAdmin}
         customFieldDefs={customFieldDefs}
         preservationCases={preservationCasesForClient}
         evidenceItems={evidenceItems}
