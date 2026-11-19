@@ -5,6 +5,7 @@
  */
 import { Mail } from "lucide-react";
 import type { ReminderEmailLastResult } from "@/server/settings/email-last-result";
+import { WeeklyPushButton } from "./weekly-push-button";
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Shanghai" }).replace("/", "-");
@@ -56,6 +57,13 @@ export function EmailChannelCard({
         )}
         <div className="t-xs t-mute" style={{ marginTop: 8 }}>
           最近一次摘要（{last ? formatTime(last.at) : "—"}）：{lastText}
+        </div>
+        {/* 2026-11-21：周报推送此前只有 cron，无手动入口（多智能体审计标为疑似漏接线）。 */}
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="t-xs t-mute" style={{ flex: 1 }}>
+            周报由每日 cron 自动推送；需要立刻验证或补发时用右侧按钮
+          </span>
+          <WeeklyPushButton disabled={!configured} />
         </div>
       </div>
     </div>

@@ -55,7 +55,7 @@ src/ 下导出总数        1559
 |---|---|---|
 | `document-folders/actions.ts` | 6 | ✅ 已标注 |
 | `seals/actions.ts` | 3 | `getSealApprovalCapabilities` / `getSealRequest` / `getSealStats` |
-| `cron/manual-triggers.ts` | 2 | `triggerWeeklyReportNow` / `triggerAuditCleanupNow`。<br>**已核实：两个都有 `requireAdmin()` 守卫**，不是安全风险。<br>**但全仓确无 UI 入口**（搜过 `周报.*手动` / `立即生成周报` 等中文文案，零命中）。<br>cron 会自动跑，所以功能上不缺；但「管理员想立刻跑一次」没有按钮 → **疑似漏接线，需产品确认是补按钮还是不提供** |
+| `cron/manual-triggers.ts` | 2 | `triggerWeeklyReportNow` / `triggerAuditCleanupNow`。<br>**已核实：两个都有 `requireAdmin()` 守卫**，不是安全风险。<br>**`triggerWeeklyReportNow` 已接线（2026-11-21）**：管理后台提醒维护页「邮件通道」卡片新增「立即推送周报」按钮（`weekly-push-button.tsx`），SMTP 未配置时 disabled 并提示原因。<br>**`triggerAuditCleanupNow` 仍无 UI**：审计清理是纯运维动作，cron 每日 03:10 自动跑，手动触发价值低，**判定不需要 UI**（不是遗漏） |
 | `sms/actions.ts` | 2 | `getSmsMessage` / `parseDateString` |
 | `clients/actions.ts` | 2 | `softDeleteClient` / `deleteContact` |
 | 其余 | 35 | 未逐个核实 |
