@@ -13,6 +13,7 @@
 import { scopeFor } from "@/lib/roles/catalog";
 import { requireSession } from "@/lib/auth/session";
 import { financeRoleAssociatesAnyMatter, matterAssociationFilter } from "@/lib/permissions";
+import { ethicalWallExclusion } from "@/lib/permissions/ethical-wall";
 import { prisma } from "@/lib/prisma";
 import { ActionError } from "@/lib/action-error";
 
@@ -39,7 +40,13 @@ async function findWritableMatter(
     where: {
       id: matterId,
       deletedAt: null,
-      ...(allowByFinanceRole || allowByPrincipal ? {} : matterAssociationFilter(session.user.id))
+      ...(allowByFinanceRole || allowByPrincipal ? {} : matterAssociationFilter(session.user.id)),
+      // 隔离墙（2026-11-20）：assertMatterWritable(101处) 与 assertDocumentWritable 的共同底座。
+      // 敢在这里一刀切，是因为统计确认调用方 70 个写操作里没有任何交接/转让类——
+      // 交接走 matters/handover.ts 的 requestHandoverTx 等，不经过本函数，出路不受影响。
+      // 用 ethicalWallExclusion 拼 where 而非另查 ethicalWall：少一次往返、
+      // 且不引入新的 prisma 模型依赖，既有测试的 mock 不必逐个补。
+      ...ethicalWallExclusion(session.user.id, session.user.role)
     },
     select: { status: true, archivedAt: true }
   });
