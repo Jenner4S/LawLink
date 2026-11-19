@@ -168,9 +168,16 @@ export async function assertCanAccessMatter(
   matterId: string,
   grants?: RoleGrant[]
 ): Promise<void> {
+  // 2026-11-20：隔离墙必须叠加在这里。此前两个分支都不查墙：
+  //   合伙人分支是裸 `{ id, deletedAt: null }`
+  //   其余分支靠 matterVisibilityFilter / matterAssociationFilter，而那两个 filter
+  //   中只有前者含墙、后者（成员关系）不含
+  // 结果：走 assertCanHandleMatter 的 59 处写操作（存类案、存 AI 审查结果、
+  // 证据、程序编辑、短信关联…）对「被墙隔离的人」全部敞开。
+  // 用 ethicalWallExclusion 拼 where：零额外查询、不引入新依赖、测试 mock 不受影响。
   if (isManager(role)) {
     const exists = await prisma.matter.findFirst({
-      where: { id: matterId, deletedAt: null },
+      where: { id: matterId, deletedAt: null, ...ethicalWallExclusion(userId, role) },
       select: { id: true }
     });
     if (!exists) throw new ActionError("案件不存在");
@@ -180,7 +187,8 @@ export async function assertCanAccessMatter(
     where: {
       id: matterId,
       deletedAt: null,
-      ...(role === "FINANCE" ? matterAssociationFilter(userId) : matterVisibilityFilter(userId, role, grants))
+      ...(role === "FINANCE" ? matterAssociationFilter(userId) : matterVisibilityFilter(userId, role, grants)),
+      ...ethicalWallExclusion(userId, role)
     },
     select: { id: true }
   });
@@ -213,19 +221,23 @@ export async function assertCanHandleMatter(
   if (user.role === "PRINCIPAL_LAWYER") {
     return assertCanAccessMatter(user.id, user.role, matterId, user.rolePermissions);
   }
-  return assertCanAssociateMatter(user.id, matterId);
+  return assertCanAssociateMatter(user.id, matterId, user.role);
 }
 
 /** 操作/关联断言：只允许主办或案件成员，不因管理角色放开 */
 export async function assertCanAssociateMatter(
   userId: string,
-  matterId: string
+  matterId: string,
+  /** 2026-11-20：隔离墙判定需要角色（ROLE 类隔离按岗位登记）。
+   *  不传则只按 USER/TEAM 类隔离判定——调用方有角色时应传入。 */
+  role?: string
 ): Promise<void> {
   const row = await prisma.matter.findFirst({
     where: {
       id: matterId,
       deletedAt: null,
-      ...matterAssociationFilter(userId)
+      ...matterAssociationFilter(userId),
+      ...ethicalWallExclusion(userId, role ?? "")
     },
     select: { id: true }
   });

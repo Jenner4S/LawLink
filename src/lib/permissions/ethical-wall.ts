@@ -41,8 +41,12 @@ export function ethicalWallExclusion(
                   denyType: "TEAM",
                   team: { members: { some: { userId, active: true } } }
                 },
-                // 按角色隔离
-                { denyType: "ROLE", role: role as never }
+                // 按角色隔离。role 为空时不生成该条件：`role` 在 schema 里是
+                // UserRole 枚举，传空字符串会被 Prisma 当成无效枚举值直接抛
+                // PrismaClientValidationError（2026-11-20 接入 assertCanAssociateMatter
+                // 时踩到——那个函数原先没有 role 参数，补成可选后默认传 ""）。
+                // 语义上：调用方不知道角色，就只能按 USER / TEAM 两类判定。
+                ...(role ? [{ denyType: "ROLE" as const, role: role as never }] : [])
               ]
             }
           }
