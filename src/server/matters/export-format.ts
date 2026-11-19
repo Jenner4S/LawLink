@@ -10,7 +10,7 @@ import type {
 } from "@prisma/client";
 import { shDayKey, shTime } from "@/lib/ui/sh-time";
 import { litigationStandingLabel, partyTypeLabel, procedureTypeLabel } from "@/lib/enums";
-import type { MatterExportRow, MattersExportTab } from "./export-xlsx";
+import type { MatterExportRow, MattersExportTab } from "./export-query";
 
 /**
  * 案件工作簿导出的纯格式化函数。
