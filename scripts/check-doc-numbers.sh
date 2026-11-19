@@ -53,9 +53,27 @@ echo "$DRIFT" | grep -q "empty migration" && echo "✅" || { echo "❌"; FAIL=1;
 # 让它自动同步，人就不用记着改。
 # ---------------------------------------------------------------
 if [ "$FIX" -eq 1 ]; then
-  perl -0pi -e "s/\*\*\d+ 条\*\*/\*\*${ACTUAL_L} 条\*\*/g" "$DOC"
-  perl -0pi -e "s/\d+ passed/${ACTUAL} passed/g" "$DOC"
-  perl -0pi -e "s/\*\*\d+ 个迁移\*\*/\*\*${ACTUAL_M} 个迁移\*\*/g" "$DOC"
+  # 2026-11-21 自伤修复：原先无条件替换，若某个 ACTUAL_* 为空（提取失败），
+  # perl 的 s/\d+ passed/${ACTUAL} passed/g 会变成 s/\d+ passed/ passed/g
+  # ——**把数字删掉**。实测把 "141 files / 1420 passed" 改成 "141 files /  passed"。
+  # 现在每一项都先判空，空了就跳过并报错，绝不写入。
+  FIXED=0
+  if [ -n "${ACTUAL_L}" ]; then
+    perl -0pi -e "s/\*\*\d+ 条\*\*/\*\*${ACTUAL_L} 条\*\*/g" "$DOC"; FIXED=1
+  else
+    echo "  ⚠️ 台账条目提取失败，跳过该项（不写入空值）" >&2
+  fi
+  if [ -n "${ACTUAL}" ]; then
+    perl -0pi -e "s/\d+ passed/${ACTUAL} passed/g" "$DOC"; FIXED=1
+  else
+    echo "  ⚠️ 测试数提取失败，跳过该项（不写入空值）" >&2
+  fi
+  if [ -n "${ACTUAL_M}" ]; then
+    perl -0pi -e "s/\*\*\d+ 个迁移\*\*/\*\*${ACTUAL_M} 个迁移\*\*/g" "$DOC"; FIXED=1
+  else
+    echo "  ⚠️ 迁移数提取失败，跳过该项（不写入空值）" >&2
+  fi
+  [ "$FIXED" -eq 0 ] && { echo "  ❌ 三项都没提取到，未做任何修改" >&2; exit 1; }
   echo
   echo "  --fix 已写回文档。本次核对结果即为准；"
   echo "  如需复核，直接重跑本脚本（会重新跑一遍测试，约几分钟）。"
