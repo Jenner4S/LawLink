@@ -207,6 +207,15 @@ export function MatterImportView() {
                         </span>
                       </div>
                     )}
+                    {(s.conflictHitCount ?? 0) > 0 && (
+                      <div className="ml-5 flex items-start gap-1.5 text-[11px] text-destructive">
+                        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span>
+                          {s.conflictSummary ??
+                            `导入时命中 ${s.conflictHitCount} 条利益冲突，请到冲突检索查看并给出结论`}
+                        </span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

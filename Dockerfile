@@ -25,6 +25,14 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# 生产依赖裁剪（2026-11-19 法务清查发现）：此前 runner 直接复制 builder 的
+# node_modules，把 402 个开发依赖（typescript / eslint / vitest / tailwind 链等）
+# 一起打进镜像——不影响运行，但扩大合规面（许可证清单要覆盖这些包）与镜像体积。
+# 这里在 builder 之后 prune 一次：.prisma 引擎已生成，prisma CLI 已移入 dependencies
+# 供运维在容器内执行 migrate，dev-only 包全部移除。
+FROM builder AS prod-deps
+RUN npm prune --omit=dev && npm cache clean --force
+
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -43,7 +51,7 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next-build ./.next-build
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 # next.config.mjs 必须进镜像（2026-09-21 Docker 部署验证暴露）：其中 distDir 读
 # NEXT_DIST_DIR（构建产物在 .next-build 而非默认 .next），缺了它 next start 会去
