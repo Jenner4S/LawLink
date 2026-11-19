@@ -50,17 +50,21 @@ export async function archiveMatter(input: ArchiveSubmitInput) {
   const session = await requireSession("archive.submit");
   const data = parseInput(archiveSubmitSchema, input);
 
-  const initial=await prisma.matter.findUniqueOrThrow({where:{id:data.matterId},select:{status:true}});
-  const supplement=initial.status==='ARCHIVED';
-  if(supplement){if(scopeFor(session.user,'archive.supplement')!=='OWN')throw new ActionError('补充归档须独立授权');}
-  else await assertMatterWritable(data.matterId);
-  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可以提交归档申请", session.user.role);
-
+  // 2026-11-21：原实现先 findUniqueOrThrow({select:{status}}) 判 supplement 分支，
+  // 之后又 findUnique({select:{id,status,category,internalCode,title}}) 取完整信息 ——
+  // 同一行 matter 读了两遍，第二次的 status 已覆盖第一次的全部信息。
+  // 合并为一次；findUniqueOrThrow 的「不存在即抛」语义改由下面显式判断保持。
   const matter = await prisma.matter.findUnique({
     where: { id: data.matterId },
     select: { id: true, status: true, category: true, internalCode: true, title: true }
   });
   if (!matter) throw new ActionError("案件不存在");
+
+  const supplement = matter.status === 'ARCHIVED';
+  if (supplement) { if (scopeFor(session.user, 'archive.supplement') !== 'OWN') throw new ActionError('补充归档须独立授权'); }
+  else await assertMatterWritable(data.matterId);
+  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可以提交归档申请", session.user.role);
+
   await requireApprovalRoute({ action: "ARCHIVE_APPROVE", category: matter.category, requesterId: session.user.id });
   const parent=supplement?await prisma.archiveRecord.findFirst({where:{matterId:matter.id,status:"APPROVED"},orderBy:{archivedAt:"asc"},select:{id:true}}):null;
   if(supplement&&!parent)throw new ActionError("缺少已批准原归档");
