@@ -162,7 +162,6 @@ export async function verifyAuditChain(db: {
     }
   }
   const allHashed = rows.filter((r) => r.integrityHash !== null);
-  const unchecked = Math.max(0, allHashed.length - ordered.length);
 
   for (let i = 0; i < ordered.length; i += 1) {
     const row = ordered[i];
@@ -174,12 +173,28 @@ export async function verifyAuditChain(db: {
     });
     if (expected !== row.integrityHash) {
       return {
-        ok: false, checked, skippedLegacy, forks: forks.length ? forks : null, unchecked,
+        ok: false, checked, skippedLegacy, forks: forks.length ? forks : null,
+        unchecked: allHashed.length - checked,
         brokenAt: { id: row.id, action: row.action, reason: "记录内容与自身摘要不符（该条被改动）" }
       };
     }
     checked += 1;
   }
 
-  return { ok: true, checked, skippedLegacy, brokenAt: null, forks: forks.length ? forks : null, unchecked };
+  // unchecked 的定义：带摘要总数里「没有通过逐条校验」的部分。
+  // 初版写成 allHashed.length - ordered.length（没进遍历序列的），
+  // 导致 checked + unchecked ≠ total —— 断裂时 checked 停在断点，
+  // 而 ordered 已排到后面，两边口径不同，覆盖账对不上。
+  // 现在统一为 total - checked，等式恒成立：
+  //   · 分叉分支（遍历只走第一条，其余未校验）
+  //   · 断裂点及其之后
+  // 都计入 unchecked。
+  return {
+    ok: true,
+    checked,
+    skippedLegacy,
+    brokenAt: null,
+    forks: forks.length ? forks : null,
+    unchecked: allHashed.length - checked
+  };
 }

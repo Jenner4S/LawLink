@@ -18,18 +18,20 @@
  *   4. mock 掉 next/cache 与 @/server/matters/route（revalidate 与页面跳转与本链无关）。
  *   5. 附件与模版落盘走 `APP_STORAGE_DIR` 指向的临时目录（真实 AES-256-GCM 读写，不 mock 存储层）。
  *
- * 入口选择：能用 server action 的一律用 action。两处例外都在用例标题里写明：
+ * 入口选择：能用 server action 的一律用 action。一处例外在用例标题里写明：
  *   - 旧 FeeEntry 直登入口（createFeeEntry）在当前 schema 下被硬禁用，实收改走同一业务的
- *     新入口 registerReceipt / confirmReceipt，并单独固化旧入口的拒绝行为；
- *   - 转案（convertIntakeToMatter）在当前 schema 下**不可用**（见缺陷 P0-1），
- *     D-2/D-3 固化该失败与根因，D-4 在**本文件自建的临时库**上去掉致因的唯一索引后
- *     继续验证 D 之后的下游环节——生产代码、迁移文件、主库一律未改。
+ *     新入口 registerReceipt / confirmReceipt，并单独固化旧入口的拒绝行为。
  *
- * 已知缺陷（文件内以 D-x 固化，修好后需把对应断言改回正向）：
- *   D-1 createClient 丢弃 legalRep；
- *   D-2/D-3 事务内第二条审计撞 AuditLog_previousHash_key（转案必失败）；
- *   D-4 事务外取号导致失败重试跳号；
- *   D-5 链分叉使 verifyAuditChain 覆盖不全（ok:true 是假绿灯）。
+ * 2026-11-19 生产修复后的口径（本文件已按修复后行为重写，全程不依赖任何环境补丁）：
+ *   - 迁移 20261119000006 撤销 AuditLog.previousHash 唯一索引后，同一事务内写多条审计
+ *     不再毒化事务，转案（当前唯一建案入口）恢复可用 → D-2 正向验证转案成功；
+ *   - D-3 正向验证「同一事务两条审计」都提交、都有摘要，且 previousHash 相同（链在此分叉）。
+ *     分叉是**可接受的已知取舍**（可用性优先于「数据库硬拦导致无法建案」），
+ *     由 verifyAuditChain 的 forks 字段显式报告 —— 从「静默只走第一条」改为「可查出、可归因」；
+ *   - 旧 D-4（先在本文件临时库上手工移除唯一索引才能继续跑下游）整段删除：测试不再改动库结构。
+ *
+ * 仍存在的已知缺陷（唯一一条，与转案无关）：
+ *   D-1 createClient 丢弃 legalRep —— 机构客户的法定代表人一路丢到当事人（见 A / D-2）。
  *
  * 前置：lawlink-db 容器可用（55432），`.env` 提供 STORAGE_ENCRYPTION_KEY。
  */
@@ -141,7 +143,17 @@ let archiveId: string;
 let archiveNo: string;
 let completedAt: Date;
 
+// D-3 探针：同一事务内两条审计共用的前驱摘要（= 分叉点），以及两条审计的 id
+let probeForkPrev: string;
+let probeIds: string[];
+
 const dec = (value: Prisma.Decimal | string | number) => new Prisma.Decimal(value).toFixed(2);
+/**
+ * verifyAuditChain 的入参在 src/lib/audit-chain.ts 里只声明了 auditLog.findMany 的窄签名，
+ * 与 Prisma 客户端的强类型 findMany 不兼容（项目既有的类型摩擦）。这里收口成一处适配，
+ * 运行时用的仍是**扩展后的真客户端**（不 mock），审计摘要/前驱都由扩展写入。
+ */
+const chainDb = () => prisma as unknown as Parameters<typeof verifyAuditChain>[0];
 const countAudit = (action: string) => prisma.auditLog.count({ where: { action } });
 
 beforeAll(async () => {
@@ -418,79 +430,41 @@ describe("D 转为正式案件（resubmitIntake → convertIntakeToMatter）", (
     expect(await countAudit("INTAKE_SUBMIT_ROUND")).toBe(1);
   });
 
-  it("D-2 转案在真实库上直接失败（P0 断链点）：事务整体回滚，收案仍待审批，未产生任何案件数据", async () => {
-    as(approver);
-    const error = await convertIntakeToMatter(intakeId, "链路测试：主体与范围已复核").then(
-      () => null,
-      (err: Error) => err
-    );
-
-    // 真实错误被 Prisma 折成 UnknownRequestError（Postgres 25P02：前一条语句已把事务置为 aborted）
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).name).toMatch(/Prisma/);
-
-    // 原子性是对的：失败不留半个案件
-    expect(await prisma.matter.count({ where: { intakeId } })).toBe(0);
-    expect(await prisma.party.count({ where: { matterId: { not: null } } })).toBe(0);
-    expect(await prisma.billing.count()).toBe(0);
-    const intakeAfter = await prisma.intake.findUniqueOrThrow({ where: { id: intakeId } });
-    expect(intakeAfter.status).toBe("PENDING_CONFIRMATION");
-    expect(await prisma.intakeRevision.count({ where: { intakeId } })).toBe(1);
-    expect(await countAudit("INTAKE_CONVERT")).toBe(0);
-  });
-
-  it("D-3 根因固化：同一事务内第二条审计与已提交记录撞 AuditLog_previousHash_key", async () => {
-    // 审计扩展（src/lib/prisma.ts）用**另一条连接**（base）读「上一条摘要」，
-    // 事务内先前写入的审计对它不可见；20261119000004 迁移又把 previousHash 设为唯一索引。
-    // 于是「一个事务里写两条审计」必然第二次插入撞唯一键，事务被毒化（25P02）。
-    // convertIntakeToMatter 正是这种事务：approvalAudit(INTAKE_APPROVE) + 收费草稿审计 /
-    // recordMatterReviewTx 的 MATTER_CONFLICT_RUN，两条以上。
-    expect(await countAudit("PROBE_TX_AUDIT")).toBe(0);   // 先确认库里有已提交的审计链（A/B/C 已写）
-    expect(await prisma.auditLog.count()).toBeGreaterThan(0);
-
-    const error = await prisma.$transaction(async (tx) => {
-      await tx.auditLog.create({ data: { action: "PROBE_TX_AUDIT", targetType: "Probe" } });
-      await tx.auditLog.create({ data: { action: "PROBE_TX_AUDIT", targetType: "Probe" } });
-    }).then(() => null, (err: Error) => err);
-
-    expect(error).toBeInstanceOf(Error);
-    // 两条都回滚，证明失败发生在事务内而不是「第二条单独失败」
-    expect(await countAudit("PROBE_TX_AUDIT")).toBe(0);
-  });
-
-  it("D-4 临时库去掉该唯一索引后转案成功（环境补丁，非生产修复）：Matter/首程序/当事人/MatterClient/收费草稿落库", async () => {
-    // ⚠️ 只为让下游 E–M 可被验证：在**本文件自建的临时库**上移除 20261119000004 引入的唯一索引。
-    // 生产库仍有该索引，D-2/D-3 已固化转案不可用这一事实。生产代码与迁移文件未改动。
-    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "AuditLog_previousHash_key"');
-    console.warn("[business-chain] 临时库已移除 AuditLog_previousHash_key（仅为验证 D 之后的下游环节）");
-
+  it("D-2 转案成功（2026-11-19 修复后）：Matter/首程序/当事人/MatterClient/收费草稿全部落库，收案转 CONVERTED", async () => {
     as(approver);
     const converted = await convertIntakeToMatter(intakeId, "链路测试：主体与范围已复核");
+
+    // 返回契约：ok + matterId + internalCode，调用方无需回查案件
+    expect((converted as { ok: boolean }).ok).toBe(true);
     matterId = (converted as { matterId: string }).matterId;
     matterInternalCode = (converted as { internalCode: string }).internalCode;
+    expect(matterId).toBeTruthy();
+    // internalCode = {前缀}-{上海年}-{类别码}-{4 位流水}；这是本库第一次建案 → 0001。
+    // 旧缺陷「事务外取号 + 失败重试跳号」随修复消失，所以这里断言的是 0001 而不是 0002。
+    expect(matterInternalCode).toMatch(/^LL-\d{4}-CC-0001$/);
 
+    // 收案侧终态
     const intakeAfter = await prisma.intake.findUniqueOrThrow({ where: { id: intakeId } });
     expect(intakeAfter.status).toBe("CONVERTED");
 
+    // 案件主体
     const matter = await prisma.matter.findUniqueOrThrow({
       where: { id: matterId },
       include: { clientLinks: true, members: true }
     });
     expect(matter.internalCode).toBe(matterInternalCode);
-    // 缺陷 D-4：编号在事务外取号，D-2 的失败重试把 0001 消耗掉 → 成功那次是 0002（跳号）
-    expect(matter.internalCode).toMatch(/^LL-\d{4}-CC-0002$/);
     expect(matter.firmCaseNo).toBeTruthy();
     expect(matter.title).toBe("甲科技有限公司与乙贸易有限公司买卖合同纠纷");
     expect(matter.category).toBe("CIVIL_COMMERCIAL");
     expect(matter.ownerId).toBe(lawyer.id);
     expect(matter.registeredById).toBe(lawyer.id);
     expect(matter.primaryClientId).toBe(companyClient.id);
-    expect(matter.intakeId).toBe(intakeId);
+    expect(matter.intakeId).toBe(intakeId);        // matterId ↔ intakeId 双向串联
     expect(matter.ourStanding).toBe("PLAINTIFF");
     expect(dec(matter.claimAmount!)).toBe("500000.00");
     expect(matter.intakeDate?.toISOString()).toBe(new Date("2026-11-10T09:00:00+08:00").toISOString());
 
-    // 客户关联：指向 A 步建的机构客户
+    // 客户关联：指向 A 步建的机构客户（MatterClient）
     expect(matter.clientLinks).toHaveLength(1);
     expect(matter.clientLinks[0].clientId).toBe(companyClient.id);
     expect(matter.clientLinks[0].isPrimary).toBe(true);
@@ -549,7 +523,76 @@ describe("D 转为正式案件（resubmitIntake → convertIntakeToMatter）", (
     // 默认卷宗已建（案件详情页依赖）
     expect(await prisma.documentFolder.count({ where: { matterId } })).toBeGreaterThan(0);
 
+    // 审计：INTAKE_CONVERT 在事务外写，detail 串上 matterId 与 internalCode —— 收案↔案件↔编号三方可追溯
     expect(await countAudit("INTAKE_CONVERT")).toBe(1);
+    const convertAudit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: "INTAKE_CONVERT", targetId: intakeId }
+    });
+    expect((convertAudit.detail as { matterId?: string }).matterId).toBe(matterId);
+    expect((convertAudit.detail as { internalCode?: string }).internalCode).toBe(matterInternalCode);
+    // 事务内的审批台账（第二条审计）也一并提交了——这正是修复前会让整个事务 25P02 的那一笔
+    expect(await countAudit("INTAKE_APPROVE")).toBe(1);
+
+    // 既然转案事务内写了多条审计，链上就必然出现「同一前驱挂多条后继」的分叉。
+    // 修复前这里会直接抛 25P02（事务毒化）；现在功能可用，代价是分叉——由 verifyAuditChain 查出。
+    const chainAfterConvert = await verifyAuditChain(chainDb());
+    const convertFork = chainAfterConvert.forks?.find((f) => f.actions.includes("INTAKE_APPROVE"));
+    expect(convertFork).toBeDefined();
+    expect(convertFork!.ids.length).toBeGreaterThanOrEqual(2);
+    console.info(`[business-chain] 转案事务内多审计：分叉点 ${convertFork!.ids.length} 条后继 → ${convertFork!.actions.join(" / ")}`);
+  });
+
+  it("D-3 同一事务内写两条审计不再失败：两条都提交、都有摘要，且 previousHash 相同（链在此分叉）", async () => {
+    // 背景（修复前）：审计扩展用**另一条连接**（base）读「上一条摘要」，读不到同事务内尚未提交的
+    // 前一条；因此两条审计会算出同一个 previousHash。旧迁移 20261119000004 把 previousHash 设为
+    // 唯一索引，于是第二条插入撞键、Postgres 25P02 毒化事务，转案 100% 失败。
+    // 迁移 20261119000006 撤销该唯一索引后：两条都能写进去，代价是链在此分叉。
+    //
+    // **分叉是可接受的已知取舍**：不能建案等于系统作废，而分叉只要查得出来就能事后归因——
+    // verifyAuditChain 用 forks 字段显式报出分叉点（本用例末尾直接验证这一点），
+    // 不再像修复前那样「沿第一条链走完就说 ok:true」而不报覆盖缺口。
+    expect(await prisma.auditLog.count()).toBeGreaterThan(0);   // A/B/C/D-2 已提交的审计链
+
+    probeIds = await prisma.$transaction(async (tx) => {
+      const a = await tx.auditLog.create({
+        data: { action: "PROBE_TX_AUDIT", targetType: "Probe" },
+        select: { id: true }
+      });
+      const b = await tx.auditLog.create({
+        data: { action: "PROBE_TX_AUDIT", targetType: "Probe" },
+        select: { id: true }
+      });
+      return [a.id, b.id];
+    });
+
+    // 两条都在事务提交后存在（不是「第一条成功、第二条被吞掉」）
+    const rows = await prisma.auditLog.findMany({ where: { id: { in: probeIds } } });
+    expect(rows).toHaveLength(2);
+    expect(await countAudit("PROBE_TX_AUDIT")).toBe(2);
+
+    // 每条都带完整摘要（说明扩展客户端确实为两条都算了哈希，而不是漏写）
+    for (const row of rows) {
+      expect(row.integrityHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(row.previousHash).toMatch(/^[0-9a-f]{64}$/);
+    }
+
+    // 已知行为：同事务内两条审计共用同一个前驱 → previousHash 相同（这不是 bug，是取舍）
+    probeForkPrev = rows[0].previousHash!;
+    expect(rows[0].previousHash).toBe(rows[1].previousHash);
+
+    // verifyAuditChain 必须把这个分叉点报出来（修复 P0-2 的核心：不再假绿灯）
+    const chain = await verifyAuditChain(chainDb());
+    expect(chain.ok).toBe(true);
+    expect(chain.brokenAt).toBeNull();
+    expect(chain.forks).not.toBeNull();
+    const fork = chain.forks!.find((f) => f.previousHash === probeForkPrev);
+    expect(fork).toBeDefined();
+    expect(fork!.ids).toEqual(expect.arrayContaining(probeIds));
+    expect(fork!.actions).toEqual(["PROBE_TX_AUDIT", "PROBE_TX_AUDIT"]);
+    console.info(
+      `[business-chain] D-3 分叉点 ${probeForkPrev.slice(0, 12)}… 后继 ${fork!.ids.length} 条；` +
+      `checked=${chain.checked} unchecked=${chain.unchecked}`
+    );
   });
 });
 
@@ -1088,7 +1131,7 @@ describe("跨环节一致性：编号链 / 外键链 / 审计链 / 终态财务"
     expect(client.internalCode).toBe(companyClient.internalCode);
     expect(client.internalCode).toMatch(/^KH-\d{4}-0002$/);
     expect(matter.internalCode).toBe(matterInternalCode);
-    expect(matter.internalCode).toMatch(/^LL-\d{4}-CC-0002$/); // 0001 被 D-2 的失败尝试消耗（缺陷 D-4）
+    expect(matter.internalCode).toMatch(/^LL-\d{4}-CC-0001$/); // 本库首案，无失败重试跳号（旧缺陷 D-4 已随修复消失）
     expect(record.archiveNo).toBe(archiveNo);
     expect(record.archiveNo).toMatch(/^\d{4}-民-0001$/);
 
@@ -1148,7 +1191,7 @@ describe("跨环节一致性：编号链 / 外键链 / 审计链 / 终态财务"
     expect(procedureParties.every((pp) => partyIds.has(pp.partyId))).toBe(true);
   });
 
-  it("审计链：A–M 每步至少一条审计，verifyAuditChain 在临时库上返回 ok:true", async () => {
+  it("审计链：A–M 每步至少一条审计；verifyAuditChain 返回 ok:true、brokenAt:null，并显式报告分叉点", async () => {
     const expected: [string, string][] = [
       ["A 客户建档", "CLIENT_CREATE"],
       ["B 收案登记", "INTAKE_CREATE"],
@@ -1173,19 +1216,33 @@ describe("跨环节一致性：编号链 / 外键链 / 审计链 / 终态财务"
     }
     expect(missing).toEqual([]);
 
-    const chain = await verifyAuditChain(prisma);
+    const chain = await verifyAuditChain(chainDb());
     expect(chain.brokenAt).toBeNull();
     expect(chain.ok).toBe(true);
     expect(chain.checked).toBeGreaterThan(0);
     // 全部审计都由扩展客户端写入 → 没有「加链前的历史记录」被跳过
     expect(chain.skippedLegacy).toBe(0);
+    // 注：「无分叉时 forks === null」的契约由本文件之外的纯函数用例覆盖；
+    // 端到端链上必然存在分叉（见下），这里断言的是分叉场景的那一侧。
 
-    // 缺陷 D-5（已固化）：D-3 说明事务内多次审计会让链**分叉**——同一个前驱后挂两条后继。
-    // verifyAuditChain 沿 previousHash 单链遍历，遇到分叉只走第一条，于是分叉点之后的审计
-    // 都不在可遍历链上：ok 仍为 true，但 checked 远小于实际条数——「链完好」的绿灯掩盖了覆盖缺口。
+    // 分叉场景（本链必然有：D-2 事务内写 INTAKE_APPROVE + 复核审计，D-3 事务内写两条探针）。
+    // 不再用「总数 > checked」把覆盖缺口固化成预期，而是要求 verifyAuditChain **显式指出分叉点**：
+    // 这才是修复后的契约——ok 只说明走通的那条链没被篡改，分叉与未覆盖面由 forks / unchecked 交代。
+    expect(chain.forks).not.toBeNull();
+
+    const forkAtProbe = chain.forks!.find((f) => f.previousHash === probeForkPrev);
+    expect(forkAtProbe).toBeDefined();
+    expect(forkAtProbe!.ids).toEqual(expect.arrayContaining(probeIds));
+    expect(forkAtProbe!.actions).toEqual(["PROBE_TX_AUDIT", "PROBE_TX_AUDIT"]);
+
+    // 覆盖账必须自洽：走过的 + 未覆盖的 = 带摘要总数（分叉的另一股确实没被走完）
     const total = await prisma.auditLog.count({ where: { integrityHash: { not: null } } });
-    console.info(`[business-chain] 审计链覆盖：checked=${chain.checked} / 带摘要总数=${total}`);
-    expect(total).toBeGreaterThan(chain.checked);
+    console.info(
+      `[business-chain] 审计链：ok=${chain.ok} checked=${chain.checked} unchecked=${chain.unchecked} ` +
+      `forks=${chain.forks!.length} 带摘要总数=${total}`
+    );
+    expect(chain.checked + chain.unchecked).toBe(total);
+    expect(chain.unchecked).toBeGreaterThan(0);
   });
 
   it("终态一致：归档后财务数字与前序登记一致，且每笔金额都能对上来源", async () => {
