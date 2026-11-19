@@ -115,15 +115,40 @@ docker compose --profile full up -d --force-recreate --no-deps app
 # **不自动 seed**：seed 会创建默认管理员（默认密码）并写入模板/用章配置，
 # 这两件事都不该在无人值守的部署里悄悄发生。改为**检测并明确报错**，
 # 让第一次部署的人知道下一步该做什么 —— 而不是拿到一台打不开的系统。
+# 迁移前先看有没有待办迁移，以及库里有没有数据。
+#
+# 2026-11-21（Round 140）：本脚本从 Round 138 起会在部署时自动跑
+# `migrate deploy`。这解决了「脚本叫 deploy 却不建表」，但也带来一个新风险：
+# **自动改结构而没有自动备份**。迁移一旦失败或存在破坏性变更，律所的数据就
+# 处在一个没有回退点的状态 —— 而备份脚本明明就在同一个镜像里。
+#
+# 规则：有待办迁移 **且** 库里已有用户（即这是一次升级，不是首次安装）
+# → 先备份；备份失败就**终止部署**，绝不在没有回退点的情况下动结构。
+USER_COUNT=$(docker exec lawlink-db psql -U "${POSTGRES_USER:-lawlink}" -d "${POSTGRES_DB:-lawlink}" \
+  -tAc 'select count(*) from "User"' 2>/dev/null | tr -d ' ' || echo "")
+
+PENDING_MIGRATIONS=0
+if docker exec lawlink-app npx prisma migrate status 2>&1 | grep -q "have not yet been applied"; then
+  PENDING_MIGRATIONS=1
+fi
+
+if [ "${PENDING_MIGRATIONS}" = "1" ] && [ "${USER_COUNT}" != "0" ] && [ -n "${USER_COUNT}" ]; then
+  PRE_TS=$(date +%Y%m%d%H%M%S)
+  echo "    检测到待办迁移，先做迁移前备份..."
+  if ! docker exec lawlink-app ./scripts/backup.sh "/app/backups/pre-migrate-${PRE_TS}" 2>&1 | tail -4; then
+    echo "    ❌ 迁移前备份失败 —— 终止部署。" >&2
+    echo "       不允许在没有回退点的情况下改表结构。请先手工确认备份可用：" >&2
+    echo "         docker exec -it lawlink-app ./scripts/backup.sh /app/backups/manual-${PRE_TS}" >&2
+    exit 1
+  fi
+  echo "    迁移前备份完成：/app/backups/pre-migrate-${PRE_TS}"
+fi
+
 echo "    数据库迁移..."
 if ! docker exec lawlink-app npx prisma migrate deploy 2>&1 | tail -3; then
   echo "    ❌ 数据库迁移失败，终止部署" >&2
   exit 1
 fi
-
-# 首次部署检测：库里一个用户都没有 → 应用起来也没人能登录
-USER_COUNT=$(docker exec lawlink-db psql -U "${POSTGRES_USER:-lawlink}" -d "${POSTGRES_DB:-lawlink}" \
-  -tAc 'select count(*) from "User"' 2>/dev/null | tr -d ' ' || echo "")
 if [ "${USER_COUNT}" = "0" ]; then
   echo "" >&2
   echo "    ❌ 数据库里没有任何用户 —— 应用虽然起来了，但没有人能登录。" >&2
