@@ -99,10 +99,13 @@ export async function assertDocumentWritable(
   // 不含墙），于是「看得见的限制、碰得到的自由」——被墙隔离的人读不到该案材料，
   // 却能上传、修改、删除它的材料。上传材料是最直接的「接触案件内容」。
   //
-  // 为什么只加在这里、不加在 findWritableMatter（那会让 assertMatterWritable 的 101 处
-  // 调用全部变化）：assertMatterWritable 覆盖结案、归档、交接等生命周期操作，
-  // 而被墙者「把案件交接出去」恰恰是解决冲突的正常途径，一刀切会把人堵死。
-  // 那部分需要按场景逐个确认语义，已在台账登记为待产品判断项。
+  // 【2026-11-20 修正】下面这段原本写的是「为什么只加在这里、不加在
+  // findWritableMatter，一刀切会把人堵死」——那是 Round 44 的判断。
+  // Round 48 复核后结论变了：统计确认 assertMatterWritable 的 70 个写操作里
+  // 没有任何交接/转让类（交接走 matters/handover.ts 的 requestHandoverTx，
+  // 不经过 findWritableMatter），所以墙已经加进了 findWritableMatter。
+  // 两处是**纵深防御**，不是二选一：findWritableMatter 挡 101 处写操作，
+  // 这里再挡一次材料专门的动作。留着旧注释会让人以为底座没有墙。
   {
     const session = opts?.actor ? { user: opts.actor } : await requireSession("personal");
     const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
