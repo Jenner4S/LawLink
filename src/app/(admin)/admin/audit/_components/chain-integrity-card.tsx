@@ -49,8 +49,18 @@ export async function ChainIntegrityCard() {
   }
 
   const passed = total - result.unchecked;
-  const health = result.ok && result.unchecked === 0;
-  const partial = result.ok && result.unchecked > 0;
+  // 2026-11-20（M2）：三种状态必须分开，此前只按哈希对错分了两档。
+  //
+  // 哈希链有两条独立的性质：
+  //   ① 完整性——每条记录的 integrityHash 与其内容一致（result.ok）
+  //   ② 单线性——每条记录只有一个后继（result.forks 为空）
+  // 分叉不会让任何一条记录的哈希算错，所以 ok=true 时仍可能存在分叉。
+  // 原文案在 ok && unchecked===0 时断言「都挂在同一条链上」，一旦有分叉就是假话。
+  // 撤销 previousHash 唯一索引后（迁移 20261119000006，同事务写多条审计导致），
+  // 分叉成为已知且可接受的形态——那就更不能在界面上否认它。
+  const forkCount = result.forks?.length ?? 0;
+  const health = result.ok && result.unchecked === 0 && forkCount === 0;
+  const partial = result.ok && (result.unchecked > 0 || forkCount > 0);
 
   return (
     <section className="card p-4">
@@ -65,16 +75,19 @@ export async function ChainIntegrityCard() {
                 : "rounded-full bg-[var(--red-soft,#FCEDEB)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[var(--red)]"
           }
         >
-          {health ? "完好" : partial ? "有未校验记录" : "发现异常"}
+          {health ? "完好" : partial ? (forkCount > 0 ? "有分叉" : "有未校验记录") : "发现异常"}
         </span>
       </div>
 
       {/* 结论一句话：先说人话，再给数字 */}
       <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
         {health
-          ? `带摘要的 ${total} 条记录全部通过校验，逐条内容与自身摘要一致，且都挂在同一条链上。`
+          ? `带摘要的 ${total} 条记录全部通过校验：逐条内容与自身摘要一致，且没有分叉——整条链只有一条主线。`
           : partial
-            ? `带摘要的 ${total} 条记录中，${passed} 条通过校验，${result.unchecked} 条未通过（见下方明细）。`
+            ? forkCount > 0
+              // 分叉与「未校验」是两件事，分开说，否则运维会去查错方向
+              ? `带摘要的 ${total} 条记录内容均通过校验，但有 ${forkCount} 处分叉（见下方）：同一时刻有两条记录各自接着同一个前驱。这通常是同一事务里连写多条审计造成的，不影响每条记录自身的可信度，但不能说成「一条链」。`
+              : `带摘要的 ${total} 条记录中，${passed} 条通过校验，${result.unchecked} 条未通过（见下方明细）。`
             : `校验在 ${result.brokenAt?.action ?? "某条记录"} 处发现异常，已校验 ${result.checked} 条。`}
       </p>
 
