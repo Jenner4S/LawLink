@@ -4,6 +4,8 @@ import type { getMatterById } from "@/server/matters/actions";
 import { listNotes } from "@/server/notes/actions";
 import { matterStatusLabel, matterCategoryLabel, matterCategoryKind, procedureTypeLabel, litigationStandingLabel } from "@/lib/enums";
 import { avatarTone, matterStatusTone } from "@/lib/ui/moan-tones";
+import { getWallSummaryForMatter } from "@/server/ethical-walls/read";
+import { EthicalWallBanner } from "./ethical-wall-banner";
 import { InitialAvatar, ProcedureChain, type ChainNode } from "@/components/patterns/moan";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 
@@ -18,6 +20,11 @@ const PROC_STATUS_LABEL: Record<string, string> = { NOT_STARTED: "未开始", IN
  */
 export async function TeamMatterOverview({ matter }: { matter: Matter }) {
   const notes = await listNotes(matter.id);
+  // 2026-11-19：团队只读视图与案件详情共用同一套墨案版式，隔离墙提示也必须一致——
+  // 否则团队成员在这个视图里看不到「本案挡了谁」，仍可能把材料转给被隔离的同事。
+  // 该视图不加载财务与私有附件，但这不构成省略提示的理由：真正要防的是「转发材料」。
+  // 本视图的访问者已由外层断言保证可读本案，故此处不做二次鉴权（与案件详情同口径）。
+  const wallSummary = await getWallSummaryForMatter(matter.id);
   const roleText = (role: string) => (role === "LEAD" ? "主办" : role === "CO_LEAD" ? "协办" : "助理");
   const kind = matterCategoryKind(matter.category);
   const ours = matter.parties.filter((p) => p.role === "CLIENT_PARTY");
@@ -34,6 +41,7 @@ export async function TeamMatterOverview({ matter }: { matter: Matter }) {
 
   return (
     <div className="mo-matter mo-dossier">
+      {wallSummary.hasWall && <EthicalWallBanner summary={wallSummary} canOpenAdmin={false} />}
       {/* ① 案卷头 */}
       <section className="card dos-head" aria-label="案卷头">
         <div className="dos-head-top">
