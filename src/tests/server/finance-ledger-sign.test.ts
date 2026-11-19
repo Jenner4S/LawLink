@@ -25,22 +25,19 @@
  * `process.env.DATABASE_URL` 在 @/lib/prisma 单例初始化前（vi.hoisted）改指临时库，
  * 这样即使被测代码某处误用单例，也只可能落到临时库。
  */
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 import { ActionError } from "@/lib/action-error";
 
 // 必须在 import @/lib/prisma 之前落盘（vi.hoisted 先于 import 执行）
-const HOLDER = vi.hoisted(() => {
+const NAME = vi.hoisted(() => {
   const host = process.env.FIN_TEST_PG_HOST ?? "localhost:55432";
   const user = process.env.FIN_TEST_PG_USER ?? "lawlink";
   const password = process.env.FIN_TEST_PG_PASSWORD ?? "lawlink_dev_2026";
-  const name = `lawlink_finsign_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-  const url = `postgresql://${user}:${password}@${host}/${name}?schema=public`;
-  const original = process.env.DATABASE_URL;
-  process.env.DATABASE_URL = url;
-  return { host, user, password, name, url, original };
+  const name = `lawlink_t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  process.env.DATABASE_URL = `postgresql://${user}:${password}@${host}/${name}?schema=public`;
+  return name;
 });
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
@@ -48,40 +45,22 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }
 import { signBillingTx } from "@/server/finance/ledger-registration";
 import { recordMatterReviewTx } from "@/server/conflicts/matter-review";
 
-const urlFor = (database: string) =>
-  `postgresql://${HOLDER.user}:${HOLDER.password}@${HOLDER.host}/${database}?schema=public`;
-
-let admin: PrismaClient;
 /** 主连接：与生产一样走事务 */
 let prisma: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 /** 旁路连接：只用于并发用例（另一个会话），不参与断言主路径 */
 let side: PrismaClient;
 
 beforeAll(async () => {
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  try {
-    await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
-  } catch (err) {
-    throw new Error(`临时库创建失败，需先启动 lawlink-db（${HOLDER.host}）：${String(err)}`);
-  }
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: HOLDER.url },
-    stdio: "pipe"
-  });
-  prisma = new PrismaClient({ datasourceUrl: HOLDER.url });
-  side = new PrismaClient({ datasourceUrl: HOLDER.url });
-  console.info(`[finance-ledger-sign] 临时库：${HOLDER.name}`);
+  const db = await createTempDatabase(NAME);
+  prisma = db.prisma;
+  dropDb = db.drop;
+  side = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
+  console.info(`[finance-ledger-sign] 临时库：${NAME}`);
 }, 180_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  await side?.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${HOLDER.name}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[finance-ledger-sign] 已 DROP 临时库：${HOLDER.name}`);
-  }
+  await dropDb?.();
 }, 60_000);
 
 /* ------------------------------------------------------------------ *

@@ -32,53 +32,36 @@
  *
  * 隔离：自建临时库 `lawlink_smsgen_test_*` → migrate deploy → DROP。
  */
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 
-const HOLDER = vi.hoisted(() => {
+const NAME = vi.hoisted(() => {
   const host = process.env.FIN_TEST_PG_HOST ?? "localhost:55432";
   const user = process.env.FIN_TEST_PG_USER ?? "lawlink";
   const password = process.env.FIN_TEST_PG_PASSWORD ?? "lawlink_dev_2026";
-  const name = `lawlink_smsgen_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-  const url = `postgresql://${user}:${password}@${host}/${name}?schema=public`;
-  process.env.DATABASE_URL = url;
-  return { host, user, password, name, url };
+  const name = `lawlink_t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  process.env.DATABASE_URL = `postgresql://${user}:${password}@${host}/${name}?schema=public`;
+  return name;
 });
 
-const urlFor = (database: string) =>
-  `postgresql://${HOLDER.user}:${HOLDER.password}@${HOLDER.host}/${database}?schema=public`;
-
 let prisma: PrismaClient;
-let admin: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 
 const CURRENT_USER = "sms-gen-test-user";
 
 beforeAll(async () => {
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  try {
-    await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
-  } catch (err) {
-    throw new Error(`临时库创建失败，需先启动 lawlink-db（${HOLDER.host}）：${String(err)}`);
-  }
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(), env: { ...process.env, DATABASE_URL: HOLDER.url }, stdio: "pipe"
-  });
-  prisma = new PrismaClient({ datasourceUrl: HOLDER.url });
+  const db = await createTempDatabase(NAME);
+  prisma = db.prisma;
+  dropDb = db.drop;
   await prisma.user.create({
     data: { id: CURRENT_USER, email: "smsgen@t.local", name: "办案人", role: "LAWYER", passwordHash: "x", active: true }
   });
-  console.info(`[sms-generate] 临时库：${HOLDER.name}`);
+  console.info(`[sms-generate] 临时库：${NAME}`);
 }, 180_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${HOLDER.name}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[sms-generate] 已 DROP 临时库：${HOLDER.name}`);
-  }
+  await dropDb?.();
 }, 60_000);
 
 vi.mock("@/lib/auth/session", () => ({

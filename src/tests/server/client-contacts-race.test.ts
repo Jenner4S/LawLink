@@ -28,53 +28,36 @@
  *
  * 隔离：自建临时库 `lawlink_contact_test_*` → migrate deploy → DROP。
  */
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 
-const HOLDER = vi.hoisted(() => {
+const NAME = vi.hoisted(() => {
   const host = process.env.FIN_TEST_PG_HOST ?? "localhost:55432";
   const user = process.env.FIN_TEST_PG_USER ?? "lawlink";
   const password = process.env.FIN_TEST_PG_PASSWORD ?? "lawlink_dev_2026";
-  const name = `lawlink_contact_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-  const url = `postgresql://${user}:${password}@${host}/${name}?schema=public`;
-  process.env.DATABASE_URL = url;
-  return { host, user, password, name, url };
+  const name = `lawlink_t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  process.env.DATABASE_URL = `postgresql://${user}:${password}@${host}/${name}?schema=public`;
+  return name;
 });
 
-const urlFor = (database: string) =>
-  `postgresql://${HOLDER.user}:${HOLDER.password}@${HOLDER.host}/${database}?schema=public`;
-
 let prisma: PrismaClient;
-let admin: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 
 const CURRENT_USER = "contact-test-user";
 
 beforeAll(async () => {
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  try {
-    await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
-  } catch (err) {
-    throw new Error(`临时库创建失败，需先启动 lawlink-db（${HOLDER.host}）：${String(err)}`);
-  }
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(), env: { ...process.env, DATABASE_URL: HOLDER.url }, stdio: "pipe"
-  });
-  prisma = new PrismaClient({ datasourceUrl: HOLDER.url });
+  const db = await createTempDatabase(NAME);
+  prisma = db.prisma;
+  dropDb = db.drop;
   await prisma.user.create({
     data: { id: CURRENT_USER, email: "contact@t.local", name: "编辑人", role: "PRINCIPAL_LAWYER", passwordHash: "x", active: true }
   });
-  console.info(`[client-contacts] 临时库：${HOLDER.name}`);
+  console.info(`[client-contacts] 临时库：${NAME}`);
 }, 180_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${HOLDER.name}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[client-contacts] 已 DROP 临时库：${HOLDER.name}`);
-  }
+  await dropDb?.();
 }, 60_000);
 
 vi.mock("@/lib/auth/session", () => ({
@@ -141,7 +124,7 @@ describe("updateClient · 联系人并发编辑不得重复（真库）", () => 
   it("行锁真的在等：持锁期间第二个事务必须阻塞，不会读到中间态", async () => {
     // 直接验证锁语义：手动开两个连接，A 拿锁不提交，B 拿同一行锁必须等。
     const c = await seedClient();
-    const other = new PrismaClient({ datasourceUrl: HOLDER.url });
+    const other = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
     // 注：这条手工开两条连接、显式交错，复现的正是 updateClient 里那段
     // 「删光重建」的竞态（实测无锁时最终会留下 ["A","B"] 两条）。
 
