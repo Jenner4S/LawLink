@@ -33,6 +33,7 @@ import { AdminPageHeader } from "@/components/layout/admin-page-header";
 import { EmptyState } from "@/components/patterns/moan";
 import { formatDate } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
+import { matterCategoryLabel } from "@/lib/enums";
 
 type Category = "INTAKE" | "RETAINER" | "LITIGATION" | "HEARING" | "WORK_PRODUCT" | "ARCHIVE" | "CLOSING" | "BLANK";
 type MatterCat = "CIVIL_COMMERCIAL" | "LABOR_ARBITRATION" | "COMMERCIAL_ARBITRATION" | "CRIMINAL" | "ADMINISTRATIVE" | "NON_LITIGATION" | "LEGAL_COUNSEL" | "SPECIAL_PROJECT";
@@ -41,10 +42,8 @@ const CATEGORY_CN: Record<Category, string> = {
   INTAKE: "收案文书", RETAINER: "委托文书", LITIGATION: "诉讼文书", HEARING: "庭审文书",
   WORK_PRODUCT: "工作成果", ARCHIVE: "卷宗文书", CLOSING: "结案文书", BLANK: "空白文档"
 };
-const MATTER_CAT_CN: Record<MatterCat, string> = {
-  CIVIL_COMMERCIAL: "民商事", LABOR_ARBITRATION: "劳动仲裁", COMMERCIAL_ARBITRATION: "商事仲裁", CRIMINAL: "刑事", ADMINISTRATIVE: "行政",
-  NON_LITIGATION: "非诉专项", LEGAL_COUNSEL: "法律顾问", SPECIAL_PROJECT: "专项"
-};
+// 2026-11-20：改用 lib/enums.ts 的 matterCategoryLabel（原先手写一份且文案不一致）。
+const MATTER_CAT_CN: Record<MatterCat, string> = matterCategoryLabel;
 
 export type AdminTemplateRow = {
   id: string;

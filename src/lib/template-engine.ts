@@ -13,6 +13,7 @@ import Docxtemplater from "docxtemplater";
 import { shParts, shDayKey } from "@/lib/ui/sh-time";
 import { prisma } from "./prisma";
 import { ActionError } from "@/lib/action-error";
+import { matterCategoryLabel } from "@/lib/enums";
 
 const FIRM_NAME_KEY = "firmName";
 const FIRM_ADDRESS_KEY = "firmAddress";
@@ -86,14 +87,14 @@ const STANDING_CN: Record<string, string> = {
   NON_LITIGATION_PARTY: "项目当事人"
 };
 
-const CATEGORY_CN: Record<string, string> = {
-  CIVIL_COMMERCIAL: "民商事",
-  CRIMINAL: "刑事",
-  ADMINISTRATIVE: "行政",
-  NON_LITIGATION: "非诉",
-  LEGAL_COUNSEL: "法律顾问",
-  SPECIAL_PROJECT: "专项法律服务"
-};
+// 2026-11-20：类别文案统一走 lib/enums.ts 的 matterCategoryLabel。
+//
+// 原先这里手写一份（"民商事" / "刑事" / "行政"），而 enums.ts 是
+// "民商诉讼" / "刑事诉讼" / "行政诉讼"。同一个枚举两种叫法，会直接体现到
+// **生成的文书**里——律师用模板出的委托合同写"民商事"，界面上又写"民商诉讼"。
+// 统一到 enums.ts 那份（更准确，明确区分诉讼与非诉）。
+// 注意：文书是快照，已生成的旧文书文案不会变，新生成的用新文案。
+const CATEGORY_CN: Record<string, string> = matterCategoryLabel;
 
 function toCNDate(d: Date): string {
   const cnDigits = "〇一二三四五六七八九";
