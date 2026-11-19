@@ -8,7 +8,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, push: vi.fn() }
 vi.mock("sonner", () => ({ toast: { error, success } }));
 vi.mock("@/server/approval-permissions/inbox", () => ({ getApprovalDetail: detail }));
 vi.mock("@/app/(app)/approvals/approval-create-menu", () => ({ ApprovalCreateMenu: () => null }));
-vi.mock("@/app/(app)/approvals/legacy-seal-classification", () => ({ LegacySealClassification: () => null }));
 vi.mock("@/app/(app)/approvals/invoice-recognition", () => ({ InvoiceRecognition: () => null }));
 vi.mock("@/server/invoices/actions", () => ({ approveInvoiceRequest: approve, rejectInvoiceRequest: vi.fn() }));
 vi.mock("@/server/intakes/actions", () => ({ convertIntakeToMatter: vi.fn(), declineIntake: vi.fn(), markIntakeNeedsRevision: vi.fn() }));
