@@ -180,26 +180,46 @@ rg -n "\.parse\(" -g '*.ts' -g '!*.test.*' src/server | grep -v "JSON.parse"
 
 ## 七、每次审计的固定动作
 
-```bash
-# 1) 静态：类型 + 测试 + lint
-npx tsc --noEmit
-npx vitest run
-npx eslint <改动的文件>
+### 部署：`./scripts/deploy.sh`（2026-11-20 起）
 
-# 2) 数据：schema 与库是否漂移
+**正常部署一律走脚本**，不要手敲那串命令：
+
+```bash
+./scripts/deploy.sh              # 静态 → 测试 → 构建 → Docker → 三重验证
+./scripts/deploy.sh --skip-tests # 只在确认可跳过测试时用
+```
+
+脚本做的事（任一步失败即 `exit 1`，不继续部署）：
+
+| 步 | 内容 | 防的是什么 |
+|---|---|---|
+| 1/5 | `tsc --noEmit` + 全量 `eslint src` 归零 | 「只 lint 改动文件」的盲区 |
+| 2/5 | `npx vitest run` 全绿 | 带病上线 |
+| 3/5 | `npm run build` 看 **exit code** | 「打印 Built 但实际失败」 |
+| 4/5 | `docker compose build` + 自动注入 `BUILD_ID` | 忘了 export 导致 `buildId=dev` |
+| 5/5 | 镜像 ID 变化 + `BUILD_ID` 真实且匹配 | 「以为部署了其实没部署」 |
+
+**为什么要有第 5 步**：`BUILD_ID` 是「页面已过期」检测的依据。`dev` 会让检测失效，用户可能撞到 `Failed to find Server Action`。而它靠人工 export 时必然会忘——本项目在 84 轮就忘过一次。
+
+**为什么用 `--no-deps app`**：`up -d --force-recreate` 会重建**所有**服务的容器，包括 postgres。实测（2026-11-20）它确实把 `lawlink-db` 一起 Recreate 了——数据卷还在所以没丢，但每次部署重启数据库毫无必要，且万一哪天卷配置变过就是事故。
+
+### 手工核对（脚本之外偶尔要用）
+
+```bash
+# 数据：schema 与库是否漂移
 npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \
                         --to-schema-datamodel prisma/schema.prisma --script
-#    期望 "This is an empty migration."
+# 期望 "This is an empty migration."
 
-# 3) 真机：83 项 UI 巡检
+npx prisma migrate status        # 期望 "Database schema is up to date!"
+
+# 真机：83 项 UI 巡检
 sh scripts/verify-ui.sh chrome && node scripts/verify-ui.mjs all
 
-# 4) 部署后：镜像 ID 与 BUILD_ID 都要变
+# 部署后（脚本已自动做，手工排查时用）
 docker images lawlink-app --format "{{.ID}} {{.CreatedAt}}"
 curl -s http://localhost:3000/api/version    # 期望 b2026...，不是 dev
 ```
-
-**`BUILD_ID` 必须是真实值**：它是「页面已过期」检测的依据。`dev` 会让检测失效，用户可能撞到 `Failed to find Server Action`。`docker compose build` 要在**同一个 shell** 里先 `export BUILD_ID=...`。
 
 ---
 

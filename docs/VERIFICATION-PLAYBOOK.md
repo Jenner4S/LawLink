@@ -27,7 +27,11 @@
 ## 二、工具
 
 ```bash
-# 前置
+# 部署：一条命令走完「静态 → 测试 → 构建 → Docker → 三重验证」
+./scripts/deploy.sh                   # 任一步失败即 exit 1，不继续
+./scripts/deploy.sh --skip-tests      # 只在确认可跳过测试时用
+
+# 前置（只做 UI 巡检、不重新部署时）
 sh scripts/verify-ui.sh chrome        # 启动带 CDP 的 Chrome（端口 9333）
 docker compose --profile full up -d   # 应用在 3000
 
@@ -44,6 +48,18 @@ BASE=http://localhost:3000 CDP=9333 \
 VERIFY_EMAIL=... VERIFY_PASSWORD=... \
 node scripts/verify-ui.mjs all
 ```
+
+**`deploy.sh` 为什么存在**（2026-11-20）：前 84 轮的部署验证靠自律——先 `export BUILD_ID`、再看 `echo $?`、再核镜像 ID。这三件事各忘过一次：
+
+| 忘掉什么 | 后果 |
+|---|---|
+| `export BUILD_ID` | 部署出 `buildId=dev`，页面过期检测失效，用户撞 `Failed to find Server Action` |
+| 看 `echo $?` | `docker compose build` 打印 "Built" 但 `npm run build` 其实失败了 |
+| 核镜像 ID | 「以为部署了其实没部署」 |
+
+**把正确做法变成默认路径，比记住正确做法可靠。**
+
+另：脚本用 `--no-deps app` 只重建应用容器。实测 `up -d --force-recreate` 会把 `lawlink-db` 一起 Recreate——数据卷还在所以没丢，但每次部署重启数据库毫无必要。
 
 退出码：`0` 全通过 / `1` 有失败 / `2` 执行中断（连不上、登录失败）。
 

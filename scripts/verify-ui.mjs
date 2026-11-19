@@ -508,8 +508,37 @@ const COMMANDS = {
   timing: checkTiming
 };
 
+/** 用法说明（2026-11-20 加：不带参数时打印） */
+const COMMAND_HELP = {
+  routes: "40 条路由可访问性（状态码 + 错误标记）",
+  a11y: "无障碍基础 + 键盘焦点",
+  contrast: "设计 token 对比度（读实时计算样式）",
+  flow: "业务链走查（案件详情页签等）",
+  timing: "导航性能"
+};
+
 async function main() {
-  const cmd = process.argv[2] ?? "all";
+  // 2026-11-20：不带参数改为显示用法，不再默默跑全量。
+  //
+  // 原行为 `?? "all"`：误敲 `node scripts/verify-ui.mjs` 会直接开跑 83 项
+  // （每项都要登录 + 导航，几分钟），而想查用法只能翻源码 ——
+  // 我自己在写文档核对时就撞了一次，等了一分钟才反应过来。
+  // 显式传 all 才是跑全量；不传参数看用法。
+  const cmd = process.argv[2];
+  if (!cmd || cmd === "-h" || cmd === "--help") {
+    console.log(`用法：node scripts/verify-ui.mjs <命令>
+
+命令：
+${Object.keys(COMMANDS).map((k) => `  ${k.padEnd(10)} ${COMMAND_HELP[k] ?? ""}`).join("\n")}
+  ${"all".padEnd(10)} 依次跑以上全部
+
+环境变量：
+  BASE=http://localhost:3000   CDP=9333
+  VERIFY_EMAIL / VERIFY_PASSWORD
+
+前置：sh scripts/verify-ui.sh chrome`);
+    process.exit(0);
+  }
   const targets =
     cmd === "all" ? Object.values(COMMANDS) : COMMANDS[cmd] ? [COMMANDS[cmd]] : null;
   if (!targets) {
