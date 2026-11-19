@@ -1,5 +1,5 @@
 "use server";
-import { roleMutation } from "@/lib/roles/service";
+import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
 import { parseInput } from "@/lib/parse-input";
 
 import { revalidatePath } from "next/cache";
@@ -423,38 +423,56 @@ export async function generateHearingFromSms(input: z.infer<typeof smsGenerateHe
   await assertCanHandleMatter(session.user, proc.matterId);
   await assertMatterWritable(proc.matterId);
 
-  const hearing = await roleMutation(session.user, "matters.write", async roleDb => roleDb.hearing.create({
-    data: {
-      procedureId: data.procedureId,
-      title: data.title.trim(),
-      startsAt: data.startsAt,
-      room: data.room?.trim() || null,
-      judge: data.judge?.trim() || null,
-      notes: data.notes?.trim() || null
+  // 2026-11-21 修复（P2，多智能体审计「并发安全」维度）：
+  //
+  // 原来是「create 开庭」和「回写 sms.generatedHearingId」两个独立 roleMutation。
+  // 内置岗位的 roleMutation 不建事务（`roles/service.ts:38`），两次调用完全独立；
+  // 前面的 `findUnique` 幂等检查在事务外，拦不住并发。
+  //
+  // 双击 / 界面重试 / 两个标签页同时点：
+  //   都读到 generatedHearingId = null → 都建开庭 → 回写时后者覆盖前者
+  //   → **两条开庭，其中一条成为孤儿**（没有任何短信指向它），
+  //     律师日程里出现两条开庭，按错的那条准备材料。
+  //
+  // 修法：合到一个事务里，用**条件回写**当闸门 ——
+  //   `updateMany({ where: { id, generatedHearingId: null } })` 抢到才继续；
+  //   抢输方 count=0 → 抛错 → 整个事务（含刚建的开庭）回滚，不留孤儿。
+  let hearingId = "";
+  await prisma.$transaction(async db => {
+    await checkRoleMutation(db, session.user, "matters.write");
+    const created = await db.hearing.create({
+      data: {
+        procedureId: data.procedureId,
+        title: data.title.trim(),
+        startsAt: data.startsAt,
+        room: data.room?.trim() || null,
+        judge: data.judge?.trim() || null,
+        notes: data.notes?.trim() || null
+      }
+    });
+    const claimed = await db.smsMessage.updateMany({
+      where: { id: data.smsId, generatedHearingId: null },
+      data: { generatedHearingId: created.id, processed: true, processedAt: new Date() }
+    });
+    if (claimed.count === 0) {
+      // 有人抢先了 —— 抛出去让事务回滚，刚建的这条开庭不会留下
+      throw new ActionError("该短信已生成过开庭，请勿重复生成");
     }
-  }));
-
-  await roleMutation(session.user, "matters.write", async roleDb => roleDb.smsMessage.update({
-    where: { id: data.smsId },
-    data: {
-      generatedHearingId: hearing.id,
-      processed: true,
-      processedAt: new Date()
-    }
-  }));
+    hearingId = created.id;
+  });
 
   await audit({
     userId: session.user.id,
     action: "SMS_GENERATE_HEARING",
     targetType: "Hearing",
-    targetId: hearing.id,
+    targetId: hearingId,
     detail: { smsId: data.smsId, procedureId: data.procedureId }
   });
 
   revalidatePath("/inbox");
   await revalidateMatter(proc.matterId);
-  await refreshScheduleReminderAfterSave("Hearing", hearing.id);
-  return { ok: true, hearingId: hearing.id };
+  await refreshScheduleReminderAfterSave("Hearing", hearingId);
+  return { ok: true, hearingId };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -476,38 +494,44 @@ export async function generateDeadlineFromSms(input: z.infer<typeof smsGenerateD
   await assertCanHandleMatter(session.user, proc.matterId);
   await assertMatterWritable(proc.matterId);
 
-  const deadline = await roleMutation(session.user, "matters.write", async roleDb => roleDb.deadline.create({
-    data: {
-      procedureId: data.procedureId,
-      title: data.title.trim(),
-      category: data.category,
-      dueAt: data.dueAt,
-      basis: data.basis?.trim() || null,
-      remindDays: data.remindDays
+  // 2026-11-21 修复（P2）：同 generateHearingFromSms —— 合到一个事务 + 条件回写当闸门。
+  // 期限重复比开庭更危险：两条一样的期限会让「办结一条」后另一条仍报逾期，
+  // 律师无法判断哪条才是真的。
+  let deadlineId = "";
+  await prisma.$transaction(async db => {
+    await checkRoleMutation(db, session.user, "matters.write");
+    const created = await db.deadline.create({
+      data: {
+        procedureId: data.procedureId,
+        title: data.title.trim(),
+        category: data.category,
+        dueAt: data.dueAt,
+        basis: data.basis?.trim() || null,
+        remindDays: data.remindDays
+      }
+    });
+    const claimed = await db.smsMessage.updateMany({
+      where: { id: data.smsId, generatedDeadlineId: null },
+      data: { generatedDeadlineId: created.id, processed: true, processedAt: new Date() }
+    });
+    if (claimed.count === 0) {
+      throw new ActionError("该短信已生成过期限，请勿重复生成");
     }
-  }));
-
-  await roleMutation(session.user, "matters.write", async roleDb => roleDb.smsMessage.update({
-    where: { id: data.smsId },
-    data: {
-      generatedDeadlineId: deadline.id,
-      processed: true,
-      processedAt: new Date()
-    }
-  }));
+    deadlineId = created.id;
+  });
 
   await audit({
     userId: session.user.id,
     action: "SMS_GENERATE_DEADLINE",
     targetType: "Deadline",
-    targetId: deadline.id,
+    targetId: deadlineId,
     detail: { smsId: data.smsId, procedureId: data.procedureId }
   });
 
   revalidatePath("/inbox");
   await revalidateMatter(proc.matterId);
-  await refreshScheduleReminderAfterSave("Deadline", deadline.id);
-  return { ok: true, deadlineId: deadline.id };
+  await refreshScheduleReminderAfterSave("Deadline", deadlineId);
+  return { ok: true, deadlineId };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
