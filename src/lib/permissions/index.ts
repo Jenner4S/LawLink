@@ -348,11 +348,10 @@ export function clientVisibilityFilter(
 
 // ============ 通用断言 ============
 
-export function assertManagerOrRole(role: string, ...allowed: string[]): void {
-  if (isManager(role)) return;
-  if (allowed.includes(role)) return;
-  throw new ActionError("权限不足");
-}
+// assertManagerOrRole 已于 2026-11-20 删除：零调用（含测试）。
+// 早期是「管理者或指定岗位才放行」的断言；后来各处改用返回 boolean 的
+// customOrLegacy / isManager 自行组合，这个 throw 形态再没人用。
+// 保留一个没人调用的权限断言，比没有更危险——它会让人以为某处已经校验过。
 
 /** 自定义角色的全所查看只影响读取，不替代案件经办与独立业务授权。 */
 export function customMatterFilter(userId: string, grants: RoleGrant[] | undefined, key: PermissionKey, includeTeam: boolean): Prisma.MatterWhereInput {

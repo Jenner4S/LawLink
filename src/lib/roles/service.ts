@@ -15,11 +15,12 @@ export async function resolveRoleUser(userId: string, role: string, db: Prisma.T
   if (!row?.active || row.role !== "CUSTOM" || !definition?.active) return { role: "CUSTOM", enabled: false, rolePermissions: [] };
   return { role: "CUSTOM", enabled: true, roleName: definition.name, rolePermissions: validGrants(definition.permissions) };
 }
-export async function assertCustomPermission(userId: string, role: string, key: PermissionKey, db: Prisma.TransactionClient = prisma) {
-  if (role !== "CUSTOM") return;
-  const user = await resolveRoleUser(userId, role, db);
-  if (!user.enabled || !scopeFor(user, key)) throw new ActionError("当前角色无权执行此操作，请联系管理员调整角色权限");
-}
+// assertCustomPermission 已于 2026-11-20 删除：零调用（含测试）。
+// 自定义角色的权限判定实际走 scopeFor / hasCustomPermission / customOrLegacy，
+// 这个 async 断言从未接入任何调用点。同上：没人调用的权限断言会制造
+// 「这里已经校验过」的错觉。
+
+/** 角色配置表是否就绪（部署早期表可能尚未建） */
 export async function roleTablesReady() {
   const rows = await prisma.$queryRaw<{ ready: boolean }[]>`SELECT to_regclass('public."RoleDefinition"') IS NOT NULL AND to_regclass('public."RolePermission"') IS NOT NULL AS ready`;
   return rows[0]?.ready === true;

@@ -57,13 +57,11 @@ export function ethicalWallExclusion(
  * 用 AND 包裹，避免与既有 where 的 OR 键互相覆盖（同名键平铺会互相覆盖，
  * 这是本项目第七轮审计踩过的坑）。
  */
-export function withEthicalWall(
-  where: Prisma.MatterWhereInput,
-  userId: string,
-  role: string
-): Prisma.MatterWhereInput {
-  return { AND: [where, ethicalWallExclusion(userId, role)] };
-}
+// withEthicalWall 已于 2026-11-20 删除：零调用（含测试）。
+// 它的形态是「给已有完整 where 包一层 AND」，而实际各处（matterReadVisibilityFilter、
+// findWritableMatter、export-query 等）都是「在 where 对象里加一项」，直接写
+// ...ethicalWallExclusion(userId, role) 更简洁。留着两个等价入口只会让人
+// 以为还有第三条路没走 —— 隔离墙这次出问题，恰恰是因为入口多、接线少。
 
 /**
  * 对象级判定：该案件是否对该用户隔离。
