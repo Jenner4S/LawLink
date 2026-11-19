@@ -19,7 +19,7 @@
 | UI 验证 | `node scripts/verify-ui.mjs all` **83 项全通过** |
 | 数据基线 | Client 11 / Matter 7 / Party 14 / User 10 / AuditLog 294 |
 | 数据库 | **15 个迁移**（含 `0_init` 基线），最新 `20261120000003_audit_log_previous_hash_index` |
-| 台账 | `docs/BACKLOG-20261118.md` **394 条**记录 |
+| 台账 | `docs/BACKLOG-20261118.md` **397 条**记录 |
 
 ---
 
@@ -49,7 +49,7 @@
 | 引用完整性 | ✅ | 7 项检查全 0（无孤儿数据） |
 | 软删口径一致 | ✅ | `canReadDocument` 补 `deletedAt: null`，与 `listMatters` / `assertCanReadMatter` 对齐（此前「列表看不到但能下载材料」）|
 | 审核留痕保护 | ✅ | 有 `ReviewRecord` 的材料禁止硬删（此前 `onDelete: Cascade` 会连审核记录一起抹掉）|
-| 金额累加一致 | ✅ | 5 处 `acc + Number(x)` 全部改为 `Decimal.plus`（此前 float 累加，100 笔 1234.56 会差 1.6e-10）|
+| 金额累加一致 | ✅ | 5 处 `acc + Number(x)` 全部改为 `Decimal.plus`。**2026-11-21 真实库验证**（临时库插 100 笔 1234.56 再读出）：Decimal=**123456** / float=**123455.99999999984**，偏差 1.6e-10 —— Round 65 因主库 `FeeEntry` 0 行未能实测的缺口已补 |
 | 备份与恢复 | ✅ | 演练通过（`docs/BACKUP-RESTORE-DRILL-20261119.md`） |
 
 ### 并发与一致性（Round 61–68 新验）
@@ -119,7 +119,7 @@
 
 | 项 | 结果 |
 |---|---|
-| Prisma `include` 是否 N+1 | ✅ **不是**——**2026-11-21 重测（Prisma query 事件计数）**：案件列表 4 条 / 客户列表 **394 条**（原写 2，实为 findMany + contacts + count）/ 财务台账 1 / 审计日志 2。**都是常数级，不随页大小增长**，N+1 结论成立 |
+| Prisma `include` 是否 N+1 | ✅ **不是**——**2026-11-21 重测（Prisma query 事件计数）**：案件列表 4 条 / 客户列表 **397 条**（原写 2，实为 findMany + contacts + count）/ 财务台账 1 / 审计日志 2。**都是常数级，不随页大小增长**，N+1 结论成立 |
 | 手写循环 N+1 | ✅ 找到并修了两轮：开票依据校验原本每份一次 `findUnique`（5 份 = 6 条）→ Round 60 改批量（2 条）→ **2026-11-21 发现那 2 条查的是同一批 document，可合并，现为 1 条** |
 | 批处理任务循环查询 | 已知取舍：`cron/worker.ts` 邮件摘要每用户 2 次查询，低频且用户数有限，不合并 |
 
