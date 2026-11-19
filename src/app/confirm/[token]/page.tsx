@@ -12,6 +12,7 @@
  */
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { formatDateTime } from "@/lib/utils";
 import {
   CONTRACT_CONFIRMATION_DISCLAIMER,
   checkPublicRateLimit,
@@ -27,18 +28,6 @@ export const metadata: Metadata = {
   description: "记录您对合同内容的阅知与确认；本页不构成电子签名，不能替代签字或盖章。",
   robots: { index: false, follow: false }
 };
-
-function formatDateTime(value: Date): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(value);
-}
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (

@@ -13,7 +13,7 @@ import {
   litigationStandingLabel,
   procedureTypeLabel as PROC_TYPE_LABEL
 } from "@/lib/enums";
-import { formatCurrency, cn, formatDate as fmtDate } from "@/lib/utils";
+import { formatCurrency, cn, formatDate } from "@/lib/utils";
 import { matterHref } from "@/lib/matters/route";
 import { shDayKey, shDaysFromToday, shTime } from "@/lib/ui/sh-time";
 
@@ -258,7 +258,7 @@ export function CaseListCard({
             latestHearingAt ? "text-primary" : "text-muted-foreground/55"
           )}
         >
-          {formatDateTime(latestHearingAt)}
+          {hearingTimeText(latestHearingAt)}
         </span>
       )}
     </DataCell>
@@ -437,12 +437,11 @@ function DataCell({
   );
 }
 
-function formatDate(value: Date | null) {
-  if (!value) return "—";
-  return fmtDate(new Date(value));
-}
-
-function formatDateTime(value: Date | null) {
+/**
+ * 开庭时间文本（上海时区）。空值语义是「暂无开庭」（业务语义），
+ * 与通用 formatDateTime 的「—」不同，故不合并到统一函数。
+ */
+function hearingTimeText(value: Date | null) {
   if (!value) return "暂无开庭";
   return `${shDayKey(value)} ${shTime(value)}`;
 }

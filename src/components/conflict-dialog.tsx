@@ -42,7 +42,7 @@ import { toast } from "sonner";
 import { runCheckAndSave } from "@/server/conflicts/actions";
 import { litigationStandingLabel, matterCategoryLabel, matterStatusLabel } from "@/lib/enums";
 import { matterHref } from "@/lib/matters/route";
-import { formatDate as fmtDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
 
 type QueryRole = "CLIENT_PARTY" | "OPPOSING_PARTY" | "THIRD_PARTY";
@@ -453,11 +453,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="truncate text-foreground/85">{children}</span>
     </div>
   );
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return fmtDate(date);
 }

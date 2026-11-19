@@ -39,7 +39,6 @@ import { formatDateTime } from "@/lib/utils";
 
 type Data = Awaited<ReturnType<typeof listApprovalWorkspace>>;
 type Selection = { id: string; action: ApprovalAction };
-const dateText = (date: Date | string | null) => date ? formatDateTime(date) : "—";
 
 export function ApprovalInbox({ data, initialSelection }: { data: Data; initialSelection?: Selection }) {
   const router = useRouter();
@@ -188,9 +187,9 @@ export function ApprovalInbox({ data, initialSelection }: { data: Data; initialS
           <div className="min-w-0 flex-1">
             <div className="rt truncate">{r.title}</div>
             <div className="rm truncate">
-              申请人 {r.requester}{r.matter ? ` · ${r.matter}` : ""} · {dateText(r.submittedAt)}
+              申请人 {r.requester}{r.matter ? ` · ${r.matter}` : ""} · {formatDateTime(r.submittedAt)}
               {r.task && r.status === "PENDING" && waitDays(r.submittedAt) >= 1 ? ` · 已等待 ${waitDays(r.submittedAt)} 天` : ""}
-              {r.processor ? ` · 最近处理 ${r.processor} ${dateText(r.processedAt)}` : ""}
+              {r.processor ? ` · 最近处理 ${r.processor} ${formatDateTime(r.processedAt)}` : ""}
             </div>
           </div>
           <span className={`badge ${st.cls} shrink-0`}>{r.status === "PENDING" && r.task === "approve" ? <span className="bdot" /> : null}{st.text}</span>
@@ -211,7 +210,7 @@ export function ApprovalInbox({ data, initialSelection }: { data: Data; initialS
       title={detail?.title ?? "申请详情"}
       eyebrow={selected ? ACTION_LABELS[selected.action] : "审批申请"}
       status={detail ? <span className={`badge ${detail.task ? "b-amber" : detail.status === "REJECTED" ? "b-outline-red" : detail.status === "PENDING" ? "b-amber" : "b-green"}`}><span className="bdot" />{APPROVAL_STATUS_LABELS[detail.status] ?? "状态待核实"}</span> : <span className="badge b-slate">加载中</span>}
-      description={<><span>申请人 {detail?.requester ?? "—"}</span><span>· 提交于 {dateText(detail?.submittedAt ?? null)}</span>{detail?.task && detail.submittedAt ? <span>· 已等待 {waitDays(detail.submittedAt)} 天</span> : null}</>}
+      description={<><span>申请人 {detail?.requester ?? "—"}</span><span>· 提交于 {formatDateTime(detail?.submittedAt ?? null)}</span>{detail?.task && detail.submittedAt ? <span>· 已等待 {waitDays(detail.submittedAt)} 天</span> : null}</>}
       summary={detail && selected && <ApprovalReviewSummary detail={detail} action={selected.action} />}
       alert={alert}
       tabs={[

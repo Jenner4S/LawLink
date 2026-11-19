@@ -10,7 +10,6 @@ import { InitialAvatar, ProcedureChain, type ChainNode } from "@/components/patt
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 
 type Matter = NonNullable<Awaited<ReturnType<typeof getMatterById>>>;
-const date = (value: Date | null) => (value ? formatDate(new Date(value)) : "—");
 const shortDate = (value: Date | null) => (value ? formatDate(new Date(value)).slice(5) : null);
 const PROC_STATUS_LABEL: Record<string, string> = { NOT_STARTED: "未开始", IN_PROGRESS: "进行中", CONCLUDED: "已结", SUSPENDED: "中止" };
 
@@ -72,7 +71,7 @@ export async function TeamMatterOverview({ matter }: { matter: Matter }) {
                 团队只读
               </span>
               {claim ? <span className="badge b-white">{kind === "litigation" ? "标的" : "金额"} <span className="mono">{claim}</span></span> : null}
-              {matter.intakeDate ? <span className="badge b-white">收案 <span className="mono">{date(matter.intakeDate)}</span></span> : null}
+              {matter.intakeDate ? <span className="badge b-white">收案 <span className="mono">{formatDate(matter.intakeDate)}</span></span> : null}
               <span className="badge b-white">主办 {matter.owner.name}</span>
             </div>
           </div>
@@ -188,7 +187,7 @@ export async function TeamMatterOverview({ matter }: { matter: Matter }) {
                   {matter.timelineEvents.map((event) => (
                     <div key={event.id} className="tl-item">
                       <div className="text-[12.5px] font-medium">{event.title}</div>
-                      <div className="t-xs t-mute">{date(event.occurredAt)}</div>
+                      <div className="t-xs t-mute">{formatDate(event.occurredAt)}</div>
                     </div>
                   ))}
                 </div>

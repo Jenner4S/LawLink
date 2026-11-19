@@ -79,7 +79,6 @@ const STATUS_TONE: Record<ConfirmationStatus, string> = {
   REVOKED: "border-[#E3C4C4] bg-[#FBEDED] text-[#8A2C2C]"
 };
 
-const fmt = (v: Date | string | null) => (v ? formatDateTime(new Date(v)) : "—");
 
 export function ContractConfirmationPanel({
   clientId,
@@ -282,13 +281,13 @@ export function ContractConfirmationPanel({
                     {row.engagementTitle ?? "—"}
                   </td>
                   <td className="px-2 py-2.5 font-mono text-[10.5px] tabular text-muted-foreground">
-                    <div>{fmt(row.createdAt)}</div>
-                    <div>至 {fmt(row.expiresAt)}</div>
+                    <div>{formatDateTime(row.createdAt)}</div>
+                    <div>至 {formatDateTime(row.expiresAt)}</div>
                   </td>
                   <td className="px-2 py-2.5 text-muted-foreground">
                     {row.confirmedAt ? (
                       <>
-                        <div className="font-mono text-[10.5px] tabular">{fmt(row.confirmedAt)}</div>
+                        <div className="font-mono text-[10.5px] tabular">{formatDateTime(row.confirmedAt)}</div>
                         <div className="font-mono text-[10.5px] tabular">{row.confirmedIp ?? "IP 未记录"}</div>
                         {row.confirmedUa ? (
                           <div className="max-w-[200px] truncate" title={row.confirmedUa}>{row.confirmedUa}</div>
@@ -429,7 +428,7 @@ export function ContractConfirmationPanel({
                 {absoluteUrl}
               </div>
               <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-                有效期至 {fmt(linkInfo.expiresAt)}。请通过可信渠道发给客户；链接即凭证，转发范围请自行控制。
+                有效期至 {formatDateTime(linkInfo.expiresAt)}。请通过可信渠道发给客户；链接即凭证，转发范围请自行控制。
               </p>
               <Button variant="secondary" className="w-full gap-1.5" onClick={copyLink}>
                 <ClipboardCopy className="h-3.5 w-3.5" />

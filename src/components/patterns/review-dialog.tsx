@@ -229,7 +229,6 @@ export function ReviewFileRow({ id, name, readable, meta }: { id: string; name: 
 }
 
 export function ReviewHistory({ items, emptyText, emptyDesc }: { items: { id: string; label: string; userName: string; at: Date | string; note?: string | null; decision?: string | boolean | null; legacy?: boolean }[]; emptyText: string; emptyDesc?: string }) {
-  const dateText = (d: Date | string) => formatDateTime(d);
   if (!items.length) return <ReviewEmpty title={emptyText} desc={emptyDesc} />;
   return (
     <ReviewSection title="处理记录">
@@ -241,7 +240,7 @@ export function ReviewHistory({ items, emptyText, emptyDesc }: { items: { id: st
                 <span className="text-[12.5px] font-semibold">
                   {h.label} · {h.userName}
                 </span>
-                <span className="num-sm t-mute">{dateText(h.at)}</span>
+                <span className="num-sm t-mute">{formatDateTime(h.at)}</span>
               </div>
               {h.note || h.decision ? <div className="rec-note mt-1.5 whitespace-pre-wrap" style={{ background: "var(--bg-sunken)", borderRadius: 8, padding: "8px 11px", fontSize: 12, color: "var(--t-secondary)" }}>{h.note || "未记录审批意见"}</div> : null}
               {h.legacy ? <div className="t-xs t-faint mt-1">来自原业务记录</div> : null}

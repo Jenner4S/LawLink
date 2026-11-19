@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { runCheckAndSave, setConflictConclusion } from "@/server/conflicts/actions";
 import { conflictConclusionLabel, litigationStandingLabel, matterCategoryLabel, matterStatusLabel } from "@/lib/enums";
 import type { buildIntakeConflictQueries } from "@/lib/approvals/intake-detail";
-import { cn, formatDate as fmtDate, formatDateTime } from "@/lib/utils";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { matterHref } from "@/lib/matters/route";
 import { actionErrorMessage } from "@/lib/action-error";
 
@@ -434,13 +434,6 @@ function HitCard({ hit }: { hit: Hit }) {
       )}
     </li>
   );
-}
-
-function formatDate(value: Date | string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return fmtDate(date);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
