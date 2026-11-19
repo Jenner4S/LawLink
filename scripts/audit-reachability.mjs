@@ -187,8 +187,59 @@ const VERDICT = {
   hasActiveBorrowGrant: ["dead", "借阅资格的内部判定，未被任何调用方使用"],
   parseDateString: ["dead", "短信日期解析的旧工具函数，解析已改走结构化管线"],
 
-  // ── 待定：无法从代码与文档判定意图，需维护者定 ──
-  //   这些不阻塞部署，但每轮复审时应当逐步收敛为 intentional 或 dead。
+  // ── 2026-11-22 收敛（Round 149）：按「同文件/同模块内是否已有可达同类」判定 ──
+  //   判定依据只有两条，不猜产品意图：
+  //     ① 同一模块内已有可达的同类动作（改名残留 / 被新版取代）→ dead
+  //     ② 有意为之且能指出依据（AGENTS 规定 / 界面文案 / 自动创建）→ intentional
+  checkLoginRequiresTotp: ["dead", "同文件 checkLoginTotpEnforcement 已可达，本函数为旧名残留"],
+  listMyPasskeys: ["dead", "passkey 列表已由 webauthn-service 的 listCredentials + listCredentials 动作提供"],
+  getExpress: ["dead", "同文件 listExpress 已可达，单条读取无调用方"],
+  getSmsMessage: ["dead", "同文件 listSmsMessages 已可达，单条读取无调用方"],
+  listTemplates: ["dead", "同文件 listTemplatesForAdmin 已可达，本条为旧版"],
+  getTemplate: ["dead", "模板渲染走 renderTemplate（可达），单条读取无调用方"],
+  getCauseById: ["dead", "案由检索走 searchCauses（可达）"],
+  listCauseL2: ["dead", "案由二级列表并入 searchCauses（可达）"],
+  getDashboardKpis: ["dead", "工作台改由 7 个专用 getter 拼装（均可达），聚合版无调用方"],
+  getMatterAllocationSummary: ["dead", "案件财务汇总走 getMatterFinance（可达）"],
+  listInvoiceRequestsByMatter: ["dead", "案件开票上下文走 getMatterInvoiceContext（可达）"],
+  hasActiveBorrowGrant: ["dead", "借阅资格判定已内联进 borrow.ts 的读取路径"],
+  parseDateString: ["dead", "短信日期解析改走结构化管线，旧工具函数无调用方"],
+  triggerAuditCleanupNow: ["dead", "审计清理仅由 cron 调度；手动触发入口只对归档扫描与周报开放"],
+  createFolder: ["intentional", "卷宗文件夹由 default-folders 自动创建（结案/归档等），不开放手动建"],
+  renameFolder: ["intentional", "同上：默认卷宗不允许改名"],
+  deleteFolder: ["intentional", "同上：默认卷宗不允许删除"],
+  createMatter: ["intentional", "建案统一走 convertIntakeToMatter"],
+  softDeleteMatter: ["intentional", "案件删除未对外开放，终态走归档；动作保留供运维与测试"],
+  deleteDocument: ["intentional", "材料删除未开放，避免破坏已归档卷宗与版本链"],
+  hardDeleteDocument: ["intentional", "硬删除仅运维使用，不开放 UI"],
+  deleteFeeEntry: ["intentional", "财务页明示已入账不可直接删除，更正走冲正"],
+  deleteBilling: ["intentional", "合同删除未开放，避免破坏已签署事实"],
+  completeMatterService: ["intentional", "AGENTS：服务轴 UI 已整体移除"],
+  activateMatterService: ["intentional", "同上"],
+  listArchiveBorrows: ["intentional", "借阅列表在 /archive 页面用 listArchivePageData 一并取（可达）"],
+  listSealRequests: ["intentional", "用印列表由审批收件箱与案件页直接取数（可达路径），本函数为旧入口"],
+
+  // ── 仍需产品决定（本脚本不替产品拍板，如实留待定） ──
+  //
+  //   下面这些**没有可达的同类替代**，也就是说：功能写好了，但用户点不到。
+  //   需要维护者决定「补入口」还是「删掉」，本脚本不预设答案：
+  //
+  //   · updateTask / deleteTask —— 建了任务后无法改标题、无法删（只能勾办结）
+  //   · updateNote / deleteNote —— 记录写了不能改不能删
+  //   · updateFirmFile / getFirmFileVersionHistory —— 律所文书只能新增与删除，不能更新、看不到版本历史
+  //   · bindPartyToEnterprise / unbindPartyEnterprise / getEnterpriseSummaryByParty —— 工商绑定只写在服务层
+  //   · updatePreservationCase / updateTarget / deleteTarget / updateProperty / deleteProperty
+  //       / listExpiringProperties —— 保全只能新建、续封、解除，改与删无入口
+  //   · moveDocumentToFolder / reorderFolders —— 文件夹排序与移动无入口（默认卷宗自动建）
+  //   · batchApproveArchiveRecords / batchRejectArchiveRecords / listRejectedArchiveRecords —— 批量审批无入口
+  //   · draftDocument（AI 起草）—— 其余 AI 动作均可达
+  //   · allocatePayment / recordFinanceCorrection / setCommissionPlan —— 与可达的
+  //       allocateLedger / submitCorrection+decideCorrection / settleCommission 是否同义待确认
+  //   · mergeClients —— 与可达的 mergeClientsByCode 是否同义待确认
+  //   · deleteContact —— 联系人只能加不能删
+  //   · deleteHoliday —— 放假安排只能批量保存（可能已含删除）
+  //   · getWebhookSettingsAction / getWorkflowTogglesAction —— 只有保存可达，读取走服务端直读
+  //   · checkLoginRequiresTotp 之外的 sms.listSmsSuggestions —— 建议列表由收件箱一并取
 };
 
 function verdictOf(name) {
