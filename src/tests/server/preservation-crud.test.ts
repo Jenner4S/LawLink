@@ -78,11 +78,23 @@ let admin: PrismaClient;
 
 beforeAll(async () => {
   admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  try {
-    await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
-  } catch (err) {
-    throw new Error(`临时库创建失败，需先启动 lawlink-db（${HOLDER.host}）：${String(err)}`);
+  // 并发 CREATE DATABASE 会撞模板库占用（「source database is being accessed by
+  // other users」），表现为「重跑就过」的偶发红。这里退避重试；
+  // 与 src/tests/helpers/temp-db.ts 同一处理（那 19 个文件已迁到 helper）。
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
+      lastErr = undefined;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (/already exists/i.test(String(err))) { lastErr = undefined; break; }
+      if (!/being accessed by other users|template/i.test(String(err))) break;
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+    }
   }
+  if (lastErr) throw new Error(`临时库创建失败，需先启动 lawlink-db：${String(lastErr)}`);
   execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
     cwd: process.cwd(),
     env: { ...process.env, DATABASE_URL: HOLDER.url },
