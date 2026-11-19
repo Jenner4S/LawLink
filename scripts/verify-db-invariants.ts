@@ -107,10 +107,10 @@ async function main() {
     const LEGACY_FIX_AT = new Date("2026-11-19T13:32:12+08:00");
     const res = await verifyAuditChain(prisma);
 
-    if (res.valid !== false && !res.brokenAt) {
-      record("audit-chain", "审计链哈希连续", [], res.total !== undefined ? `共 ${res.total} 条` : undefined);
+    if (res.ok && !res.brokenAt) {
+      record("audit-chain", "审计链哈希连续", [], `共 ${res.checked} 条${res.skippedLegacy ? `，另有 ${res.skippedLegacy} 条前置字段历史记录未参与校验` : ""}`);
     } else {
-      const broken = res.brokenAt as { id?: string; action?: string } | undefined;
+      const broken = res.brokenAt; // { id, action, reason }
       // ChainVerifyResult.firstBroken 只带 {id, action, reason}，没有时间；
       // 分类需要 createdAt，直接按 id 查一次（只查一行，代价可忽略）。
       const brokenRow = broken?.id
@@ -118,7 +118,7 @@ async function main() {
         : null;
       const at = brokenRow?.createdAt ?? null;
       const isLegacy = at !== null && at < LEGACY_FIX_AT;
-      const desc = `brokenAt id=${broken?.id ?? "?"} action=${broken?.action ?? "?"} createdAt=${at ? at.toISOString() : "?"} reason=${res.reason ?? "?"}`;
+      const desc = `brokenAt id=${broken?.id ?? "?"} action=${broken?.action ?? "?"} createdAt=${at ? at.toISOString() : "?"} reason=${broken?.reason ?? "?"}`;
 
       if (isLegacy) {
         // 用 note 记录、不计入 violations —— 但**必须显示**，不能悄悄放过
@@ -130,7 +130,7 @@ async function main() {
           note: `该记录早于 2026-11-19 13:32 的 stableJson 修复；修复后写入的记录不受影响。`
         });
       } else {
-        record("audit-chain", "审计链哈希连续", [desc], res.total !== undefined ? `共 ${res.total} 条` : undefined);
+        record("audit-chain", "审计链哈希连续", [desc], `已校验 ${res.checked} 条，跳过历史 ${res.skippedLegacy} 条`);
       }
     }
   }
