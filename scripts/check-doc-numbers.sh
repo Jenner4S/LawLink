@@ -11,6 +11,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+FIX=0
+[ "${1:-}" = "--fix" ] && FIX=1
+
 DOC="docs/DELIVERY-STATUS-20261120.md"
 LEDGER="docs/BACKLOG-20261118.md"
 FAIL=0
@@ -40,5 +43,23 @@ DRIFT=$(npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \
         --to-schema-datamodel prisma/schema.prisma --script 2>&1 | head -1)
 printf "  schema 漂移 %-28s " "${DRIFT:0:26}"
 echo "$DRIFT" | grep -q "empty migration" && echo "✅" || { echo "❌"; FAIL=1; }
+
+# ---------------------------------------------------------------
+# --fix：把测得的实际值写回文档
+#
+# 为什么需要它：文档里的数字是「快照」，台账是「流水」。
+# 每加一条台账，快照就落后一条 —— 光靠检查会陷入
+# 「改准 → 又加一条 → 又不准」的循环（2026-11-21 连踩两次）。
+# 让它自动同步，人就不用记着改。
+# ---------------------------------------------------------------
+if [ "$FIX" -eq 1 ]; then
+  perl -0pi -e "s/\*\*\d+ 条\*\*/\*\*${ACTUAL_L} 条\*\*/g" "$DOC"
+  perl -0pi -e "s/\d+ passed/${ACTUAL} passed/g" "$DOC"
+  perl -0pi -e "s/\*\*\d+ 个迁移\*\*/\*\*${ACTUAL_M} 个迁移\*\*/g" "$DOC"
+  echo
+  echo "  --fix 已写回文档。本次核对结果即为准；"
+  echo "  如需复核，直接重跑本脚本（会重新跑一遍测试，约几分钟）。"
+  exit 0
+fi
 
 exit $FAIL
