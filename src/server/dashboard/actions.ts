@@ -467,7 +467,12 @@ export type WorkQueue = {
 export async function getDashboardWorkQueue(): Promise<WorkQueue> {
   const session = await requireSession("personal");
   const { listApprovalWorkspace } = await import("@/server/approval-permissions/inbox");
-  const approvalsPromise = listApprovalWorkspace({ tab: "pending" }).catch(() => null);
+  // 审批工作台取数失败时降级为 null（不让首页崩），但必须留下日志——
+  // 否则用户看到审批区空白，运维查日志一无所获，无法区分「没有待办」与「查询出错」。
+  const approvalsPromise = listApprovalWorkspace({ tab: "pending" }).catch((err) => {
+    console.error("[dashboard] 审批工作台取数失败，已降级为空：", err);
+    return null;
+  });
   const visFilter = matterReadVisibilityFilter(session.user.id, session.user.role, session.user.rolePermissions);
   const taskWhere = { assigneeId: session.user.id, completed: false, matter: { deletedAt: null, ...visFilter } };
   const [ws, tasks, taskTotal] = await Promise.all([

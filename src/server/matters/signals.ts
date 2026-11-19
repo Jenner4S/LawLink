@@ -67,7 +67,11 @@ export async function getMatterSignals(matterId: string): Promise<{
         }
       }
     }),
-    prisma.invoiceRequest.count({ where: { matterId, status: "PENDING" } }).catch(() => 0)
+    // 待开票数取不到时降级 0（信号条不因单项失败而不渲染），但要留日志
+    prisma.invoiceRequest.count({ where: { matterId, status: "PENDING" } }).catch((err) => {
+      console.error("[signals] 待开票数取数失败，已降级为 0：", { matterId, err });
+      return 0;
+    })
   ]);
 
   return {

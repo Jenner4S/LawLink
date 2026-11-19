@@ -215,7 +215,11 @@ export async function uploadDocument(formData: FormData) {
   await prisma.document.update({
     where: { id: created.id },
     data: { familyId: created.id }
-  }).catch(() => undefined);
+  }).catch((err) => {
+    // familyId 是版本链的族首指针，更新失败会让后续版本挂不上族，形成断链
+    console.error("[documents] 版本族首指针写入失败，版本链可能断裂：", { documentId: created.id, err });
+    return undefined;
+  });
 
   // v1.x P0-2: 抽取文本层（docx / PDF 文本层 / 纯文本；扫描件标 SKIP，
   // 失败标 FAILED——失败页不可隐去）。抽取基于未加密内存副本，不读回存储；

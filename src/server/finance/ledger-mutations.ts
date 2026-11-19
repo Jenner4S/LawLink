@@ -34,7 +34,14 @@ export async function allocateLedgerTx(db: Prisma.TransactionClient, userId: str
   if (payment.revision !== data.revision) throw new ActionError("此笔实收已变化或请求已处理，请刷新后重试");
   await assertPaymentSource(db, payment);
   await assertAllocationTotals(db, payment);
-  const items = [...data.items].sort((a, b) => a.targetId.localeCompare(b.targetId));
+  // 锁序必须与进程 locale 无关：localeCompare 在 ICU 规则下排序是
+  // ["a","A","b","B"]，而字节序是 ["A","B","a","b"]——两者不同。
+  // 多实例部署时若各进程 LANG 不一致（如 LANG=C vs en_US.UTF-8），
+  // 同一批 targetId 会得到相反的加锁顺序，反而重现本函数开头要避免的反序死锁。
+  // 故用字节序（cuid 为 ASCII，比较结果稳定）。
+  const items = [...data.items].sort((a, b) =>
+    a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0
+  );
   const amount = total(items.map(i => new Prisma.Decimal(i.amount)));
   if (data.kind === "RECEIVABLE") {
     if (amount.gt(paymentBalance(payment))) throw new ActionError("分配合计超过实收未核销余额");

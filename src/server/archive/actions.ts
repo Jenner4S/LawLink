@@ -163,7 +163,11 @@ export async function archiveMatter(input: ArchiveSubmitInput) {
     await roleMutation(session.user, "archive.submit", async roleDb => roleDb.document.update({
       where: { id: coverDocId },
       data: { deletedAt: new Date() }
-    })).catch(() => null);
+    })).catch((rollbackErr) => {
+      // 回滚失败会留下孤儿封皮文档（已落库但目录没生成），必须记录以便人工清理
+      console.error("[archive] 封皮文档回滚失败，可能留下孤儿文档：", { coverDocId, rollbackErr });
+      return null;
+    });
     throw new ActionError(`渲染卷宗目录失败：${err instanceof Error ? err.message : String(err)}`);
   }
 
