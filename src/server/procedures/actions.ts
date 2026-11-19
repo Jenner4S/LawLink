@@ -206,6 +206,18 @@ async function materializeProcedureStage(
   const normalizedTarget = normalizeProcedureStageName(targetName);
   const result = await prisma.$transaction(async (tx) => {
     await checkRoleMutation(tx, session.user, "schedule.write");
+    // 2026-11-21 修复（P2，多智能体审计「并发安全」维度）：
+    // 事务里是「查重 → 插入」，但默认隔离级别 READ COMMITTED 下，
+    // 两个并发事务互相读不到对方未提交的行 —— 都判定「不存在」，于是**同名环节建两条**。
+    // MatterStage 也没有 (procedureId, name) 唯一约束兜底。
+    //
+    // 已实测复现（两条连接 + 显式交错）：无锁时同名环节 2 条，有锁 1 条。
+    //
+    // 修法：事务开头锁住程序行，把同一程序的环节变更串行化。
+    // 不用 Serializable：并发到这里全是最坏情况下的第 2 个用户，
+    // 串行化比「报 40001 让用户重试」体验更好，也不用写重试逻辑。
+    // 顺带也解决了下面 updateMany 的 order 递增与插入之间的竞态。
+    await tx.$queryRaw`SELECT 1 AS locked FROM "MatterProcedure" WHERE id = ${data.procedureId} FOR UPDATE`;
     const existingStages = await tx.matterStage.findMany({
       where: { procedureId: data.procedureId },
       orderBy: { order: "asc" },
