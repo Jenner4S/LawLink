@@ -743,6 +743,26 @@ export async function createInvoiceRequest(input: {
     select: { id: true }
   });
 
+  // 2026-11-22 补审计（审计覆盖扫描发现）：开票申请是「钱 + 税」的起点，
+  // 但此前只有审批/驳回/开具三处写 approvalAudit，**申请这一步不留痕**。
+  // 批准链路上能查到「谁批的、谁开的票」，却查不到「谁在什么时候申请的」——
+  // 而 InvoiceRequest 行本身是可变的（status/invoiceNo 会后续改写），
+  // 只有 AuditLog 是追加不可改的，所以必须在申请时就落一条。
+  await audit({
+    userId: session.user.id,
+    action: "INVOICE_REQUEST_CREATE",
+    targetType: "InvoiceRequest",
+    targetId: created.id,
+    detail: {
+      matterId: input.matterId,
+      amount: input.amount.toFixed(2),
+      invoiceType: input.invoiceType,
+      invoiceItem: input.invoiceItem,
+      buyerName: input.buyerName,
+      evidenceDocIds: input.evidenceDocIds
+    }
+  });
+
   const matter = input.matterId
     ? await prisma.matter.findUnique({
         where: { id: input.matterId },

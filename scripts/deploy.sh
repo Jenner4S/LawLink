@@ -65,6 +65,13 @@ if ! node scripts/audit-reachability.mjs | tail -2; then
   echo "    ❌ 可达性审计发现新的零引用动作，终止。先跑：node scripts/audit-reachability.mjs --list" >&2
   exit 1
 fi
+# 钱链路审计覆盖（2026-11-22）：写钱表的函数必须写审计 —— 合规红线。
+# 起因：开票申请（钱 + 税的起点）提交那一步既不写审计也不写时间线，
+# 而批准/驳回/开具三条路径都有 approvalAudit。
+if ! node scripts/audit-money-writes.mjs | tail -2; then
+  echo "    ❌ 有写钱操作未写审计，终止。先跑：node scripts/audit-money-writes.mjs --list" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------
 echo
