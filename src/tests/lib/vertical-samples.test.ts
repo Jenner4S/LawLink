@@ -54,6 +54,22 @@ const { db, session } = vi.hoisted(() => {
         return { id: where.id, version: docState[where.id].version };
       })
     },
+    // 2026-11-21：版本切换改为「单条 UPDATE 原子置唯一切换」
+    // （`SET "isLatest" = (id = $newId) WHERE "familyId" = $familyId`），
+    // 生产代码走 tx.$executeRaw。这里按同样语义实现，让样例 A 继续验证不变式。
+    $executeRaw: vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+      const newId = String(values[0]);
+      const family = String(values[1]);
+      let n = 0;
+      for (const id of Object.keys(docState)) {
+        const row = docState[id];
+        if ((row.familyId ?? null) === (family === "null" ? null : family)) {
+          row.isLatest = id === newId;
+          n++;
+        }
+      }
+      return n;
+    }),
     auditLog: { create: vi.fn() },
     // 样例 B：期限确认 + 队列接续共用同一 prisma mock
     deadline: {

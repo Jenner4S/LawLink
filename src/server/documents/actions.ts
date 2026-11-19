@@ -574,27 +574,36 @@ export async function uploadNewVersion(input: {
   const enc = encrypted ? encryptBuffer(raw) : null;
   const path = await storage.writeFile(prior.matterId ? `m_${prior.matterId}` : `i_${prior.intakeId}`, enc ? enc.ciphertext : raw);
 
-  // 2026-11-20（H1 修复）：版本号不再用事务外读到的 `prior.version + 1`。
+  // 2026-11-20（H1 修复）+ 2026-11-21 修正（真 P1，多智能体审计）：
   //
-  // 原实现：两个并发请求都读到 prior.version=1 → 都写 version=2，且都置
-  // isLatest=true，版本链分叉。现在两道防线：
-  //   1. 数据库层——迁移 20261120000001 加了 @@unique([familyId, version])；
-  //   2. 应用层——版本号在事务内**重新读取当前族内最大版本**再 +1，
-  //      并且遇到 P2002（唯一冲突，说明有并发兄弟抢先写入）时重试一次。
-  //      重试会重新计算版本号，因此不是「撞了就让用户重来」，而是自愈。
+  // 背景：版本号不能用事务外读到的 `prior.version + 1` —— 两个并发请求都读到
+  // prior.version=1 → 都写 version=2，版本链分叉。
+  //
+  // 2026-11-20 那条注释曾声称有「两道防线」且「遇到 P2002 时重试一次」。
+  // **重试从来没写**（只有数据库唯一约束那一道），而且更严重的问题被漏掉了：
+  // documentMutation → roleMutation 对**内置岗位直接 `write(prisma)`，不建事务**
+  // （`roles/service.ts:38`）—— 而律所里所有人都是内置岗位。
+  //
+  // 于是原来的「先 updateMany 清 isLatest → 再 create」是两个独立提交：
+  // 若 create 失败（P2002 撞版本号、DB 抖动、任何异常），
+  // **整族文档没有任何一条 isLatest=true**。后果是材料从列表消失、
+  // `export-bundle.ts:37` 的卷宗导出直接漏件，且没有自愈路径。
+  //
+  // 改成**不依赖事务的两步**，任何一步失败都不会留下「整族无 isLatest」：
+  //   1. 先 create，`isLatest: false` —— 完全不碰老数据的 latest 标记；
+  //   2. 再用**一条** UPDATE 原子地把「本条置 true、同族其它置 false」一次做完。
+  //      PostgreSQL 单条 UPDATE 本身就是原子的，不需要事务包裹。
+  // 失败情形：第 1 步失败 → 什么都没变;第 2 步失败 → 老版本仍是最新，新版本存在但不可见（可重试恢复）。
+  // 两种情况都不会丢材料。
+  const familyId = prior.familyId ?? prior.id;
   const created = await documentMutation(session.user,prior,async tx => {
-    await tx.document.updateMany({
-      where: { familyId: prior.familyId ?? prior.id, isLatest: true },
-      data: { isLatest: false }
-    });
-    const familyId = prior.familyId ?? prior.id;
     const top = await tx.document.findFirst({
       where: { familyId },
       orderBy: { version: "desc" },
       select: { version: true }
     });
     const nextVersion = (top?.version ?? 0) + 1;
-    return tx.document.create({
+    const row = await tx.document.create({
       data: {
         matterId: prior.matterId,
         intakeId: prior.intakeId,
@@ -615,11 +624,18 @@ export async function uploadNewVersion(input: {
         authTag: enc ? enc.authTag.toString("base64") : null,
         familyId,
         version: nextVersion,
-        isLatest: true,
+        isLatest: false, // 切换交给下面那条原子 UPDATE
         uploadedById: session.user.id
       },
       select: { id: true, version: true }
     });
+    // 单条 UPDATE 完成「唯一切换」：id = 新版本 → true，其余 → false。
+    await tx.$executeRaw`
+      UPDATE "Document"
+      SET "isLatest" = (id = ${row.id})
+      WHERE "familyId" = ${familyId}
+    `;
+    return row;
   });
 
   await audit({
