@@ -16,6 +16,7 @@ const targetLabels: Record<string, string> = {
   FeeEntryList: "收付记录列表", FinanceCorrection: "财务更正", Holiday: "放假安排",
   Payment: "实收", Receivable: "应收", ReminderDelivery: "提醒送达台账",
   UserIdentityDocument: "人员证件资料",
+  EthicalWall: "隔离墙",
   // 工时与费率（P0-1）
   TimeEntry: "工时记录", RateSchedule: "费率安排"
 };

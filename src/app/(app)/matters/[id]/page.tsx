@@ -9,6 +9,7 @@ import { hasMatterBusinessAccess } from "@/lib/permissions";
 import { TeamMatterOverview } from "./_components/team-matter-overview";
 import { notFound, redirect } from "next/navigation";
 import { getMatterById } from "@/server/matters/actions";
+import { ActionError } from "@/lib/action-error";
 import { getMatterFinance } from "@/server/finance/actions";
 import { listActiveColleagues } from "@/server/users/actions";
 import { getLatestArchiveRecord } from "@/server/archive/actions";
@@ -39,10 +40,17 @@ export default async function MatterDetailPage({ params }: PageProps) {
   const route = await resolveMatterRoute(param);
   if (!route) notFound();
 
-  const [matterRaw, session] = await Promise.all([
-    getMatterById(route.id),
-    getSession()
-  ]);
+  // getMatterById 在无权访问时抛 ActionError("案件不存在")——这个措辞是刻意的：
+  // 不区分「真不存在」与「被隔离/无权」，避免泄露案件存在性（隔离墙的存在本身即机密）。
+  // 但页面必须把它转成 404，否则正常拦截会表现为 500，运维会误判为故障。
+  let matterRaw: Awaited<ReturnType<typeof getMatterById>>;
+  try {
+    matterRaw = await getMatterById(route.id);
+  } catch (err) {
+    if (err instanceof ActionError) notFound();
+    throw err;
+  }
+  const session = await getSession();
   if (!matterRaw) notFound();
 
   if (param !== route.internalCode) redirect(matterHref(route));

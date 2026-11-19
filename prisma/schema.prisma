@@ -437,6 +437,9 @@ model RolePermission {
 }
 
 model User {
+  createdEthicalWalls EthicalWall[]       @relation("EthicalWallCreator")
+  liftedEthicalWalls  EthicalWall[]       @relation("EthicalWallLifter")
+  ethicalWallDenials  EthicalWallDenial[]  @relation("EthicalWallDeniedUser")
   timeEntries   TimeEntry[]    @relation("TimeEntryUser")
   rateSchedules RateSchedule[] @relation("RateScheduleUser")
   archiveBorrows ArchiveBorrowRequest[] @relation("ArchiveBorrowApplicant")
@@ -574,6 +577,7 @@ model UserIdentityDocument {
 // ============================================================
 
 model Team {
+  ethicalWallDenials EthicalWallDenial[] @relation("EthicalWallDeniedTeam")
   id        String       @id @default(cuid())
   name      String       @unique
   leaderId  String
@@ -763,6 +767,7 @@ model Intake {
 // ============================================================
 
 model Matter {
+  ethicalWalls  EthicalWall[]
   timeEntries   TimeEntry[]
   rateSchedules RateSchedule[]
   closurePlan ArchiveClosurePlan?
@@ -3097,4 +3102,69 @@ model TimeEntry {
   @@index([userId, workDate])
   @@index([status])
   @@index([billingId])
+}
+
+// ============ 隔离墙 Ethical Wall（2026-11-19 新增）============
+// 与利益冲突检索的区别：
+//   利冲（ConflictCheck）回答「这个案子能不能接」——接案前的判断；
+//   隔离墙（EthicalWall）回答「接了之后，所内哪些人不能看」——接案后的信息隔离。
+// 隔离墙是执业合规要求，不是权限设置：它对全所生效，包括合伙人、管理员、超级管理员。
+// 典型场景：代理 A 公司诉 B 公司，所内同时为 B 公司提供常年顾问的团队必须被隔离。
+
+enum EthicalWallTargetType {
+  USER
+  TEAM
+  ROLE
+}
+
+model EthicalWall {
+  id       String @id @default(cuid())
+  matterId String
+  matter   Matter @relation(fields: [matterId], references: [id], onDelete: Cascade)
+
+  /// 隔离理由（必填）：合规留痕，说明为什么隔离、涉及哪一方
+  reason String @db.Text
+
+  active    Boolean   @default(true)
+  /// 有效期；为空表示永久生效直到手动解除
+  expiresAt DateTime?
+
+  createdById String
+  createdBy   User   @relation("EthicalWallCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  liftedAt   DateTime?
+  liftedById String?
+  liftedBy   User?     @relation("EthicalWallLifter", fields: [liftedById], references: [id], onDelete: SetNull)
+  liftReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  denials EthicalWallDenial[]
+
+  @@index([matterId, active])
+  @@index([active, expiresAt])
+}
+
+/// 被隔离的对象。三种目标互斥：按人、按团队、按角色。
+model EthicalWallDenial {
+  id   String @id @default(cuid())
+  wallId String
+  wall EthicalWall @relation(fields: [wallId], references: [id], onDelete: Cascade)
+
+  /// 被隔离对象的类别。刻意不叫 targetType——那个名字在本项目专指审计对象类型，
+  /// 复用会让「全仓 targetType 字面量都必须有中文标签」的元测试误报。
+  denyType EthicalWallTargetType
+
+  userId String?
+  user   User?   @relation("EthicalWallDeniedUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  teamId String?
+  team   Team?   @relation("EthicalWallDeniedTeam", fields: [teamId], references: [id], onDelete: Cascade)
+
+  role UserRole?
+
+  @@index([wallId])
+  @@index([userId])
+  @@index([teamId])
 }

@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { ADMINISTRATIVE_GRANTS, BUILTIN_ROLES, copyBuiltinGrants, hasCustomPermission, roleDisplayName, scopeFor, validGrants } from "@/lib/roles/catalog";
 import { clientVisibilityFilter, customMatterFilter, intakeReadVisibilityFilter, matterFinanceVisibilityFilter, matterReadVisibilityFilter, matterVisibilityFilter } from "@/lib/permissions";
+import { ethicalWallExclusion } from "@/lib/permissions/ethical-wall";
 import { roleDefinitionSchema, normalizeRoleName } from "@/server/roles/schema";
 import { reportAccess } from "@/lib/roles/report-scope";
 const admin = { role: "CUSTOM", roleName: "行政", rolePermissions: ADMINISTRATIVE_GRANTS };
 const input = { name: "档案专员", description: "", active: true, permissions: ADMINISTRATIVE_GRANTS };
 describe("自定义角色的默认拒绝与权限范围", () => {
   it("行政不能读取案件、客户或财务，即使已加入案件也不落入助理分支", () => {
-    expect(matterReadVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual({ id: { in: [] } });
+    // 2026-11-19：读取过滤器现在统一叠加隔离墙（对全所生效，含管理员），
+    // 断言显式写出两层结构，避免日后误以为可以只靠角色判定
+    expect(matterReadVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual(
+      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM")] }
+    );
     expect(matterVisibilityFilter("u", "CUSTOM")).toEqual({ id: { in: [] } });
     expect(clientVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual({ id: { in: [] } });
-    expect(matterFinanceVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual({ id: { in: [] } });
+    expect(matterFinanceVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual(
+      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM")] }
+    );
   });
   it("行政开放日常事务，不隐式开放财务、下载、审批或系统权限", () => {
     expect(hasCustomPermission(admin, "announcements.manage")).toBe(true);
@@ -22,12 +29,20 @@ describe("自定义角色的默认拒绝与权限范围", () => {
   it("自定义角色没有有效权限快照时拒绝功能访问", () => expect(hasCustomPermission({ role: "CUSTOM" }, "matters.read")).toBe(false));
   it("全所财务授权不会变为全所案件正文授权", () => {
     const grants = [{ permissionKey: "finance.read" as const, scope: "ALL" as const }];
-    expect(matterFinanceVisibilityFilter("u", "CUSTOM", grants)).toEqual({});
-    expect(matterReadVisibilityFilter("u", "CUSTOM", grants)).toEqual({ id: { in: [] } });
+    // 全所财务授权 + 隔离墙（隔离墙不受授权影响）
+    expect(matterFinanceVisibilityFilter("u", "CUSTOM", grants)).toEqual(
+      { AND: [{}, ethicalWallExclusion("u", "CUSTOM")] }
+    );
+    expect(matterReadVisibilityFilter("u", "CUSTOM", grants)).toEqual(
+      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM")] }
+    );
   });
   it("全所案件查看不会变为下载或写入权限", () => {
     const user = { role: "CUSTOM", rolePermissions: [{ permissionKey: "matters.read" as const, scope: "ALL" as const }] };
-    expect(matterReadVisibilityFilter("u", user.role, user.rolePermissions)).toEqual({});
+    // 全所案件查看授权：角色层放行（customMatterFilter 返回 {}），但隔离墙仍然生效
+    expect(matterReadVisibilityFilter("u", user.role, user.rolePermissions)).toEqual(
+      { AND: [{}, ethicalWallExclusion("u", user.role)] }
+    );
     expect(hasCustomPermission(user, "matters.write")).toBe(false);
     expect(hasCustomPermission(user, "documents.download")).toBe(false);
   });

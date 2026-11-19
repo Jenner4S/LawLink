@@ -1,4 +1,5 @@
 import { scopeFor, type RoleGrant, type PermissionKey } from "@/lib/roles/catalog";
+import { ethicalWallExclusion } from "./ethical-wall";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ActionError } from "@/lib/action-error";
@@ -106,11 +107,17 @@ export function teamIntakeFilter(userId: string, teamId?: string): Prisma.Intake
   return { OR: [{ ownerUser: subject }, { createdBy: subject }] };
 }
 
-export function matterReadVisibilityFilter(userId: string, role: string, grants?: RoleGrant[]): Prisma.MatterWhereInput {
-  if (role === "CUSTOM") return customMatterFilter(userId, grants, "matters.read", true);
-  if (isManager(role) || hasAllScope(grants, "matters.read")) return {};
+export function matterReadVisibilityFilter(userId: string, role: string, grants?: RoleGrant[], wallNow?: Date): Prisma.MatterWhereInput {
+  // 隔离墙对全所生效（含合伙人/管理员），因此必须叠加在所有角色分支之后，
+  // 不能被 isManager 的 {} 短路掉。这是执业合规要求，不是权限设置。
+  const wall = ethicalWallExclusion(userId, role, wallNow);
+
+  if (role === "CUSTOM") {
+    return { AND: [customMatterFilter(userId, grants, "matters.read", true), wall] };
+  }
+  if (isManager(role) || hasAllScope(grants, "matters.read")) return wall;
   const own = role === "FINANCE" ? matterAssociationFilter(userId) : matterVisibilityFilter(userId, role, grants);
-  return { AND: [{ OR: [own, teamMatterFilter(userId)] }] };
+  return { AND: [{ OR: [own, teamMatterFilter(userId)] }, wall] };
 }
 
 export function intakeReadVisibilityFilter(userId: string, role: string, grants?: RoleGrant[]): Prisma.IntakeWhereInput {
@@ -354,8 +361,10 @@ export function customMatterFilter(userId: string, grants: RoleGrant[] | undefin
   const own = matterAssociationFilter(userId);
   return { AND: [scope === "TEAM" && includeTeam ? { OR: [own, teamMatterFilter(userId)] } : own] };
 }
-export function matterFinanceVisibilityFilter(userId: string, role: string, grants?: RoleGrant[]): Prisma.MatterWhereInput {
-  if (role === "CUSTOM") return customMatterFilter(userId, grants, "finance.read", false);
-  if (isManager(role) || hasAllScope(grants, "finance.read") || hasAllScope(grants, "matters.read")) return {};
-  return matterVisibilityFilter(userId, role, grants);
+export function matterFinanceVisibilityFilter(userId: string, role: string, grants?: RoleGrant[], wallNow?: Date): Prisma.MatterWhereInput {
+  // 财务视图同样受隔离墙约束：金额与案名本身即敏感信息
+  const wall = ethicalWallExclusion(userId, role, wallNow);
+  if (role === "CUSTOM") return { AND: [customMatterFilter(userId, grants, "finance.read", false), wall] };
+  if (isManager(role) || hasAllScope(grants, "finance.read") || hasAllScope(grants, "matters.read")) return wall;
+  return { AND: [matterVisibilityFilter(userId, role, grants), wall] };
 }

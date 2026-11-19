@@ -45,7 +45,11 @@ import { approveInvoiceRequest, createInvoiceRequest as createLegacyInvoice } fr
 import { createInvoiceRequest, createFeeEntry, confirmFeeEntry, rejectFeeEntry, deleteFeeEntry, setCommissionPlan } from "@/server/finance/actions";
 import { commissionPlanSetSchema } from "@/server/finance/schemas";
 import { allocateCommissions } from "@/server/finance/commissions";
-import { clientVisibilityFilter, intakeVisibilityFilter, matterReadVisibilityFilter, matterVisibilityFilter } from "@/lib/permissions";
+import { clientVisibilityFilter, intakeVisibilityFilter, matterFinanceVisibilityFilter, matterReadVisibilityFilter, matterVisibilityFilter } from "@/lib/permissions";
+import { ethicalWallExclusion } from "@/lib/permissions/ethical-wall";
+
+/** 固定判定时刻：隔离墙条件含时间比较，共用同一时刻才能做深度相等断言 */
+const WALL_NOW = new Date("2026-11-19T00:00:00.000Z");
 
 const mine = "cmatter000000000000000001";
 const foreign = "cmatter000000000000000002";
@@ -56,6 +60,10 @@ const user2 = "cuser00000000000000000002";
 const invoiceInput = { matterId: mine, amount: 100, invoiceType: "PLAIN" as const, invoiceItem: "LAWYER_FEE" as const, buyerName: "测试客户", evidenceDocIds: ["evidence-example"] };
 beforeEach(() => {
   vi.resetAllMocks(); session.user.role = "LAWYER";
+  // 2026-11-19：读取过滤器叠加隔离墙后含 now 时间比较；固定系统时间，
+  // 才能对 where 做深度相等断言（否则两次 new Date() 必然不等）
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(WALL_NOW);
   db.matter.findFirst.mockImplementation(async ({ where }: { where: { id: string } }) => where.id === mine ? { id: mine, status: "ACTIVE" } : null);
   db.matter.findUnique.mockResolvedValue({ id: mine, title: "测试案件", internalCode: "TEST", category: "CIVIL_COMMERCIAL" });
   db.matter.findUniqueOrThrow.mockResolvedValue({ category: "CIVIL_COMMERCIAL" });
@@ -95,7 +103,10 @@ describe("客户查询授权回归", () => {
     expect(args.where.AND).toEqual([clientVisibilityFilter(session.user.id, "LAWYER")]);
     expect(db.client.count).toHaveBeenCalledWith({ where: args.where });
     if (search) expect(args.where.OR).toHaveLength(4);
-    expect(args.include._count.select.matters.where).toEqual({ deletedAt: null, ...matterReadVisibilityFilter(session.user.id, "LAWYER") });
+    expect(args.include._count.select.matters.where).toEqual({
+      deletedAt: null,
+      ...matterReadVisibilityFilter(session.user.id, "LAWYER")
+    });
     expect(args.include._count.select.intakes.where).toEqual(intakeVisibilityFilter(session.user.id, "LAWYER"));
   });
   it.each(["LAWYER", "ASSISTANT", "FINANCE"])("共享客户的关联案件仍按正文权限筛选：%s", async role => {
@@ -105,11 +116,17 @@ describe("客户查询授权回归", () => {
   });
   it.each(["LAWYER", "ASSISTANT", "FINANCE"])("共享客户的合同、收款及数量按财务权限筛选：%s", async role => {
     session.user.role = role; await getClientFinanceSummary("shared-client");
-    const scope = { primaryClientId: "shared-client", deletedAt: null, ...matterVisibilityFilter(session.user.id, role) };
+    const scope = { primaryClientId: "shared-client", deletedAt: null, ...matterFinanceVisibilityFilter(session.user.id, role) };
     expect(db.billing.findMany.mock.calls[0][0].where.matter).toEqual(scope);
     expect(db.feeEntry.findMany.mock.calls[0][0].where.matter).toEqual(scope);
     expect(db.matter.count).toHaveBeenCalledWith({ where: scope });
-    expect(JSON.stringify(scope)).not.toContain("team");
+    // 财务视图不下放团队授权：角色层必须是纯「个人关联」口径，不含团队分支。
+    // 2026-11-19：不能再用 JSON.stringify(scope).not.toContain("team") 松散判断——
+    // 隔离墙的 denyType:"TEAM"（被隔离的团队）也会命中 "team"，造成误报。
+    // 改为直接断言角色层结构等于 matterVisibilityFilter（该函数不含团队维度）。
+    const roleLayer = (scope as { AND: unknown[] }).AND[0];
+    expect(roleLayer).toEqual(matterVisibilityFilter(session.user.id, role));
+    expect(JSON.stringify(roleLayer)).not.toContain("team");
   });
   it("无客户访问权时不查询客户财务", async () => {
     db.client.findFirst.mockResolvedValue(null);
