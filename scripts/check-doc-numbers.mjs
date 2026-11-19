@@ -27,6 +27,42 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
+
+// 2026-11-21：自己加载 .env，不依赖调用方 `set -a && . ./.env`。
+//
+// 之前依赖外部导出 DATABASE_URL，忘了导出时 `prisma migrate diff` 会失败，
+// measureDrift() 返回 false，脚本就报「schema 漂移 有差异」——
+// 手跑同一条命令却是空的。**检查工具因为自己环境没准备好而误报**，
+// 与上一轮 perl 版把数字删掉是同一类问题：工具本身不可靠。
+function loadDotEnv() {
+  const envPath = path.join(ROOT, ".env");
+  if (!fs.existsSync(envPath)) return;
+  for (const raw of fs.readFileSync(envPath, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq < 1) continue;
+    const key = line.slice(0, eq).trim();
+    if (process.env[key] !== undefined) continue; // 已有值不覆盖
+    let val = line.slice(eq + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    process.env[key] = val;
+  }
+}
+loadDotEnv();
+
+// 2026-11-21：.env 里只有 POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD，
+// 没有 DATABASE_URL（项目一直靠 `set -a && . ./.env` 或手动 export）。
+// 忘 export 时 prisma 命令跑不起来，脚本会误报「schema 漂移 有差异」。
+// 这里按 compose 的约定拼出来，让脚本不依赖调用方的 shell 状态。
+if (!process.env.DATABASE_URL && process.env.POSTGRES_DB && process.env.POSTGRES_USER) {
+  const port = process.env.POSTGRES_PORT || "55432";
+  process.env.DATABASE_URL =
+    `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD ?? ""}` +
+    `@localhost:${port}/${process.env.POSTGRES_DB}?schema=public`;
+}
 const DOC = path.join(ROOT, "docs/DELIVERY-STATUS-20261120.md");
 const LEDGER = path.join(ROOT, "docs/BACKLOG-20261118.md");
 const FIX = process.argv.includes("--fix");
@@ -69,8 +105,11 @@ function measureDrift() {
       { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, env: process.env }
     );
     return /empty migration/i.test(out);
-  } catch {
-    return false;
+  } catch (err) {
+    // 命令本身跑不起来（缺 DATABASE_URL、库连不上）不等于「有漂移」。
+    // 返回 null 表示未知，主流程会报 ⚠️ 而不是 ❌，避免误报。
+    console.error(`  ⚠️ migrate diff 执行失败（不是漂移，是命令没跑起来）：${String(err).slice(0, 120)}`);
+    return null;
   }
 }
 
@@ -137,8 +176,13 @@ const row = (label, doc, act, ok) => {
 row("测试数", shown.tests, actual.tests, shown.tests === actual.tests);
 row("台账条目", shown.ledger, actual.ledger, shown.ledger === actual.ledger);
 row("迁移数", shown.migrations, actual.migrations, shown.migrations === actual.migrations);
-console.log(`  ${"schema 漂移".padEnd(9)} ${actual.driftOk ? "None（一致）" : "有差异"}      ${actual.driftOk ? "✅" : "❌"}`);
-if (!actual.driftOk) fail = 1;
+if (actual.driftOk === null) {
+  console.log(`  ${"schema 漂移".padEnd(9)} 未知（命令未跑起来）  ⚠️`);
+  fail = 1;
+} else {
+  console.log(`  ${"schema 漂移".padEnd(9)} ${actual.driftOk ? "None（一致）" : "有差异"}      ${actual.driftOk ? "✅" : "❌"}`);
+  if (!actual.driftOk) fail = 1;
+}
 
 if (FIX) {
   console.log();
