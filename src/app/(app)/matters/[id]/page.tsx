@@ -26,6 +26,7 @@ import { nullableDecimalToNumber, serializeDecimals } from "@/lib/decimal";
 import { MatterDetailTabs } from "./_components/matter-detail-tabs";
 import { MatterSignalStrip } from "./_components/matter-signal-strip";
 import { getMatterSignals } from "@/server/matters/signals";
+import { listEngagementsForMatter } from "@/server/engagements/actions";
 import { TimePanel } from "./_components/time-panel";
 import { getMatterTimeBoard } from "@/server/time/actions";
 import { listNotes } from "@/server/notes/actions";
@@ -232,6 +233,8 @@ export default async function MatterDetailPage({ params }: PageProps) {
   // 用专用聚合查询（src/server/matters/signals.ts）——详情页既有的 procedures select
   // 是为程序卡片裁剪过的，塞不下信号条需要的四卡口径。
   const signals = await getMatterSignals(matter.id).catch(() => ({ procedures: [], invoicePending: 0 }));
+  // 委托：客户 → 委托 → 合同 → 收付，委托是中间那环。后端与测试早已存在，界面此前无入口。
+  const engagementsForMatter = await listEngagementsForMatter(matter.id).catch(() => []);
   // 与 MatterDetailTabs 同口径：优先第一个未结案的程序，否则第一个
   const signalCurrent = signals.procedures.find((p) => p.status !== "CONCLUDED") ?? signals.procedures[0] ?? null;
   const currentSignalProcedures = signalCurrent ? [signalCurrent] : [];
@@ -278,6 +281,7 @@ export default async function MatterDetailPage({ params }: PageProps) {
         reviewNode={
           reviewSummary ? <ReviewSummaryCard summary={reviewSummary} matterId={matter.id} /> : undefined
         }
+        engagements={engagementsForMatter}
         signalNode={
           <MatterSignalStrip
             procedures={currentSignalProcedures as unknown as Parameters<typeof MatterSignalStrip>[0]["procedures"]}

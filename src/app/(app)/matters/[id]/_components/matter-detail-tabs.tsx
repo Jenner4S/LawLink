@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { EngagementPanel } from "./engagement-panel";
 import { hasCustomPermission, type RoleGrant } from "@/lib/roles/catalog";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -186,7 +187,7 @@ export function MatterDetailTabs({
   preservationCases,
   evidenceItems,
   notes,
-  reviewNode, responsibilityNode, closureNode, conflictNode, timeNode, signalNode,
+  reviewNode, responsibilityNode, closureNode, conflictNode, timeNode, signalNode, engagements,
   capabilities = { aiReview: false, caseSearch: false }
 }: {
   matter: MatterPayload;
@@ -233,6 +234,10 @@ export function MatterDetailTabs({
   /** 墨案 04 ② 信号条：最近期限 / 下次开庭 / 收费进度 / 本环节任务。
    *  由页面组装（需要 procedures 与 finance），本组件只负责放置位置。 */
   signalNode?: React.ReactNode;
+  /** 本案关联的委托（含已终止历史）。由页面用 listEngagementsForMatter 取，
+   *  本组件只负责放置「委托」区块——委托是客户与合同之间的那一环，
+   *  此前后端与测试都在，界面上却没有入口。 */
+  engagements?: Awaited<ReturnType<typeof import("@/server/engagements/actions").listEngagementsForMatter>>;
   responsibilityNode?: React.ReactNode;
   closureNode?: React.ReactNode;
   conflictNode?: React.ReactNode;
@@ -587,6 +592,20 @@ export function MatterDetailTabs({
           <div className="dos-main">
             {allowed("finance.read") ? <Link href={`/finance/reconciliation?matterId=${matter.id}`} className="btn btn-secondary btn-sm w-fit">应收与收款分配</Link> : null}
             {allowed("finance.read") ? <FinanceHero stats={finance.stats} /> : null}
+            {/* 委托：客户 → 委托 → 合同 → 收付。委托是中间那环，此前界面上没有入口。
+                放在收费概览之后、合同之前——顺序与业务链条一致。 */}
+            {allowed("matters.read") ? (
+              <EngagementPanel
+                matterId={matter.id}
+                client={
+                  matter.primaryClient
+                    ? { id: matter.primaryClient.id, name: matter.primaryClient.name }
+                    : matter.clientLinks[0]?.client ?? null
+                }
+                engagements={engagements ?? []}
+                canManage={Boolean(canAssociateThisMatter && !isArchived)}
+              />
+            ) : null}
             {allowed("finance.read") ? (
               <BillingsCard
                 contractTotal={finance.stats.contractAmount}
