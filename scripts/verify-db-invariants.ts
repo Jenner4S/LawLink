@@ -174,6 +174,44 @@ async function main() {
     record("borrow-grant", "生效中的借阅单必须有对应归档记录", rows.map((r) => `borrowId=${r.id}`));
   }
 
+  // ── 11. 金额链路：实收必须与来源流水一致 ─────────────────
+  // 规则同样来自代码而不是我编的：`assertPaymentSource` 每次分配前都校验
+  //   matterId 相同 / type=RECEIVED / confirmState=CONFIRMED /
+  //   amount 相等 / moneyKind 相同
+  // 任一不符就抛「实收与已确认来源流水不一致，不能分配」。
+  //
+  // 为什么全库查有意义：这笔一致性是「钱」与「凭证」的对应关系。
+  // 若实收金额与它声称的来源流水不等，等于系统里凭空记了一笔钱（或多记少记），
+  // 而这条只在下一次分配时才被发现 —— 不分配就永远发现不了。
+  {
+    const rows = await prisma.$queryRaw<
+      { code: string; issues: string }[]
+    >`
+      SELECT m."internalCode" AS code,
+             concat_ws(' / ',
+               CASE WHEN f."matterId" <> p."matterId" THEN '案件不一致' END,
+               CASE WHEN f.type <> 'RECEIVED' THEN '来源非实收' END,
+               CASE WHEN f."confirmState" <> 'CONFIRMED' THEN '来源未确认' END,
+               CASE WHEN f.amount <> p.amount THEN '金额不一致' END,
+               CASE WHEN f."moneyKind" <> p."moneyKind" THEN '款项性质不一致' END
+             ) AS issues
+      FROM "Payment" p
+      JOIN "FeeEntry" f ON f.id = p."feeEntryId"
+      JOIN "Matter" m ON m.id = p."matterId"
+      WHERE m."deletedAt" IS NULL
+        AND (f."matterId" <> p."matterId"
+          OR f.type <> 'RECEIVED'
+          OR f."confirmState" <> 'CONFIRMED'
+          OR f.amount <> p.amount
+          OR f."moneyKind" <> p."moneyKind")
+      LIMIT 20`;
+    record(
+      "payment-source-consistent",
+      "实收与其来源流水一致（案件/类型/确认态/金额/性质）",
+      rows.map((r) => `${r.code}：${r.issues}`)
+    );
+  }
+
   // ── 9. 金额链路：应收余额与核销明细一致 ──────────────────
   // 规则来源**不是我自己想的**：`ledger-mutations.ts` 在每次核销前就有
   //   SELECT COALESCE(SUM(amount-"reversedAmount"),0) FROM "Allocation" WHERE "receivableId"=…
