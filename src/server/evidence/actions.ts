@@ -16,6 +16,7 @@ import { parseInput } from "@/lib/parse-input";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
 import { auditTx } from "@/server/audit";
+import { assertMatterWritable } from "@/lib/archive/guard";
 import { assertCanReadMatter, assertCanHandleMatter } from "@/lib/permissions";
 import { ActionError } from "@/lib/action-error";
 
@@ -42,6 +43,14 @@ export async function createEvidenceItem(input: CreateEvidenceItemInput) {
 
   // 证据项属结构性案件写入（P1-1）：合伙人全所口径，其余岗位（含管理权）须经办。
   await assertCanHandleMatter(session.user, data.matterId);
+  // 2026-11-21 补守卫（同 Round 144 的「归档即冻结」）：证据项是案件正文内容，
+  // 会展示在办案进程 → 材料里，而归档快照在归档那一刻就已冻结 ——
+  // 此前这里只查角色、不看案件状态，等于「已封存的卷宗还能长出新材料」。
+  //
+  // 规则没有集中表达是这一批问题的共同根因：关联关系走 assertCanAssociateMatter
+  //（不看状态）、证据项走 assertCanHandleMatter（只看角色），每个写路径各自
+  // 决定要不要查状态。集中化影响面太大，先按路径逐一补，triage 结果记在台账。
+  await assertMatterWritable(data.matterId);
 
   if (data.sourceDocumentId) {
     const doc = await prisma.document.findUnique({

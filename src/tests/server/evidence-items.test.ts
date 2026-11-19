@@ -28,6 +28,10 @@ vi.mock("@/lib/auth/session", () => ({ requireSession: vi.fn(async () => session
 vi.mock("@/server/audit", () => ({ audit: vi.fn(), auditTx: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/permissions", () => perms);
+// 2026-11-21：createEvidenceItem 增加 assertMatterWritable（归档即冻结）。
+// 本文件测的是证据项本身的创建与审计，不是守卫逻辑 ——
+// 守卫由 src/tests/server/evidence-write-guard.test.ts（真库）覆盖，这里整体放行。
+vi.mock("@/lib/archive/guard", () => ({ assertMatterWritable: vi.fn(async () => {}) }));
 
 import { createEvidenceItem, listEvidenceItems } from "@/server/evidence/actions";
 import { auditTx } from "@/server/audit";
