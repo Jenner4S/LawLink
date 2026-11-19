@@ -74,6 +74,17 @@ npm run dev
 
 个人资料与登录安全位于 `/settings/profile`。开发使用 `.next-dev`，生产构建使用 `.next-build`。
 
+**新建部署是空系统**（2026-11-20 实测确认，可按上一段从零复现）。`migrate deploy` 建 12 个迁移的表结构；`db seed` 只写入三类**基础数据**，不含任何业务样例：
+
+| 内容 | 数量 | 说明 |
+|---|---|---|
+| 管理员账号 | 1 | 账号/密码由 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD` 决定；`role=LAWYER` + `systemRole=SUPER_ADMIN`（后台资格在 `systemRole` 上，不是 `role`） |
+| 案由库 | 1729 条 | 民事 / 刑事 / 行政三套，来自《民事案件案由规定》等 |
+| 期限规则 | 16 条 | 诉讼时效、举证期限等法定规则预置 |
+| 客户 / 案件 / 当事人 | 0 | **需自己录入**，或按需导入 |
+
+登录后可先做三件事验证部署正常：管理后台能看到「期限规则库」的 16 条规则、新建案件时能选到案由、`/admin/audit` 的审计链完整性卡片显示「完好」。
+
 > **备份（容器部署必读）**：`docker compose --profile full up` 的 app 容器每天 02:30 自动备份数据库与文件存储到 `/app/backups`（部署方可通过容器环境设置 `BACKUP_DIR` 或 `BACKUP_CRON_ENABLED=false`；仅在宿主机 `.env` 填写但未传入容器不会生效）。compose 已挂载 `backups` 命名卷，但命名卷仍在 Docker 管理区——**生产部署应把该卷改为绑定宿主机目录或异地路径**，否则备份与数据同生共死。备份含凭据哈希与加密材料，建议设置 `BACKUP_PASSPHRASE` 自动加密后再外传（见 `scripts/backup.sh` 头部说明）。
 
 ## 验证
