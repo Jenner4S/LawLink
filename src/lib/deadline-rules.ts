@@ -9,6 +9,7 @@
  * 按月/年的期间取到期月对应日；到期月无对应日的取该月最后一日。
  */
 import type { DeadlinePeriodUnit } from "@prisma/client";
+import { civilFromKey, shDayKey } from "@/lib/ui/sh-time";
 import { ActionError } from "@/lib/action-error";
 
 export const HOLIDAY_NOTE = "如届满日为法定休假日，以其后第一个工作日为届满日；已配置放假安排时由系统按其顺延并在依据标注，请核对";
@@ -48,13 +49,24 @@ export function computeDeadlineDate(
   if (!Number.isInteger(periodValue) || periodValue <= 0) {
     throw new ActionError("期限数值必须为正整数");
   }
+  // 2026-11-19：输入先归一到「上海日历日的正午载体」再计算。
+  //
+  // 原因：下面的 startOfDay 用的是进程本地时区（getFullYear/getMonth/getDate）。
+  // 若调用方传入的是 DB 里的真瞬间（如 2026-12-31T00:00:00Z），在 TZ=UTC 下取到
+  // 12-31 是对的，但部署到 UTC 以西（如洛杉矶 UTC-8）就会取到 12-30——法定期限
+  // 再少一天。历史上有调用方（addDeadline）自己包了一层 civilFromKey(shDayKey(...))，
+  // 但保全的 defaultExpiryDate 与 renewProperty 都没包。
+  //
+  // 归一到上海日历日、以正午为载体，是本仓库约定的「日历日」表示法（见 sh-time.ts）：
+  // 正午距日界 12 小时，任何时区偏移都不会跨日。对已归一过的输入是幂等的。
+  const base = civilFromKey(shDayKey(triggerDate));
   switch (periodUnit) {
     case "DAYS":
-      return addDays(triggerDate, periodValue);
+      return addDays(base, periodValue);
     case "MONTHS":
-      return addMonthsClamped(triggerDate, periodValue);
+      return addMonthsClamped(base, periodValue);
     case "YEARS":
-      return addMonthsClamped(triggerDate, periodValue * 12);
+      return addMonthsClamped(base, periodValue * 12);
   }
 }
 
