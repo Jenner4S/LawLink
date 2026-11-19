@@ -1863,7 +1863,10 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
-  @@index([previousHash])
+  /// 唯一：链上任一前驱只能有一条后继。并发生成同一个 previousHash 时，
+  /// 后写的一条会被数据库拒绝——这是防链分叉的最后一道防线（比应用层锁更可靠，
+  /// 且不涉及 Prisma 嵌套事务问题）。null 不受限，兼容首条与加链前的历史记录。
+  @@unique([previousHash])
 }
 
 // ============================================================

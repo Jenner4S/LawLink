@@ -51,7 +51,44 @@ const extended = base.$extends({
           previousHash
         });
         args.data = { ...data, createdAt, integrityHash, previousHash } as typeof args.data;
-        return query(args);
+
+        // 链的唯一性由数据库保证（@@unique([previousHash])）：并发下若另一请求
+        // 抢先占用了同一个前驱，本条会被拒绝。这里重算一次前驱再试——
+        // 重试期间前驱已变，新哈希自然指向真正的最新记录。
+        try {
+          return await query(args);
+        } catch (err) {
+          const isUniqueViolation =
+            typeof err === "object" &&
+            err !== null &&
+            (err as { code?: string }).code === "P2002";
+          if (!isUniqueViolation) throw err;
+
+          const latest = await base.auditLog.findFirst({
+            where: { integrityHash: { not: null } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: { integrityHash: true }
+          });
+          const retryPrev = latest?.integrityHash ?? null;
+          const retryHash = computeAuditHash({
+            userId: (data.userId as string | null) ?? null,
+            action: String(data.action ?? ""),
+            targetType: (data.targetType as string | null) ?? null,
+            targetId: (data.targetId as string | null) ?? null,
+            detail: data.detail,
+            ip: (data.ip as string | null) ?? null,
+            userAgent: (data.userAgent as string | null) ?? null,
+            createdAt,
+            previousHash: retryPrev
+          });
+          args.data = {
+            ...data,
+            createdAt,
+            integrityHash: retryHash,
+            previousHash: retryPrev
+          } as typeof args.data;
+          return query(args);
+        }
       }
     }
   }
