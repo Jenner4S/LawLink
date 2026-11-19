@@ -65,7 +65,11 @@ export function SelfConfirmCard({ initialActions }: { initialActions: string[] }
             <input
               type="checkbox"
               className="h-4 w-4 shrink-0"
-              checked={false}
+              // 2026-11-21 修复：原为 `checked={false}` 硬编码 —— enabled 状态
+              // 在 toggle 里更新、也正确提交给服务端，但界面恒显示未勾选。
+              // 后果：用户点一下开启了（界面还是空的），再点一下又关掉 ——
+              // 静默翻转，管理员无法确认自己配了什么。这是 P1（用户可见的错）。
+              checked={enabled.includes(meta.action)}
               disabled={pending || meta.action === "INTAKE_APPROVE"}
               onChange={() => toggle(meta.action)}
             />

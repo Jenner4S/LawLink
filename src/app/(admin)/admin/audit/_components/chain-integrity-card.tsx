@@ -71,8 +71,8 @@ export async function ChainIntegrityCard() {
             health
               ? "rounded-full bg-[var(--teal-soft)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[var(--teal-deep)]"
               : partial
-                ? "rounded-full bg-[var(--amber-soft,#FDF3E1)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[var(--amber,#96650B)]"
-                : "rounded-full bg-[var(--red-soft,#FCEDEB)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[var(--red)]"
+                ? "rounded-full bg-[var(--amber-bg)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[var(--amber)]"
+                : "rounded-full bg-[var(--red-bg)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[var(--red)]"
           }
         >
           {health ? "完好" : partial ? (forkCount > 0 ? "有分叉" : "有未校验记录") : "发现异常"}
@@ -113,8 +113,14 @@ export async function ChainIntegrityCard() {
       </dl>
 
       {/* 未通过明细：给 action 和 id 前缀，能直接定位 */}
+      {/*
+        2026-11-21 修复：原用 --red-soft（moan.css 里不存在，只有 --red-bg: #FBECE9），
+        fallback #FCEDEB 是猜的、与真实 token 不同；且 bg-[var(...)]/40 的透明度修饰符
+        对 var() 生成不出 CSS（Tailwind 需要 <alpha-value> 占位符），那层红底其实一直是丢的。
+        改用真实 token --red-bg 并去掉无效的 /40 —— --red-bg 本身就是浅红。
+      */}
       {result.brokenAt ? (
-        <div className="mt-4 rounded-lg border border-[var(--red-soft,#FCEDEB)] bg-[var(--red-soft,#FCEDEB)]/40 p-3">
+        <div className="mt-4 rounded-lg border border-[var(--red-line)] bg-[var(--red-bg)] p-3">
           <h3 className="text-[13px] font-semibold text-[var(--red)]">首个未通过的记录</h3>
           <p className="mt-1 text-[12px] leading-5">
             <span className="font-semibold">{auditActionLabel(result.brokenAt.action)}</span>

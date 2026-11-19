@@ -146,8 +146,13 @@ export function PasskeyLogin({ getEmail, callbackUrl }: PasskeyLoginProps) {
         </div>
       ) : null}
 
+      {/*
+        2026-11-21 修复：bg-[var(--bd-subtle)]/20 的 /20 对 var() 生成不出 CSS
+        （Tailwind 的透明度修饰符需要颜色定义里有 <alpha-value>），这层底色一直是丢的。
+        --bd-subtle 是 #DDE3E0（很浅的灰绿），直接铺满即可，不需要再叠透明度。
+      */}
       {totpRequired ? (
-        <div className="mb-3 rounded-[10px] border border-[var(--bd-subtle)] bg-[var(--bd-subtle)]/20 px-3 py-2.5">
+        <div className="mb-3 rounded-[10px] border border-[var(--bd-subtle)] bg-[var(--bd-subtle)] px-3 py-2.5">
           <p className="text-[12px] leading-relaxed text-[var(--t-secondary)]">
             该账号已开启两步验证。请填写验证器 App 的 6 位动态码（或一枚恢复码），再点一次「使用 Passkey 登录」。
           </p>
