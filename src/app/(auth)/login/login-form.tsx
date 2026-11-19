@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, AlertCircle, Mail, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Loader2, AlertCircle, Mail, LockKeyhole, ShieldCheck, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { checkLoginTotpEnforcement } from "@/server/auth/totp-actions";
 
@@ -18,13 +18,57 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export function LoginForm() {
+/** 服务端只传按钮文案；secret 与 issuer 不进客户端 */
+export type LoginFormProps = {
+  sso?: { displayName: string } | null;
+};
+
+/**
+ * 从 URL 读登录失败原因。
+ *
+ * 两条来源：
+ *   - `error`：NextAuth 自身（如 OAuth 回调校验失败、AccessDenied）；
+ *   - `sso`：本项目 SSO 拒绝后由 signIn callback 返回的重定向码（见
+ *     src/lib/auth/sso-signin.ts 的 ssoRejectRedirectUrl）。
+ * 文案只说"该身份未开通/请改密码登录"，不披露本地账号是否存在。
+ */
+function initialAuthError(params: URLSearchParams): string | null {
+  const sso = params.get("sso");
+  if (sso === "not_provisioned") {
+    return "该身份未在本系统开通，请联系所内管理员开通后重试；已有本所账号的同事可改用下方的账号密码登录。";
+  }
+  if (sso === "totp") {
+    return "该账号已开启两步验证，单点登录无法提交动态码。请使用账号密码 + 两步验证码登录；如已不需要两步验证，请联系管理员。";
+  }
+  if (sso === "email_unverified") {
+    return "企业身份系统返回的邮箱未通过验证，为避免冒用同名账号，本次登录已中止。请在身份系统中完成邮箱验证后重试。";
+  }
+  if (sso === "config") {
+    return "单点登录配置异常（issuer 与身份系统不一致），请联系管理员；账号密码登录不受影响。";
+  }
+
+  const error = params.get("error");
+  if (!error) return null;
+  if (error === "AccessDenied") {
+    return "该身份未在本系统开通，或当前账号状态不允许登录。请联系所内管理员，或改用账号密码登录。";
+  }
+  if (error === "Configuration") {
+    return "登录服务配置异常，请联系管理员；账号密码登录不受影响。";
+  }
+  if (error === "OAuthCallback" || error === "Callback") {
+    return "企业身份系统的回调校验失败（可能是状态过期或浏览器拦截 Cookie），请重试；问题持续请联系管理员。";
+  }
+  return "登录未完成，请重试；问题持续请联系管理员。";
+}
+
+export function LoginForm({ sso = null }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(() => initialAuthError(searchParams));
   const [showPassword, setShowPassword] = useState(false);
   const [showTotp, setShowTotp] = useState(false);
+  const [ssoPending, setSsoPending] = useState(false);
 
   const {
     register,
@@ -65,8 +109,21 @@ export function LoginForm() {
     }
   }
 
+  async function onSso() {
+    setAuthError(null);
+    setSsoPending(true);
+    try {
+      // redirect 默认 true：浏览器整页跳转到 IdP 授权端点（PKCE + state 由 NextAuth 生成）
+      await signIn("oidc", { callbackUrl });
+    } catch {
+      setSsoPending(false);
+      setAuthError("无法发起企业统一登录，请稍后重试或联系管理员。");
+    }
+  }
+
   return (
-    <form method="post" onSubmit={handleSubmit(onSubmit)} noValidate>
+    <>
+      <form method="post" onSubmit={handleSubmit(onSubmit)} noValidate>
       {authError ? (
         <div role="alert" className="mb-4 flex gap-2 rounded-[10px] border border-[var(--red-line)] bg-[var(--red-bg)] px-3 py-2.5 text-[12.5px] leading-relaxed text-[var(--red)]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -152,6 +209,25 @@ export function LoginForm() {
         {isSubmitting ? <Loader2 className="animate-spin" /> : null}
         {isSubmitting ? "登录中…" : "登 录"}
       </button>
-    </form>
+      </form>
+
+      {/* 台账 P2-2：仅在服务端确认 AUTH_OIDC_ENABLED=1 时渲染（未配置则整块不存在） */}
+      {sso ? (
+        <div className="mt-5">
+          <div className="mb-4 flex items-center gap-3 text-[11.5px] text-[var(--t-faint)]" aria-hidden>
+            <span className="h-px flex-1 bg-[var(--bd-subtle)]" />
+            或
+            <span className="h-px flex-1 bg-[var(--bd-subtle)]" />
+          </div>
+          <button type="button" className="btn btn-secondary btn-login" onClick={onSso} disabled={ssoPending}>
+            {ssoPending ? <Loader2 className="animate-spin" /> : <Building2 aria-hidden />}
+            {ssoPending ? "正在跳转…" : sso.displayName}
+          </button>
+          <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-[var(--t-faint)]">
+            使用企业身份系统登录时，账号需由管理员预先在本系统开通。
+          </p>
+        </div>
+      ) : null}
+    </>
   );
 }

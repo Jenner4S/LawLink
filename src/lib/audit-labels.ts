@@ -71,6 +71,10 @@ const words: Record<string, string> = {
   ETHICAL: "合规", WALL: "隔离墙", LIFT: "解除",
   // 邮件归档（P1-3）：EMAIL_ARCHIVE / EMAIL_LINK 两个动作需要该词，缺一即整条降级
   EMAIL: "邮件",
+  // OIDC 单点登录（P2-2）：SSO_LOGIN / SSO_LOGIN_REJECT 需要该词。
+  // 安全上这两个动作是登录审计的主线索（成功与拒绝都要能读懂是谁、为什么），
+  // 因此词条与 LOGIN / REJECT 组合使用。
+  SSO: "单点登录",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

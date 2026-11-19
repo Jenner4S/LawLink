@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import { getFirmProfile } from "@/server/settings/firm-profile";
+import { readOidcConfig } from "@/lib/auth/oidc";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
@@ -12,6 +13,11 @@ export const metadata: Metadata = {
 export default async function LoginPage() {
   const profile = await getFirmProfile().catch(() => null);
   const firmName = profile?.firmName && profile.firmName !== "LawLink" ? profile.firmName : null;
+
+  // 台账 P2-2：SSO 配置在服务端读取，只把按钮文案传给客户端组件——
+  // clientSecret 永远不进浏览器。未配置时 sso 为 null，表单下方不出现按钮。
+  const oidc = readOidcConfig();
+  const sso = oidc ? { displayName: oidc.displayName } : null;
 
   return (
     <div className="mo-login">
@@ -78,9 +84,9 @@ export default async function LoginPage() {
         <div className="form-panel">
           <div className="fp-body">
             <h2 className="fp-title">登录 LawLink</h2>
-            <p className="fp-sub">使用你的工作账号进入本所工作台</p>
+            <p className="fp-sub">{sso ? "使用本所账号，或通过企业身份系统登录" : "使用你的工作账号进入本所工作台"}</p>
             <Suspense fallback={<LoginFallback />}>
-              <LoginForm />
+              <LoginForm sso={sso} />
             </Suspense>
             <div className="fp-protect">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
