@@ -60,7 +60,7 @@ const words: Record<string, string> = {
   // 第七轮体检：auditActionLabel 要求 action 的每个词都已登记，缺一个整条即降级为
   // 「其他操作（详见技术详情）」。全仓 199 个 action 中 48 个命中该降级，其中含
   // 证件号/电话明文查看、财务更正、二次验证变更等敏感操作。以下为一次补齐的清单。
-  ADJUST: "调整", ALLOCATION: "核销", AMENDMENT: "补充协议", BORROW: "借阅", BUNDLE: "卷宗包",
+  ADJUST: "调整", ALLOCATION: "核销", AMENDMENT: "补充协议", BEGIN: "开始", BORROW: "借阅", BUNDLE: "卷宗包",
   CANCEL: "取消", CHECKOUT: "取件", CONDITION: "条件", CONFIRM: "确认", CONFIRMED: "已确认",
   CORRECTION: "更正", DESKTOP: "桌面连接器", DISABLE: "停用", DRAFT: "草稿", ENABLE: "启用",
   ENCRYPT: "加密", ENFORCED: "强制要求", FETCH: "拉取", FINANCE: "财务", FROM: "来自",

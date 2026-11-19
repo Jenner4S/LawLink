@@ -356,6 +356,23 @@ export async function commitMatterImportAction(input: {
   const succeeded: ImportResult["succeeded"] = [];
   const failed: ImportResult["failed"] = [];
 
+  // 2026-11-21（审计发现）：批次开始即留痕。
+  //
+  // 原实现只在循环**结束后**写一条 MATTER_IMPORT 审计，而每一行是独立事务
+  // （createOneMatter 内 $transaction）。若中途进程被杀/函数超时，
+  // 已提交的案件存在，但那条收尾审计永远不会写 —— 出现「有案件、无导入痕迹」，
+  // 事后无法回答「这些案件是哪一次导入建的」。
+  //
+  // 现在开始前先写 MATTER_IMPORT_BEGIN（含行数），结束时照旧写 MATTER_IMPORT。
+  // 两者用同一 batchId 关联，中断时至少能凭 BEGIN 查到「有过这次导入、导了多少行」。
+  const batchId = `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  await audit({
+    userId: session.user.id,
+    action: "MATTER_IMPORT_BEGIN",
+    targetType: "Matter",
+    detail: { batchId, rows: input.rows.length }
+  });
+
   for (const { rowNo, raw } of input.rows) {
     try {
       const { errors, normalized } = validateRow(raw);
@@ -395,8 +412,14 @@ export async function commitMatterImportAction(input: {
     action: "MATTER_IMPORT",
     targetType: "Matter",
     detail: {
+      // 与开始那条关联；中断时凭 BEGIN 的 batchId 能对应上
+      batchId,
       succeeded: succeeded.length,
       failed: failed.length,
+      // 2026-11-21：明细带案号，事后能回答「这次导入建了哪些案件」。
+      // 只留案号不留其他字段，避免审计条目膨胀。
+      internalCodes: succeeded.map((r) => r.internalCode),
+      failedRows: failed.map((r) => ({ rowNo: r.rowNo, error: r.error })).slice(0, 50),
       causeDowngraded: succeeded.filter((r) => r.causeDowngradeReason).length,
       // P1-1：导入触发的冲突检索在顶层审计里也要看得见（逐件明细另记 MATTER_CONFLICT_RUN）
       conflictChecked: conflictTotals.checked,

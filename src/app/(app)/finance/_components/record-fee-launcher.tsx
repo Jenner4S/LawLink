@@ -26,8 +26,15 @@ export function RecordFeeLauncher({ open, onOpenChange }: { open: boolean; onOpe
         try {
           const rows = await searchMattersForInvoice(q || undefined);
           if (seq === searchSeqRef.current) setOptions(rows);
-        } catch {
-          if (seq === searchSeqRef.current) setOptions([]);
+        } catch (err) {
+          // 2026-11-21（审计发现）：原先是裸 `catch { setOptions([]) }` ——
+          // 搜索失败与「确实没有匹配的案件」在界面上完全一样，
+          // 用户会去改关键词而不是重试，也报不了障。
+          // 同文件 pick() 用的是 toast.error + actionErrorMessage，这里对齐。
+          if (seq === searchSeqRef.current) {
+            setOptions([]);
+            toast.error("案件搜索失败，请重试", { description: actionErrorMessage(err) });
+          }
         }
       });
     }, 250);

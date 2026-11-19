@@ -42,7 +42,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ use
         "X-Content-Type-Options": "nosniff"
       }
     });
-  } catch {
-    return NextResponse.json({ error: "证件照片读取失败" }, { status: 500 });
+  } catch (err) {
+    // 2026-11-21（审计发现）：原先是裸 `catch {}` —— 一个 catch 同时包住
+    // 解密读取与 auditStrict，两者都返回「证件照片读取失败」且**没有任何日志**。
+    // 后果：审计写失败时，运维既看不到日志，界面上也只会说是"读取失败"，
+    // 无法定位是存储问题还是审计表问题。
+    //
+    // 修法：日志里带上错误类型，响应仍用统一中文（不把内部细节给到前端）。
+    // 「审计失败即失败」的语义不变 —— 仍然返回 500、仍然不放行照片。
+    console.error(
+      `[identity-documents] 证件照片读取或审计失败 fileId=${fileId} userId=${userId}`,
+      err
+    );
+    return NextResponse.json({ error: "证件照片读取失败，请稍后重试或联系管理员" }, { status: 500 });
   }
 }
