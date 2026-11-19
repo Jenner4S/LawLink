@@ -118,11 +118,32 @@ async function notifySealApprovalRequested(input: {
   });
 }
 
+/**
+ * ⚠️ 死代码，且是**危险的**死代码 —— 不要接线，接线前先重写。
+ *
+ * 2026-11-21 审计：本函数全仓零引用。但它不查真实权限，`requireSession("approval")`
+ * 只保证「登录 + 有 approval 菜单权」，然后把 `canApprove` / `canViewFirmQueue`
+ * **硬编码成 true** —— 任何有 approval 权的人都会被判成「能用印审批、能看全所队列」。
+ *
+ * 现在的用印审批走 `/approvals?type=SEAL_APPROVE`，权限由
+ * `requireApprovalRoute` + `canDecide` 在服务端逐条判定，不依赖本函数，
+ * 所以零引用下无害。但它是「看起来能用、用起来会放行」的陷阱：
+ * 将来若有人图省事拿它做按钮显隐或服务端守卫，等于绕过用印审批权限。
+ *
+ * 按 AGENTS.md「效果图未画到的旧模块须归位不得删除」保留代码，
+ * 但**若要启用，必须按 `getSealApprovalCapabilities` 应有的语义重写**
+ * （查 approval 规则、查自审批排除、查是不是本案主办），不得原样接。
+ */
 export async function getSealApprovalCapabilities() {
   await requireSession("approval");
   return { canApprove: true, canViewFirmQueue: true };
 }
 
+/**
+ * 零引用（2026-11-21 审计）。功能正确但低效 —— 为了取一条把全所队列拉出来再 find。
+ * 保留可见，若将来要接线，应改成 `prisma.sealRequest.findFirst({ where: { id } })`
+ * 并补 visibility 判定，不要沿用这个「拉全量再筛」的写法。
+ */
 export async function getSealRequest(id: string) {
   const rows = await listSealRequests({ scope: "all" });
   return rows.find(row => row.id === id) ?? null;

@@ -54,7 +54,7 @@ src/ 下导出总数        1559
 | 模块 | 数量 | 说明 |
 |---|---|---|
 | `document-folders/actions.ts` | 6 | ✅ 已标注 |
-| `seals/actions.ts` | 3 | `getSealApprovalCapabilities` / `getSealRequest` / `getSealStats` |
+| `seals/actions.ts` | 3 | **已逐个核实（2026-11-21）**：<br>`getSealApprovalCapabilities` **⚠️ 危险死代码** —— 不查真实权限就直接 `return { canApprove: true, canViewFirmQueue: true }`。零引用下无害，但将来谁拿它做守卫等于绕过用印审批。已在源码加警告注释，**启用前必须重写**。<br>`getSealRequest` 功能对但低效（拉全量再 find），已加注释说明接线时应改写法。<br>`getSealStats` 是旧版用印独立页的遗留统计；用印已整合进 `/approvals?type=SEAL_APPROVE`，那里有通用统计（待我审批/我已处理/我的申请），**专项统计判定不需要** |
 | `cron/manual-triggers.ts` | 2 | `triggerWeeklyReportNow` / `triggerAuditCleanupNow`。<br>**已核实：两个都有 `requireAdmin()` 守卫**，不是安全风险。<br>**`triggerWeeklyReportNow` 已接线（2026-11-21）**：管理后台提醒维护页「邮件通道」卡片新增「立即推送周报」按钮（`weekly-push-button.tsx`），SMTP 未配置时 disabled 并提示原因。<br>**`triggerAuditCleanupNow` 仍无 UI**：审计清理是纯运维动作，cron 每日 03:10 自动跑，手动触发价值低，**判定不需要 UI**（不是遗漏） |
 | `sms/actions.ts` | 2 | `getSmsMessage` / `parseDateString` |
 | `clients/actions.ts` | 2 | `softDeleteClient` / `deleteContact` |
