@@ -9,6 +9,14 @@ export async function adjustInvoiceTx(db:Prisma.TransactionClient,userId:string,
  const invoice=await db.invoiceRequest.findUniqueOrThrow({where:{id:d.invoiceId}});if(invoice.status!=='ISSUED'||!invoice.matterId)throw new ActionError('仅可更正本案已开具发票');await assertLedgerWrite(db,userId,invoice.matterId,'finance.correct');
  const user=await db.user.findUniqueOrThrow({where:{id:userId},select:{role:true}}),role=await resolveRoleUser(userId,user.role,db);if(scopeFor(role,'invoices.process')!=='ALL'&&!(scopeFor(role,'invoices.process')==='OWN'&&await db.matter.count({where:{id:invoice.matterId,...matterAssociationFilter(userId)}})))throw new ActionError('更正发票还须当前开票执行权限');
  await db.$queryRaw`SELECT id FROM "InvoiceRequest" WHERE id=${d.invoiceId} FOR UPDATE`;
+ // 2026-11-20（D5 修复）：凭据编号重复提前给出可读提示。
+ //
+ // 该列有 (invoiceId, reference) 唯一索引，但没有前置检查。重复时落到
+ // $executeRaw 插入 → Prisma 包成 P2010（meta.code=23505），
+ // 经 mutate 翻译后用户看到的是「账务或授权已变化，请刷新后重试」——
+ // 对「这个凭据编号已经登记过」是完全的误导，会让人以为是自己刷新不及时。
+ const dupRef=await db.invoiceAdjustment.count({where:{invoiceId:d.invoiceId,reference:d.reference}});
+ if(dupRef>0)throw new ActionError(`凭据编号「${d.reference}」在本发票下已登记过，请核对后更换编号`);
  const shDay=(value:Date)=>new Date(value.getTime()+8*60*60*1000).toISOString().slice(0,10);
  if(invoice.issuedAt&&shDay(d.occurredAt)<shDay(invoice.issuedAt))throw new ActionError('更正不能早于原开票日期');
  const mayReadCase=Boolean(scopeFor(role,'documents.read')&&await db.matter.count({where:{id:invoice.matterId,...matterAssociationFilter(userId)}}));
