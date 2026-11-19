@@ -1,0 +1,22 @@
+-- 撤掉 AuditLog.previousHash 的唯一索引（2026-11-19，P0 回归修复）
+--
+-- 事故经过：20261119000004 加了 @@unique([previousHash])，本意是让数据库阻止链分叉。
+-- 但审计扩展（src/lib/prisma.ts 的 $extends query hook）用**另一条连接**（base）
+-- 读「上一条摘要」，它读不到同一事务内尚未提交的前一条。
+-- 于是同一事务里写第二条审计时，算出的 previousHash 与第一条相同 → 撞唯一索引
+-- → 整个事务被 25P02 毒化 → 该业务操作 100% 失败。
+--
+-- 影响：convertIntakeToMatter 在同一事务内写多条审计（intakes/actions.ts），
+-- 而转案是当前唯一的建案入口（createMatter 在审批开启时直接拒绝）——
+-- 系统因此完全无法建案。收案表为空的主库看不出问题，是「从未走到这条路」而非「没问题」。
+--
+-- 为什么不是改用 advisory lock 或让 hook 感知事务：
+-- Prisma 的 $extends query hook 拿不到调用方的事务客户端，无法在同一连接上读前驱；
+-- 在 hook 里再开 $transaction 会变成嵌套事务（Prisma 不支持）。
+--
+-- 取舍（明确记录）：
+-- 撤销唯一约束后，同一事务内多条审计会共用同一个 previousHash（链在此处分叉）。
+-- verifyAuditChain 已同步改为**显式报告分叉**（forkAt），不再静默只走第一条链——
+-- 从「数据库硬拦导致功能瘫痪」改为「功能可用 + 分叉可检测」。
+-- 可用性优先：不能建案等于系统作废，而分叉只要查得出来就能事后归因。
+DROP INDEX IF EXISTS "AuditLog_previousHash_key";
