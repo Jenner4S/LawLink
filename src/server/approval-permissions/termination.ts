@@ -1,6 +1,7 @@
 /** 批准与执行终止是不同事实，原批准不被覆盖。 */
 import {randomUUID} from 'node:crypto';import {Prisma} from '@prisma/client';import {z} from 'zod';import {canApproveItem,canExecuteInvoice,approvalAudit} from '@/lib/approvals/service';import {resolveRoleUser} from '@/lib/roles/service';
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 export type ExecutionKind='INVOICE'|'SEAL';
 export async function terminationReady(db:Prisma.TransactionClient){const [r]=await db.$queryRaw<{ready:boolean}[]>`SELECT to_regclass('public."ExecutionTermination"') IS NOT NULL AS ready`;return r?.ready===true;}
 export async function executionTerminations(db:Prisma.TransactionClient){if(!await terminationReady(db))return [];return db.$queryRaw<{id:string;invoiceId:string|null;sealId:string|null;status:string;requestedById:string;reason:string;decisionNote:string|null;revision:number;createdAt:Date;decidedAt:Date|null}[]>`SELECT * FROM "ExecutionTermination" ORDER BY "createdAt" DESC,id DESC`;}
@@ -14,7 +15,7 @@ export async function hasOtherTerminationResolver(db:Prisma.TransactionClient,us
 export async function canResolveTermination(db:Prisma.TransactionClient,userId:string,kind:ExecutionKind,id:string){return kind==='INVOICE'?await canExecuteInvoice(userId,id,db)||await canApproveItem(userId,'INVOICE_APPROVE',id,db):await canApproveItem(userId,'SEAL_STAMP',id,db)||await canApproveItem(userId,'SEAL_APPROVE',id,db);}
 export async function assertExecutionOpen(db:Prisma.TransactionClient,kind:ExecutionKind,id:string){const rows=await executionTerminations(db);if(rows.some(r=>(kind==='INVOICE'?r.invoiceId:r.sealId)===id&&['PENDING','CONFIRMED'].includes(r.status)))throw new ActionError('本申请执行已暂停或终止，请先处理终止申请');}
 export async function requestTerminationTx(db:Prisma.TransactionClient,userId:string,kind:ExecutionKind,id:string,reason:string){
- const note=z.string().trim().min(1,'请填写终止原因').max(1500).parse(reason);await actor(db,userId);if(!await terminationReady(db))throw new ActionError('执行终止尚未启用');const row=await target(db,kind,id);
+ const note=parseInput(z.string().trim().min(1,'请填写终止原因').max(1500), reason);await actor(db,userId);if(!await terminationReady(db))throw new ActionError('执行终止尚未启用');const row=await target(db,kind,id);
  if(row.status!=='APPROVED')throw new ActionError('只有已批准且尚未实际执行的申请可终止');
  if(row.requestedById!==userId&&!await canResolveTermination(db,userId,kind,id))throw new ActionError('无权申请终止');await assertExecutionOpen(db,kind,id);
  const hasOther=await hasOtherTerminationResolver(db,userId,kind,id),receivers: string[]=[];
@@ -30,7 +31,7 @@ export async function requestTerminationTx(db:Prisma.TransactionClient,userId:st
  await db.notification.createMany({data:notifyTargets.map(uid=>({userId:uid,type:'SYSTEM' as const,priority:'HIGH' as const,title:soleHolder?'批准事项终止待自核（本所无其他有权人）':'批准事项终止待核实',content:note,href:`/approvals?type=${kind==='INVOICE'?'INVOICE_APPROVE':'SEAL_APPROVE'}&id=${id}`,refType:'ExecutionTermination',refId:requestId}))});return {id:requestId};
 }
 export async function decideTerminationTx(db:Prisma.TransactionClient,userId:string,id:string,revision:number,decision:'CONFIRMED'|'REJECTED'|'CANCELLED',note:string){
- const reason=z.string().trim().min(1,'请填写核实或撤回说明').max(1500).parse(note);await actor(db,userId);
+ const reason=parseInput(z.string().trim().min(1,'请填写核实或撤回说明').max(1500), note);await actor(db,userId);
  const request=(await executionTerminations(db)).find(r=>r.id===id);if(!request||request.status!=='PENDING'||request.revision!==revision)throw new ActionError('终止申请已处理或发生变化');
  const kind=request.invoiceId?'INVOICE':'SEAL',targetId=(request.invoiceId??request.sealId)!;const row=await target(db,kind,targetId);
  if(row.status!=='APPROVED')throw new ActionError('本申请已经执行或状态改变，不得终止');

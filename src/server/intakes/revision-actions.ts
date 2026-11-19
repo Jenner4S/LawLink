@@ -34,7 +34,7 @@ export async function getIntakeEditForm(id:string){
  });
 }
 export async function saveIntakeRevision(id:string,revision:number,input:IntakeCreateInput){
- const session=await requireSession('matters.write'),data=parseInput(intakeCreateSchema, input);z.number().int().nonnegative().parse(revision);
+ const session=await requireSession('matters.write'),data=parseInput(intakeCreateSchema, input);parseInput(z.number().int().nonnegative(), revision);
  assertAgencyAllowedForProcedure(data.firstAgency,data.firstProcedureType);
  await assertCauseAllowedForSelection({causeId:data.causeId,category:data.category,procedureType:data.firstProcedureType});
  await approvalTransaction(async db=>{
@@ -74,4 +74,4 @@ export async function saveIntakeRevision(id:string,revision:number,input:IntakeC
  });
  revalidatePath(`/intakes/${id}`);revalidatePath('/approvals');revalidatePath('/matters');return {ok:true,id,workflowEnabled:true};
 }
-export async function withdrawIntake(id:string,reason:string){const session=await requireSession('matters.write');await approvalTransaction(async db=>{if(!await intakeWorkflowReady(db))throw new ActionError('撤回补正功能尚未启用');return withdrawIntakeTx(db,session.user.id,id,z.string().trim().min(1).max(1000).parse(reason));});revalidatePath(`/intakes/${id}`);revalidatePath('/approvals');return {ok:true};}
+export async function withdrawIntake(id:string,reason:string){const session=await requireSession('matters.write');await approvalTransaction(async db=>{if(!await intakeWorkflowReady(db))throw new ActionError('撤回补正功能尚未启用');return withdrawIntakeTx(db,session.user.id,id,parseInput(z.string().trim().min(1).max(1000), reason));});revalidatePath(`/intakes/${id}`);revalidatePath('/approvals');return {ok:true};}

@@ -6,6 +6,7 @@ import { assertLedgerWrite } from "./ledger-access";
 import { requireFinanceLedger } from "./ledger-storage";
 import { auditTx } from "@/server/audit";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 
 const total = (values: Prisma.Decimal[]) => values.reduce((s, n) => s.plus(n), new Prisma.Decimal(0));
 export async function lockPayment(db: Prisma.TransactionClient, id: string) {
@@ -24,7 +25,7 @@ export async function assertAllocationTotals(db: Prisma.TransactionClient, payme
 }
 
 export async function allocateLedgerTx(db: Prisma.TransactionClient, userId: string, input: AllocateLedgerInput) {
-  const data = allocationInput.parse(input);
+  const data = parseInput(allocationInput, input);
   await requireFinanceLedger(db);
   // 所有本模块写入先取共同授权锁，再按来源/目标顺序锁定；避免反序死锁。
   const target = await db.payment.findUnique({ where: { id: data.paymentId }, select: { matterId: true } });

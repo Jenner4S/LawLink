@@ -83,7 +83,7 @@ export async function saveSealPurpose(input: z.infer<typeof purposeSchema>) {
   revalidatePath("/admin/approval-permissions"); revalidatePath("/approvals/seals");
 }
 export async function saveApprovalSettings(input: { allowSelfApproval: boolean }) {
-  const data = z.object({ allowSelfApproval: z.boolean() }).parse(input);
+  const data = parseInput(z.object({ allowSelfApproval: z.boolean() }), input);
   await approvalTransaction(async db => {
     const actorId = await admin(db);
     const before = await approvalSettings(db);

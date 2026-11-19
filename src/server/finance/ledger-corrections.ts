@@ -9,6 +9,7 @@ import { requireFinanceLedger } from "./ledger-storage";
 import { assertPaymentSource, assertAllocationTotals } from "./ledger-mutations";
 import { auditTx } from "@/server/audit";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 
 const civilDay = (d: Date) => Math.floor((d.getTime() + 8 * 3600000) / 86400000);
 const D = (n: Prisma.Decimal.Value) => new Prisma.Decimal(n);
@@ -101,7 +102,7 @@ export async function correctionPlan(db: Prisma.TransactionClient, matterId: str
 }
 
 export async function submitCorrectionTx(db: Prisma.TransactionClient, userId: string, input: CorrectionInput) {
-  const data = correctionInput.parse(input); await requireFinanceLedger(db);
+  const data = parseInput(correctionInput, input); await requireFinanceLedger(db);
   const target = data.targetKind === "EXPENSE" ? await db.feeEntry.findUnique({where:{id:data.targetId},select:{matterId:true}}) : data.type === "DISCOUNT" ? await db.receivable.findUnique({ where: { id: data.targetId }, select: { matterId: true } }) : await db.payment.findUnique({ where: { id: data.targetId }, select: { matterId: true } });
   if (!target) throw new ActionError("原账务对象不存在");
   await assertLedgerWrite(db, userId, target.matterId, "finance.write");
@@ -114,7 +115,7 @@ export async function submitCorrectionTx(db: Prisma.TransactionClient, userId: s
 }
 
 export async function decideCorrectionTx(db: Prisma.TransactionClient, userId: string, input: z.input<typeof correctionDecision>) {
-  const data = correctionDecision.parse(input); await requireFinanceLedger(db);
+  const data = parseInput(correctionDecision, input); await requireFinanceLedger(db);
   const [target] = await db.$queryRaw<{ matterId: string }[]>`SELECT "matterId" FROM "FinanceCorrection" WHERE id=${data.id}`;
   if (!target) throw new ActionError("更正申请不存在");
   await assertLedgerWrite(db, userId, target.matterId, data.decision === "CANCELLED" ? "finance.write" : "finance.correct");
@@ -122,7 +123,7 @@ export async function decideCorrectionTx(db: Prisma.TransactionClient, userId: s
   if (row.status !== "PENDING" || row.revision !== data.revision) throw new ActionError("更正申请已处理或发生变化");
   if (data.decision === "CANCELLED" && row.createdById !== userId) throw new ActionError("只有申请人可以撤销更正");
   if (data.decision === "CONFIRMED") {
-    const request = correctionInput.parse(row.requestPayload.input), plan = await correctionPlan(db, row.matterId, request);
+    const request = parseInput(correctionInput, row.requestPayload.input), plan = await correctionPlan(db, row.matterId, request);
     if (plan.snapshot !== row.requestPayload.snapshot) throw new ActionError("申请后账务已变化，请退回后重新申请");
     await applyCorrectionPlan(db,row.id,plan,request.type!=="DISCOUNT" && request.targetKind!=="EXPENSE" ? {id:request.targetId,amount:D(request.amount)} : undefined);
   }
@@ -185,7 +186,7 @@ export async function commissionPositions(db: Prisma.TransactionClient, matterId
   return rows.map(r => ({ ...r, ...commissionPosition(r.amount, r.adjustment, r.paid, r.recovered) }));
 }
 export async function settleCommissionTx(db: Prisma.TransactionClient, userId: string, input: SettlementInput) {
-  const data = settlementInput.parse(input); await requireFinanceLedger(db);
+  const data = parseInput(settlementInput, input); await requireFinanceLedger(db);
   const target = await db.feeEntry.findUnique({ where: { id: data.commissionEntryId }, select: { matterId: true } });
   if (!target) throw new ActionError("分成计提不存在");
   await assertLedgerWrite(db, userId, target.matterId, "finance.settle");

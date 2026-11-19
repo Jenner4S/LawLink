@@ -1,9 +1,10 @@
 import {randomUUID,createHash} from 'node:crypto';import {Prisma} from '@prisma/client';import {z} from 'zod';
 import {currentActor,assertLiveAssignees} from '@/server/intakes/workflow';import {responsibilityReady,readWorkRows} from './responsibility';import {auditTx} from '@/server/audit';import {shDayKey} from '@/lib/ui/sh-time';
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 export const urgentInput=z.object({intakeId:z.string().cuid(),title:z.string().trim().min(1).max(200),dueAt:z.coerce.date(),kind:z.enum(['TASK','DEADLINE','HEARING']),assigneeId:z.string().cuid(),basis:z.string().trim().min(1).max(1000)});
 export async function createUrgentTx(db:Prisma.TransactionClient,userId:string,input:z.input<typeof urgentInput>){
- const d=urgentInput.parse(input);await currentActor(db,userId,'schedule.write');if(!await responsibilityReady(db))throw new ActionError('收案紧急事项尚未启用');
+ const d=parseInput(urgentInput, input);await currentActor(db,userId,'schedule.write');if(!await responsibilityReady(db))throw new ActionError('收案紧急事项尚未启用');
  const i=await db.intake.findUniqueOrThrow({where:{id:d.intakeId}});if(!['INTAKE','NEEDS_REVISION','PENDING_CONFIRMATION'].includes(i.status))throw new ActionError('只能在办理中的收案登记紧急事项');
  const team=[i.createdById,i.ownerUserId,...i.coUserIds];if(!team.includes(userId)||!team.includes(d.assigneeId))throw new ActionError('仅本收案经办可登记并承担紧急事项');await assertLiveAssignees(db,[d.assigneeId]);const id=randomUUID();
  await db.$executeRaw`INSERT INTO "IntakeUrgentItem" (id,"intakeId",title,"dueAt",kind,"assigneeId","acceptedAt",reason) VALUES (${id},${d.intakeId},${d.title},${d.dueAt},${d.kind},${d.assigneeId},${d.assigneeId===userId?new Date():null},${d.basis})`;

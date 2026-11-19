@@ -289,7 +289,7 @@ export async function setUserManagerAuthorized(input: z.infer<typeof userUpdateM
 
 export async function setUserActive(input: { id: string; active: boolean }) {
   const session = await requireAdmin();
-  const data = z.object({ id: z.string().cuid(), active: z.boolean() }).parse(input);
+  const data = parseInput(z.object({ id: z.string().cuid(), active: z.boolean() }), input);
   if (data.id === session.user.id && !data.active) throw new ActionError("不能禁用自己");
   await approvalTransaction(async db => {
     await assertCurrentAdmin(db, session.user.id);
@@ -306,7 +306,7 @@ export async function setUserActive(input: { id: string; active: boolean }) {
 /** v1.x P0-3: 管理员解除登录锁定（清零失败计数，写审计） */
 export async function unlockUserLogin(input: { id: string }) {
   const session = await requireAdmin();
-  const { id } = z.object({ id: z.string().cuid() }).parse(input);
+  const { id } = parseInput(z.object({ id: z.string().cuid() }), input);
 
   await approvalTransaction(async db => {
     const user = await db.user.findUnique({ where: { id }, select: { lockedUntil: true, failedLoginAttempts: true } });

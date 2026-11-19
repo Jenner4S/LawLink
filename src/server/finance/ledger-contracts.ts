@@ -14,6 +14,7 @@ import { auditTx } from "@/server/audit";
 import { assertMatterReviewCurrent } from "@/server/conflicts/matter-review";
 import type { MoneyKind } from "@/lib/finance/ledger-labels";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 type BillingRow={id:string;matterId:string;moneyKind:MoneyKind;revision:number;status:string;signedAt:Date|null;effectiveAt:Date|null;sourceBillingId:string|null;amendmentType:string;contractAmount:Prisma.Decimal;resultingAmount:Prisma.Decimal|null;draftTerms:ContractTermsInput|null};
 async function sourceForUpdate(db:Prisma.TransactionClient,id:string,revision:number){
  const [source]=await db.$queryRaw<BillingRow[]>`SELECT * FROM "Billing" WHERE id=${id} FOR UPDATE`;
@@ -30,7 +31,7 @@ async function checkRelations(db:Prisma.TransactionClient,matterId:string,terms:
  return docs;
 }
 export async function draftAmendmentTx(db:Prisma.TransactionClient,userId:string,input:ContractTermsInput){
- const terms=contractTermsInput.parse(input);await requireFinanceLedger(db);
+ const terms=parseInput(contractTermsInput, input);await requireFinanceLedger(db);
  const target=await db.billing.findUnique({where:{id:terms.sourceBillingId},select:{matterId:true}});if(!target)throw new ActionError("原合同不存在");
  await assertLedgerWrite(db,userId,target.matterId,"finance.write",{allowTail:false});
  // 起草人必须本案经办，不能仅凭全所财务权限枚举案件材料。
@@ -58,7 +59,7 @@ export async function activateAmendmentTx(db:Prisma.TransactionClient,userId:str
  await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(72606101)`;
  const [draft]=await db.$queryRaw<BillingRow[]>`SELECT * FROM "Billing" WHERE id=${id} FOR UPDATE`;
  if(!draft||draft.revision!==revision||draft.status!=="DRAFT"||!draft.draftTerms)throw new ActionError("变更已处理或不属于补充协议草稿");
- const terms=contractTermsInput.parse(draft.draftTerms),source=await sourceForUpdate(db,terms.sourceBillingId,terms.sourceRevision);
+ const terms=parseInput(contractTermsInput, draft.draftTerms),source=await sourceForUpdate(db,terms.sourceBillingId,terms.sourceRevision);
  const {result,delta}=amendmentResult(source.resultingAmount??source.contractAmount,terms.type,new Prisma.Decimal(terms.amount));
  await assertLedgerWrite(db,userId,target.matterId,delta.lt(0)?"finance.correct":"finance.write",{allowTail:false});
  if(terms.effectiveAt>new Date())throw new ActionError("尚未到约定生效日期，可保留草稿到期后确认");
@@ -74,7 +75,7 @@ export async function activateAmendmentTx(db:Prisma.TransactionClient,userId:str
   for(const part of terms.reductions){
    const ar=await db.receivable.findUnique({where:{id:part.receivableId},select:{billingId:true}});
    if(!ar?.billingId||!billingIds.includes(ar.billingId))throw new ActionError("调减应收必须源于当前合同版本链");
-   plans.push(await correctionPlan(db,source.matterId,correctionInput.parse({targetId:part.receivableId,revision:part.revision,type:"DISCOUNT",amount:part.amount,occurredAt:terms.effectiveAt,reason:terms.reason,voucherReference:`补充协议 ${terms.title}`,allocationReversals:part.allocationReversals})));
+   plans.push(await correctionPlan(db,source.matterId,parseInput(correctionInput, {targetId:part.receivableId,revision:part.revision,type:"DISCOUNT",amount:part.amount,occurredAt:terms.effectiveAt,reason:terms.reason,voucherReference:`补充协议 ${terms.title}`,allocationReversals:part.allocationReversals})));
   }
   if(!plans.length)throw new ActionError("合同调减必须指定应收");
   const combined=plans[0];for(const plan of plans.slice(1)){
@@ -106,7 +107,7 @@ export async function cancelAmendmentTx(db:Prisma.TransactionClient,userId:strin
 
 /** 明确既有合同覆盖范围；不改变价款，保留修改审计。 */
 export async function bindContractScopeTx(db:Prisma.TransactionClient,userId:string,input:{billingId:string;revision:number;procedureId:string;state:'COVERED'|'SUPPLEMENT_REQUIRED'|'PENDING_REVIEW';note:string}){
- const {z}=await import('zod');const d=z.object({billingId:z.string().min(1),revision:z.number().int().nonnegative(),procedureId:z.string().cuid(),state:z.enum(['COVERED','SUPPLEMENT_REQUIRED','PENDING_REVIEW']),note:z.string().trim().min(1,'请填写覆盖条款或零收费豁免依据').max(1000)}).parse(input);
+ const {z}=await import('zod');const d=parseInput(z.object({billingId:z.string().min(1),revision:z.number().int().nonnegative(),procedureId:z.string().cuid(),state:z.enum(['COVERED','SUPPLEMENT_REQUIRED','PENDING_REVIEW']),note:z.string().trim().min(1,'请填写覆盖条款或零收费豁免依据').max(1000)}), input);
  const b=await db.billing.findUniqueOrThrow({where:{id:d.billingId},select:{matterId:true}});await assertLedgerWrite(db,userId,b.matterId,'finance.write',{allowTail:false});
  if(!await db.matter.count({where:{id:b.matterId,...matterAssociationFilter(userId)}}))throw new ActionError('仅本案经办可以确认代理范围');
  await sourceForUpdate(db,d.billingId,d.revision);

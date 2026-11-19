@@ -12,6 +12,7 @@ import { audit } from "@/server/audit";
 import { archiveHasExceptions, parseArchiveSnapshot, requiredArchiveVerificationIds } from "@/lib/archive/snapshot";
 import { isSystemAdmin } from "@/lib/auth/system-role";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 const workspaceQuery = z.object({
   tab: z.enum(["pending", "processed", "mine", "all"]).catch("pending").default("pending"),
   type: z.nativeEnum(ApprovalAction).optional().catch(undefined),
@@ -22,7 +23,7 @@ const workspaceQuery = z.object({
 });
 export async function listApprovalWorkspace(input: Record<string, unknown> = {}) {
   const session = await requireSession("approval");
-  const query = workspaceQuery.parse(input);
+  const query = parseInput(workspaceQuery, input);
   const canViewAll = isSystemAdmin(session.user);
   if (query.tab === "all" && !canViewAll) throw new ActionError("仅管理员可查看全部审批记录");
   const records = await loadApprovalRecords();
@@ -57,7 +58,7 @@ export async function listApprovalWorkspace(input: Record<string, unknown> = {})
   return { rows: rows.slice((page - 1) * pageSize, page * pageSize).map(({ row, task }): ApprovalWorkspaceRow => ({ id: row.id, action: row.action, title: row.title, requester: row.requester, matter: row.matter, status: row.status, submittedAt: row.submittedAt, processedAt: row.processedAt, processor: row.processor, task })), counts, canViewAll, total: rows.length, page, pageSize, query };
 }
 export async function getApprovalDetail(input: { action: ApprovalAction; id: string }) {
-  const parsed = z.object({ action: z.nativeEnum(ApprovalAction), id: z.string().cuid() }).parse(input);
+  const parsed = parseInput(z.object({ action: z.nativeEnum(ApprovalAction), id: z.string().cuid() }), input);
   const { id } = parsed;
   const action = canonicalApprovalAction(parsed.action);
   const session = await requireSession("approval");

@@ -12,6 +12,7 @@ import {commissionPositions} from '@/server/finance/ledger-corrections';
 import {readLedger} from '@/server/finance/ledger-storage';
 import {auditTx} from '@/server/audit';
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 export async function closureReady(db:Prisma.TransactionClient){const [r]=await db.$queryRaw<{ready:boolean}[]>`SELECT to_regclass('public."ArchiveClosurePlan"') IS NOT NULL AS ready`;return r?.ready===true;}
 export async function closureFacts(db:Prisma.TransactionClient,matterId:string){
  const procedures=await db.matterProcedure.findMany({where:{matterId,engagement:'ENGAGED',status:{not:'CONCLUDED'}},orderBy:{id:'asc'},select:{id:true,type:true,customLabel:true,status:true,leadLawyerId:true}});
@@ -63,7 +64,7 @@ async function tailOwnerQualified(db:Prisma.TransactionClient,userId:string,matt
  return null;
 }
 export async function saveClosureTx(db:Prisma.TransactionClient,userId:string,input:z.input<typeof closureInput>){
- const d=closureInput.parse(input);await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(72606101)`;
+ const d=parseInput(closureInput, input);await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(72606101)`;
  const u=await db.user.findUniqueOrThrow({where:{id:userId},select:{role:true,active:true}}),role=await resolveRoleUser(userId,u.role,db);
  if(!u.active||!role.enabled||(u.role==='CUSTOM'&&!scopeFor(role,'archive.submit')))throw new ActionError('无提交归档权限');
  if(!await db.matter.count({where:{id:d.matterId,deletedAt:null,...matterAssociationFilter(userId)}}))throw new ActionError('仅本案经办可安排收尾');

@@ -16,6 +16,7 @@ import {
   generateRecoveryCodes, matchRecoveryCode
 } from "@/lib/auth/totp";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 
 /** 登录页预检：该账号是否已开启双步验证（仅返回布尔，防枚举只暴露 TOTP 开关） */
 export async function checkLoginRequiresTotp(email: string): Promise<boolean> {
@@ -94,7 +95,7 @@ export async function enrollStartTotp(input?: { code?: string }): Promise<{ secr
 /** 确认绑定：首验通过即启用并一次性发放 8 枚恢复码 */
 export async function enrollConfirmTotp(input: { code: string }): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; message: string }> {
   const session = await requireSession("personal");
-  const { code } = z.object({ code: z.string().regex(/^\d{6}$/, "请输入 6 位动态码") }).parse(input);
+  const { code } = parseInput(z.object({ code: z.string().regex(/^\d{6}$/, "请输入 6 位动态码") }), input);
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { totpSecret: true, totpEnabled: true } });
   if (!user?.totpSecret) return { ok: false, message: "请先生成绑定密钥" };
@@ -123,7 +124,7 @@ export async function enrollConfirmTotp(input: { code: string }): Promise<{ ok: 
 /** 关闭双步验证：需当前动态码或一枚恢复码；被管理员强制开启的不可自行关闭 */
 export async function disableTotp(input: { code: string }): Promise<{ ok: boolean; message?: string }> {
   const session = await requireSession("personal");
-  const { code } = z.object({ code: z.string().min(6).max(16) }).parse(input);
+  const { code } = parseInput(z.object({ code: z.string().min(6).max(16) }), input);
 
   const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { totpSecret: true, totpEnabled: true, totpEnforced: true, recoveryCodeHashes: true } });
   if (!user?.totpEnabled) return { ok: false, message: "双步验证未开启" };

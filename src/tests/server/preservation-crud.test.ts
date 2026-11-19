@@ -282,15 +282,15 @@ describe("renewProperty（续保，真库）", () => {
 
     await expect(
       renewProperty({ propertyId: property.id, renewalDuration: 0, renewalUnit: "YEARS" })
-    ).rejects.toThrow("Too small: expected number to be >0");
+    ).rejects.toThrow("输入信息有误，请检查后重试");
 
     await expect(
       renewProperty({ propertyId: property.id, renewalDuration: -1, renewalUnit: "DAYS" })
-    ).rejects.toThrow("Too small: expected number to be >0");
+    ).rejects.toThrow("输入信息有误，请检查后重试");
 
     await expect(
       renewProperty({ propertyId: property.id, renewalDuration: 1.5, renewalUnit: "MONTHS" })
-    ).rejects.toThrow("Invalid input: expected int, received number");
+    ).rejects.toThrow("输入信息有误，请检查后重试");
 
     await expect(
       renewProperty({
@@ -298,7 +298,7 @@ describe("renewProperty（续保，真库）", () => {
         renewalDuration: 1,
         renewalUnit: "WEEKS" as never // 旧版本没有单位字段，这里钉住「单位是封闭集合」
       })
-    ).rejects.toThrow('Invalid option: expected one of "DAYS"|"MONTHS"|"YEARS"');
+    ).rejects.toThrow("输入信息有误，请检查后重试");
 
     const after = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: property.id } });
     expect(after.status).toBe("ACTIVE");
@@ -504,7 +504,7 @@ describe("renewProperty（续保，真库）", () => {
     // 业务上限（schema max 3600）被拒：越长的续保本身也不受法定期限保护
     await expect(
       renewProperty({ propertyId: property.id, renewalDuration: 3601, renewalUnit: "DAYS" })
-    ).rejects.toThrow("Too big: expected number to be <=3600");
+    ).rejects.toThrow("输入信息有误，请检查后重试");
 
     expect(await prisma.preservationPropertyRenewal.count({ where: { propertyId: property.id } })).toBe(0);
     const after = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: property.id } });

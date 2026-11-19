@@ -121,7 +121,7 @@ export async function updateDeadlineRule(input: DeadlineRuleInput & { id: string
 
 export async function toggleDeadlineRule(input: { id: string; enabled: boolean }) {
   const session = await requireSystemAdmin();
-  const data = z.object({ id: z.string().cuid(), enabled: z.boolean() }).parse(input);
+  const data = parseInput(z.object({ id: z.string().cuid(), enabled: z.boolean() }), input);
 
   const existing = await prisma.deadlineRule.findUnique({ where: { id: data.id }, select: { code: true } });
   if (!existing) throw new ActionError("规则不存在");
@@ -143,7 +143,7 @@ export async function toggleDeadlineRule(input: { id: string; enabled: boolean }
 
 export async function deleteDeadlineRule(input: { id: string }) {
   const session = await requireSystemAdmin();
-  const { id } = z.object({ id: z.string().cuid() }).parse(input);
+  const { id } = parseInput(z.object({ id: z.string().cuid() }), input);
 
   const existing = await prisma.deadlineRule.findUnique({ where: { id }, select: { isBuiltIn: true, code: true } });
   if (!existing) throw new ActionError("规则不存在");

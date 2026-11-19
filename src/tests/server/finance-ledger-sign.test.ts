@@ -29,7 +29,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { ZodError } from "zod";
+import { ActionError } from "@/lib/action-error";
 
 // 必须在 import @/lib/prisma 之前落盘（vi.hoisted 先于 import 执行）
 const HOLDER = vi.hoisted(() => {
@@ -167,17 +167,17 @@ async function seedSignable(options: { amount?: string } = {}) {
 }
 
 describe("signBillingTx · 输入与前置门禁（真库）", () => {
-  it("billingSignInput 校验失败时抛 ZodError，且不触碰数据库", async () => {
+  it("billingSignInput 校验失败时抛 ActionError（用户可读中文，不再是含英文结构的 ZodError），且不触碰数据库", async () => {
     const finance = await seedUser("FINANCE");
     const before = await prisma.billing.count();
     // 缺 signedAt
     await expect(
       sign(finance.id, { id: "b-not-exist", revision: 0, installments: [] } as never)
-    ).rejects.toBeInstanceOf(ZodError);
+    ).rejects.toBeInstanceOf(ActionError);
     // revision 为负
     await expect(
       sign(finance.id, { id: "b-not-exist", revision: -1, signedAt, installments: [] } as never)
-    ).rejects.toBeInstanceOf(ZodError);
+    ).rejects.toBeInstanceOf(ActionError);
     expect(await prisma.billing.count()).toBe(before);
   });
 

@@ -6,6 +6,7 @@ import {currentActor,assertLiveAssignees} from '@/server/intakes/workflow';
 import {retireScheduleReminders} from './schedule';
 import {auditTx} from '@/server/audit';
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 export async function responsibilityReady(db:Prisma.TransactionClient){const [r]=await db.$queryRaw<{ready:boolean}[]>`SELECT to_regclass('public."WorkResponsibility"') IS NOT NULL AS ready`;return r?.ready===true;}
 export type WorkRow={id:string;targetId:string;kind:'Task'|'Deadline'|'Hearing'|'Urgent';matterId:string|null;intakeId:string|null;title:string;dueAt:Date|null;assigneeId:string;name:string;active:boolean;proposedAssigneeId:string|null;proposedName:string|null;acceptedAt:Date|null;state:'OPEN'|'DONE'|'CANCELLED';revision:number;reason:string|null};
 /** 已有对象权限由调用方进一步按 matterId/intakeId/assignee 限定。 */
@@ -16,7 +17,7 @@ export async function readWorkRows(db:Prisma.TransactionClient){
 }
 export const workChangeInput=z.object({id:z.string().min(1),revision:z.number().int().nonnegative(),action:z.enum(['ACCEPT','PROPOSE','DECLINE','RESCHEDULE','COMPLETE','CANCEL','REOPEN']),reason:z.string().trim().max(1000).default(''),assigneeId:z.string().min(1).optional(),dueAt:z.coerce.date().optional()}).superRefine((v,c)=>{if(v.action!=='ACCEPT'&&!v.reason)c.addIssue({code:'custom',message:'请填写变更或处理原因'});if(v.action==='PROPOSE'&&!v.assigneeId)c.addIssue({code:'custom',message:'请选择接收人'});if(v.action==='RESCHEDULE'&&!v.dueAt)c.addIssue({code:'custom',message:'请填写新日期'});});
 export async function changeWorkTx(db:Prisma.TransactionClient,userId:string,input:z.input<typeof workChangeInput>){
- const d=workChangeInput.parse(input);await currentActor(db,userId,'schedule.write');
+ const d=parseInput(workChangeInput, input);await currentActor(db,userId,'schedule.write');
  if(!await responsibilityReady(db))throw new ActionError('事项责任功能尚未启用');
  const row=(await readWorkRows(db)).find(r=>r.id===d.id);if(!row)throw new ActionError('事项不存在');
  const table=row.kind==='Urgent'?'IntakeUrgentItem':'WorkResponsibility';

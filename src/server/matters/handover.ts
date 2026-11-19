@@ -5,6 +5,7 @@ import {assertLiveAssignees,fingerprint,currentActor} from '@/server/intakes/wor
 import {readWorkRows,responsibilityReady} from '@/server/reminders/responsibility';
 import {retireScheduleReminders} from '@/server/reminders/schedule';import {auditTx} from '@/server/audit';
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 export async function handoverSnapshot(db:Prisma.TransactionClient,matterId:string){
  // 指纹只覆盖实质内容：不含 updatedAt 等易变列——加材料备注、改程序联系法官等
  // 无关改动不应阻断接收人 ACCEPT（2026-09-19 审计）；实质变化仍会改变指纹。
@@ -31,7 +32,7 @@ async function transfer(db:Prisma.TransactionClient,matterId:string,from:string,
 }
 export const handoverInput=z.object({matterId:z.string().cuid(),toUserId:z.string().cuid(),emergency:z.boolean().default(false),reason:z.string().trim().min(1,'请填写交接原因').max(2000)});
 export async function requestHandoverTx(db:Prisma.TransactionClient,userId:string,input:z.input<typeof handoverInput>){
- const d=handoverInput.parse(input),role=await actor(db,userId);if(!await responsibilityReady(db))throw new ActionError('责任交接尚未启用');
+ const d=parseInput(handoverInput, input),role=await actor(db,userId);if(!await responsibilityReady(db))throw new ActionError('责任交接尚未启用');
  const matter=await db.matter.findUniqueOrThrow({where:{id:d.matterId},select:{ownerId:true,status:true,deletedAt:true}});if(matter.deletedAt||matter.status==='ARCHIVED')throw new ActionError('归档或删除案件不可更换主办');
  if(d.emergency){if(scopeFor(role,'matters.transfer')!=='ALL')throw new ActionError('应急接管须独立的全所责任交接权限');}
  else {await currentActor(db,userId,'matters.write');if(matter.ownerId!==userId)throw new ActionError('普通交接只能由当前主办发起');}

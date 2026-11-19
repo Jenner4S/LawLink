@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { parseInput } from "@/lib/parse-input";
 import { requireSession } from "@/lib/auth/session";
 import { approvalAudit } from "@/lib/approvals/service";
 import { myProfileSchema, bindIdentitySchema, correctIdentitySchema } from "./profile-schema";
@@ -20,7 +21,7 @@ export async function updateMyProfile(input: z.infer<typeof myProfileSchema>) {
 }
 export async function getProfileIdentity(targetId?: string) {
   const session = await requireSession("personal");
-  const id = targetId === undefined ? session.user.id : z.string().cuid().parse(targetId);
+  const id = targetId === undefined ? session.user.id : parseInput(z.string().cuid(), targetId);
   return profileTransaction(async db => {
     await assertProfileActor(db, session.user.id, id);
     const summary = await identitySummary(db, id);

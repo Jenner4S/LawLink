@@ -12,6 +12,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
+import { ActionError } from "@/lib/action-error";
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 
@@ -84,9 +85,11 @@ describe("allocateLedgerTx · 参数校验先于数据库访问", () => {
       }
     }) as unknown as Prisma.TransactionClient;
 
+    // 2026-11-20：action 层改用 parseInput，抛 ActionError（中文可读）而非 ZodError。
+    // schema 层（allocationInput.parse 直接调用）仍抛 ZodError —— 两者分工不同。
     await expect(
       allocateLedgerTx(spyTx, "user-1", { paymentId: "p1", revision: 0, kind: "RECEIVABLE", items: [{ targetId: "ar1", amount: "0" }] })
-    ).rejects.toBeInstanceOf(ZodError);
+    ).rejects.toBeInstanceOf(ActionError);
     expect(touched).toEqual([]);
   });
 
@@ -106,7 +109,7 @@ describe("allocateLedgerTx · 参数校验先于数据库访问", () => {
         paymentId: "p1", revision: 0, kind: "RECEIVABLE",
         items: [{ targetId: "ar1", amount: "10" }, { targetId: "ar1", amount: "20" }]
       })
-    ).rejects.toBeInstanceOf(ZodError);
+    ).rejects.toBeInstanceOf(ActionError);
     expect(touched).toEqual([]);
   });
 });

@@ -25,9 +25,29 @@ export function parseInput<T>(schema: ZodType<T>, input: unknown): T {
   if (result.success) return result.data;
 
   // 取前两条，与既有 digest 通道的口径一致（避免一次抛出一屏错误）
+  //
+  // 2026-11-20：zod 4 的**默认** message 是英文，实测：
+  //   "Invalid input: expected string, received undefined"
+  //   "Invalid option: expected one of \"ACCEPT\"|\"PROPOSE\""
+  //   "Too small: expected string to have >=2 characters"
+  // schema 里没显式写中文 message 的字段（共用 schema、枚举、id 校验）都会漏英文给用户。
+  // 律所用户看不懂，且这类提示不指向任何可操作的信息。
+  //
+  // 兜底策略：识别 zod 的默认 message，换成中文并保留**字段路径**，
+  // 让用户至少知道是哪一项出的问题；schema 作者显式写的中文 message 原样保留。
+  const ZOD_DEFAULT = /^(Invalid (input|option|union|value)|Too (small|big|long)|Required|Unrecognized|Expected|String must|Number must)/i;
   const messages = result.error.issues
     .slice(0, 2)
-    .map((issue) => issue.message)
+    .map((issue) => {
+      const raw = issue.message ?? "";
+      if (!raw) return "";
+      if (!ZOD_DEFAULT.test(raw)) return raw;
+      // 刻意**不把字段名带进文案**：schema 的 path 是内部命名（renewalDuration、
+      // claimAmountCents…），律所用户看到英文标识符同样不知道改哪里。
+      // 具体到字段的提示应由 schema 作者显式写中文 message——那才是该做的事。
+      // 这里只保证：不泄露英文 zod 结构、不泄露内部字段名、给出可操作的方向。
+      return "输入信息有误，请检查后重试";
+    })
     .filter(Boolean);
 
   throw new ActionError(messages.join("；") || "输入信息有误，请检查后重试");

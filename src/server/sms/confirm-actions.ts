@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { Prisma, type SmsSuggestion } from "@prisma/client";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 
 type SuggestionRow = SmsSuggestion & { sms: { id: string; receivedById: string; matchedMatterId: string | null; generatedHearingId: string | null; generatedDeadlineId: string | null } };
 import { prisma } from "@/lib/prisma";
@@ -66,7 +67,7 @@ export async function analyzeSmsInboundFiles(input: { smsId: string; fileIds?: s
 }
 
 export async function decideSmsSuggestions(input: z.input<typeof decisionInput>) {
-  const data = decisionInput.parse(input);
+  const data = parseInput(decisionInput, input);
   const session = await requireSession("matters.write");
   const rows = await prisma.smsSuggestion.findMany({
     where: { id: { in: data.ids }, status: "PENDING" },

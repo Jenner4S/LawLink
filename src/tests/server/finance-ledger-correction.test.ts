@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { ZodError } from "zod";
+import { ActionError } from "@/lib/action-error";
 
 const HOLDER = vi.hoisted(() => {
   const host = process.env.FIN_TEST_PG_HOST ?? "localhost:55432";
@@ -513,16 +513,16 @@ async function seedPendingRefund(ownerId: string, paymentAmount = "1000.00") {
 }
 
 describe("decideCorrectionTx · 输入与前置门禁（真库）", () => {
-  it("correctionDecision 校验：缺 note 的 REJECTED/CANCELLED 抛 ZodError，申请保持 PENDING", async () => {
+  it("correctionDecision 校验：缺 note 的 REJECTED/CANCELLED 抛 ActionError（用户可读中文，不再是含英文结构的 ZodError），申请保持 PENDING", async () => {
     const { finance, correctionId } = await seedPendingRefund(await seedUser("LAWYER").then(u => u.id));
 
     await expect(decide(finance.id, { id: correctionId, revision: 0, decision: "REJECTED" } as never))
-      .rejects.toBeInstanceOf(ZodError);
+      .rejects.toBeInstanceOf(ActionError);
     await expect(decide(finance.id, { id: correctionId, revision: 0, decision: "CANCELLED", note: "  " } as never))
-      .rejects.toBeInstanceOf(ZodError);
+      .rejects.toBeInstanceOf(ActionError);
     // decision 不在枚举内
     await expect(decide(finance.id, { id: correctionId, revision: 0, decision: "APPROVED", note: "x" } as never))
-      .rejects.toBeInstanceOf(ZodError);
+      .rejects.toBeInstanceOf(ActionError);
 
     const row = await readCorrection(correctionId);
     expect(row.status).toBe("PENDING");

@@ -11,6 +11,7 @@ import { assertMatterReviewCurrent } from "@/server/conflicts/matter-review";
 import { recordTimelineEvent } from "@/server/timeline/record";
 import { allocateCommissions } from "./commissions";
 import { ActionError } from "@/lib/action-error";
+import { parseInput } from "@/lib/parse-input";
 
 export async function createInstallments(db:Prisma.TransactionClient,billing:{id:string;matterId:string;moneyKind:MoneyKind},items:z.output<typeof billingSignInput>["installments"]) {
   for (const [index,item] of items.entries()) {
@@ -19,7 +20,7 @@ export async function createInstallments(db:Prisma.TransactionClient,billing:{id
   }
 }
 export async function registerBillingTx(db:Prisma.TransactionClient,userId:string,input:BillingRegistration) {
-  const data=billingRegistrationInput.parse(input);
+  const data=parseInput(billingRegistrationInput, input);
   await requireFinanceLedger(db);
   await assertLedgerWrite(db,userId,data.matterId,"finance.write",{allowTail:false});
   const id=randomUUID();
@@ -30,7 +31,7 @@ export async function registerBillingTx(db:Prisma.TransactionClient,userId:strin
   return {id,matterId:data.matterId};
 }
 export async function signBillingTx(db:Prisma.TransactionClient,userId:string,input:z.input<typeof billingSignInput>) {
-  const data=billingSignInput.parse(input);
+  const data=parseInput(billingSignInput, input);
   await requireFinanceLedger(db);
   const target=await db.billing.findUnique({where:{id:data.id},select:{matterId:true}});
   if(!target)throw new ActionError("收费安排不存在");
@@ -45,7 +46,7 @@ export async function signBillingTx(db:Prisma.TransactionClient,userId:string,in
   if(!billing)throw new ActionError("收费安排不存在");
  if(billing.sourceBillingId)throw new ActionError("补充协议须从合同变更入口确认生效");
  if(billing.revision!==data.revision || billing.status!=="DRAFT" || billing.signedAt)throw new ActionError("收费安排已签署或发生变化，请刷新");
- billingRegistrationInput.parse({matterId:billing.matterId,title:"签署",moneyKind:billing.moneyKind,amount:billing.contractAmount.toFixed(2),signedAt:data.signedAt,installments:data.installments});
+ parseInput(billingRegistrationInput, {matterId:billing.matterId,title:"签署",moneyKind:billing.moneyKind,amount:billing.contractAmount.toFixed(2),signedAt:data.signedAt,installments:data.installments});
  // 原合同签署＝委托范围正式承接（P2-7）：签署前须通过当前主体与范围的动态冲突复核。
  // 转案带入的草稿在转化时已建立继承复核记录，主体与范围未变化时指纹一致、正常放行。
  await assertMatterReviewCurrent(db,billing.matterId);
@@ -55,7 +56,7 @@ export async function signBillingTx(db:Prisma.TransactionClient,userId:string,in
   return {id:billing.id,matterId:billing.matterId};
 }
 export async function registerReceiptTx(db:Prisma.TransactionClient,userId:string,input:ReceiptRegistration) {
-  const data=receiptRegistrationInput.parse(input);
+  const data=parseInput(receiptRegistrationInput, input);
   await requireFinanceLedger(db);
   await assertLedgerWrite(db,userId,data.matterId,"finance.write");
   if(data.billingId) {
@@ -101,7 +102,7 @@ export async function confirmReceiptTx(db:Prisma.TransactionClient,userId:string
   return {id,matterId:entry.matterId};
 }
 export async function rejectReceiptTx(db:Prisma.TransactionClient,userId:string,id:string,reason:string) {
-  const note=z.string().trim().min(1,"请填写退回原因").max(1000).parse(reason);
+  const note=parseInput(z.string().trim().min(1,"请填写退回原因").max(1000), reason);
   const entry=await receiptForUpdate(db,userId,id);
   const removed=await db.feeEntry.deleteMany({where:{id,confirmState:"PENDING"}});
   if(removed.count!==1)throw new ActionError("此笔已被处理，请刷新");
@@ -111,7 +112,7 @@ export async function rejectReceiptTx(db:Prisma.TransactionClient,userId:string,
   return {id,matterId:entry.matterId};
 }
 export async function confirmDueConditionTx(db:Prisma.TransactionClient,userId:string,input:z.input<typeof conditionInput>) {
-  const data=conditionInput.parse(input);
+  const data=parseInput(conditionInput, input);
   if(data.satisfiedAt>new Date())throw new ActionError("条件成就日期不能在未来");
   await requireFinanceLedger(db);
   const target=await db.receivable.findUnique({where:{id:data.id},select:{matterId:true}});
@@ -125,7 +126,7 @@ export async function confirmDueConditionTx(db:Prisma.TransactionClient,userId:s
 }
 
 export async function registerExpenseTx(db:Prisma.TransactionClient,userId:string,input:ReceiptRegistration) {
-  const data=receiptRegistrationInput.parse(input);
+  const data=parseInput(receiptRegistrationInput, input);
   await requireFinanceLedger(db);await assertLedgerWrite(db,userId,data.matterId,"finance.write");
   if(data.billingId)throw new ActionError("支出请按案件登记，不关联收费合同");
   const id=randomUUID();
@@ -137,7 +138,7 @@ export async function registerExpenseTx(db:Prisma.TransactionClient,userId:strin
 /** 仅由已完成收案转化授权的事务调用；不把审批权限扩大为通用财务写入权限。 */
 export async function createIntakeBillingDraftTx(db:Prisma.TransactionClient,userId:string,input:{matterId:string;title:string;amount:Prisma.Decimal;schedule:string|null}) {
   await requireFinanceLedger(db);
-  const data=billingRegistrationInput.parse({...input,amount:input.amount.toFixed(2),moneyKind:"LAWYER_FEE",installments:[]});
+  const data=parseInput(billingRegistrationInput, {...input,amount:input.amount.toFixed(2),moneyKind:"LAWYER_FEE",installments:[]});
   const id=randomUUID();
   await db.$executeRaw`INSERT INTO "Billing" (id,"matterId",title,"contractAmount",schedule,status,"moneyKind","amendmentType","updatedAt") VALUES
     (${id},${data.matterId},${data.title},${input.amount},${input.schedule},'DRAFT','LAWYER_FEE','ORIGINAL',NOW())`;
