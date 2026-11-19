@@ -457,7 +457,13 @@ export async function listExpiringProperties(daysAhead = 60) {
         case: {
           OR: [
             { matter: { deletedAt: null, ...matterAssociationFilter(session.user.id) } },
-            { matterId: null, ownerId: session.user.id }
+            { matterId: null, ownerId: session.user.id },
+            // 兜底（2026-11-19 测试挖出的沉默失效）：PreservationCase.matterId 是
+            // onDelete: SetNull。案件若被硬删（应用层目前无入口，但数据库层允许），
+            // 且原负责人也已离职/停用（ownerId 也变 null），上面两个分支都不匹配——
+            // 该财产从此不进入任何人的到期预警，到期未续保即自动解封，无人知晓。
+            // 这类"孤儿保全"对管理岗可见，由管理者指派新的负责人。
+            ...(isManager(session.user.role) ? [{ matterId: null, ownerId: null }] : [])
           ]
         }
       }
