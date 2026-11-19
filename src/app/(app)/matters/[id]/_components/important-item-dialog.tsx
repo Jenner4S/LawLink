@@ -2,18 +2,9 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Gavel,
-  Loader2,
-  Package,
-  ScanLine,
-  ScanText,
-  StickyNote
-} from "lucide-react";
+import { Loader2, ScanLine, ScanText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -42,41 +33,14 @@ import type { DeadlineCreateInput } from "@/server/procedures/schemas";
 import { createExpress } from "@/server/express/actions";
 import { parseExpressLabel } from "@/server/ai/parse-express";
 import { parseSummons } from "@/server/ai/parse-summons";
-import { shDayKey, shTime } from "@/lib/ui/sh-time";
 import { actionErrorMessage } from "@/lib/action-error";
 
 export type ImportantCategory = "hearing" | "deadline" | "express" | "memo";
 // ============ 统一添加重要事项 ============
 
-const importantTypeMeta: Record<ImportantCategory, { label: string; icon: React.ElementType }> = {
-  hearing: { label: "开庭", icon: Gavel },
-  deadline: { label: "期限", icon: AlertTriangle },
-  express: { label: "快递", icon: Package },
-  memo: { label: "备忘", icon: StickyNote }
-};
-
-const CN_NUM: Record<number, string> = {
-  1: "一",
-  2: "二",
-  3: "三",
-  4: "四",
-  5: "五",
-  6: "六",
-  7: "七",
-  8: "八",
-  9: "九",
-  10: "十"
-};
-
-/** 输入框值是上海墙钟；默认「现在的上海日期/时刻」，解析统一按 +08:00 固定偏移 */
-function toDateInput(date = new Date()) {
-  return shDayKey(date);
-}
-
-function toDateTimeInput(date = new Date()) {
-  return `${shDayKey(date)}T${shTime(date)}`;
-}
-
+// importantTypeMeta / CN_NUM / toDateInput / toDateTimeInput 已抽到 ./important-item-shared
+// （2026-11-20 结构治理第一层：只搬无状态部分）
+import { CN_NUM, ImportantField, ProcedureSelect, importantTypeMeta, toDateInput, toDateTimeInput } from "./important-item-shared";
 export function ImportantItemDialog({
   open,
   onOpenChange,
@@ -721,49 +685,4 @@ export function ImportantItemDialog({
   );
 }
 
-function ProcedureSelect({
-  value,
-  procedures,
-  disabled,
-  onChange
-}: {
-  value: string;
-  procedures: { id: string; label: string }[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger>
-        <SelectValue placeholder="选择所处程序" />
-      </SelectTrigger>
-      <SelectContent>
-        {procedures.map((p) => (
-          <SelectItem key={p.id} value={p.id}>
-            {p.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
-function ImportantField({
-  label,
-  required,
-  children
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="flex items-center gap-1 text-xs">
-        {label}
-        {required && <span className="text-destructive">*</span>}
-      </Label>
-      {children}
-    </div>
-  );
-}
