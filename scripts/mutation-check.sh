@@ -150,7 +150,12 @@ if [ "$SLOW" -eq 1 ]; then
 
   echo
   echo "[M5] 故意加 eslint warning，deploy.sh 应明确拦住"
-  printf 'export const __mutationProbe2 = 1;\n' > "$PROBE"
+  # 2026-11-21：探针必须是【未使用的局部变量】。
+  # 第一版写的是 `export const __mutationProbe2 = 1;` —— 导出的常量不算 unused，
+  # eslint 不报 warning，deploy.sh 正常通过，于是脚本误报「M5 失败」。
+  # 那是变异脚本自己的 bug，不是 deploy.sh 的问题。
+  # 实测确认：`export const x = 1;` 零 warning；`const x = 1; export const keep = 2;` 报 unused。
+  printf 'const __mutationProbe2 = 1;\nexport const __keep = 2;\n' > "$PROBE"
   ./scripts/deploy.sh --skip-tests >/dev/null 2>&1
   CODE=$?
   rm -f "$PROBE"
