@@ -1,0 +1,219 @@
+# 审计模式清单
+
+> 用途：列出本项目**反复出现的缺陷类型**，每种给出「长什么样」「怎么查」「查到后怎么修」。
+> 来源：2026-11 月 82 轮审计中实际踩到的坑，不是理论推演。
+> 配套：`VERIFICATION-PLAYBOOK.md` 讲**怎么验证**，本文讲**该查什么**。
+
+---
+
+## 一、隔离墙漏接（12 个入口，最反复）
+
+**症状**：被隔离在某个案件的人，仍能读到/改到该案的数据。
+
+**根因**：`isMatterWalledFor` 与 `ethicalWallExclusion` 建好了，但**每次新加功能都可能忘记接线**。墙只挂在「列表读取」这一条路上，写路径、导出路径、AI 路径各走各的。
+
+**怎么查**：
+
+```bash
+# 1) 找出所有以 Matter 为对象的断言
+rg -n "^export (async )?function assert.*Matter" src/lib/permissions/index.ts
+
+# 2) 逐个看它内部用的是什么 filter
+#    含墙的：matterReadVisibilityFilter / matterFinanceVisibilityFilter / ethicalWallExclusion
+#    不含墙的：matterAssociationFilter（只查 owner/members）、裸 { id, deletedAt: null }
+
+# 3) 对每个「接受 matterId 参数」的函数做同样检查
+rg -n "export (async )?function [a-zA-Z]+\([^)]*matterId" -g '*.ts' -g '!*.test.*' src/
+```
+
+**已修的 12 个入口**（新增功能时对照，别再漏）：
+
+| 入口 | 位置 |
+|---|---|
+| 财务写 | `finance/ledger-access.ts` `assertLedgerWrite` |
+| 文档写 | `archive/guard.ts`（内部 `findWritableMatter`，经 `assertMatterWritable` / `assertDocumentWritable` 对外） |
+| 材料下载/预览 | `approvals/documents.ts` `canReadDocument` |
+| AI 全文外发 | `ai/document-access.ts` `canReviewDocument` |
+| 工作簿导出 | `matters/export-query.ts` `buildMatterWhere` |
+| 完整卷宗导出 | `api/archive/[matterId]/export/route.ts` |
+| 报表导出 | `lib/roles/report-scope.ts` `reportAccess` |
+| 案件办理断言 | `permissions/index.ts` `assertCanHandleMatter` |
+| 主办/协办断言 | `assertCanLeadMatter` / `assertCanOwnMatter` / `assertCanModifyMatter` |
+| 个人工作台 | `reminders/work-actions.ts` `getWorkBoard` |
+| 审批记录可见性 | `approval-permissions/records.ts` `approvalRecordAccess` |
+
+**未修的 1 个（已登记）**：通知（`notifications/actions.ts`）——`refType` 多态，修复需重构提醒链路。见 `DELIVERY-STATUS` 已知限制。
+
+**修的时候用哪种写法**：
+
+```ts
+// ✅ 首选：拼进 where（零额外查询，不引入新依赖，测试 mock 不受影响）
+where: { ..., ...ethicalWallExclusion(userId, role) }
+
+// ✅ 需要判「是否命中」时用对象级判定
+if (await isMatterWalledFor(prisma, { matterId, userId, role })) throw new ActionError("...")
+
+// ❌ 不要把墙放进「角色分支」里 —— 墙对全所生效（含合伙人/管理员），
+//    被 isManager 的 {} 短路掉就等于没接
+```
+
+**踩过的坑**：`role` 传空字符串会让 Prisma 把 `{ denyType: "ROLE", role: "" }` 当无效枚举抛 `PrismaClientValidationError`。空角色时应**不生成** ROLE 条件。
+
+---
+
+## 二、日期静默滚动（5 处，同一个 bug 换位置）
+
+**症状**：`2026-02-30` 被接受，存成 3 月 2 日；`2026.13.01` 滚成 12 月 31 日。
+
+**根因**：`new Date(y, m, d)` / `Date.UTC(y, m, d)` / `new Date("2026-02-30T00:00:00+08:00")` **都不报错**，V8 会顺延。`Number.isNaN(getTime())` 对滚动后的日期返回 **false**，拦不住。
+
+**怎么查**：
+
+```bash
+# 手写的日期构造（最高风险）
+rg -n 'new Date\(`|new Date\(Number\(|Date\.UTC\(' -g '*.ts' -g '!*.test.*' src/
+
+# 逐个确认：解析后有没有拿 shDayKey 回验？
+```
+
+**必须用统一函数**（`src/lib/ui/sh-time.ts`）：
+
+```ts
+parseShDayStart("2026-09-20")   // → 上海 9/20 00:00，日期不存在返回 null
+parseShDayEnd("2026-09-20")     // → 上海 9/20 23:59:59.999
+parseShDateTime("2026-09-20", "10:00")  // 日期 + 时刻都验
+```
+
+**一个额外陷阱**：`new Date(y, m, d)` 按**运行时区**解释。容器是 UTC，写 `new Date(2026, 8, 20)` 会得到「上海 08:00」而不是「上海 00:00」——**整体偏 8 小时**。必须走 `+08:00` 拼接。
+
+**已修 5 处**：导出筛选边界 / 短信解析 / 文书日期登记 / 隔离墙失效日期 / 案件批量导入。
+
+---
+
+## 三、同一逻辑写了多遍，只修对一处
+
+**症状**：两份实现行为不一致，或一份修好了另一份没动。
+
+**已发现的三组**：
+
+| 逻辑 | 写的次数 | 结果 |
+|---|---|---|
+| 日期回验 | 4 处 | 2 处漏了月日 → 已收拢为 `sh-time` 三个函数 |
+| 案件类别标签 | 3 种叫法（民商诉讼 / 民商事 / 民诉） | 已统一到 `enums.ts`；剩下的是编号前缀等合理用途 |
+| 金额累加 | 5 处 `acc + Number(x)` | 已统一为 `Decimal.plus` |
+
+**怎么查**：
+
+```bash
+# 找同一业务概念的多处手写字面量
+rg -n '"民商诉讼"|"劳动仲裁"|"刑事诉讼"' -g '*.ts' -g '!*.test.*' src/ | grep -v enums.ts
+
+# 找同一校验形态的多份实现
+rg -n 'Number.isNaN\(.*getTime\(\)\)' -g '*.ts' -g '!*.test.*' src/
+rg -n 'acc \+ Number\(' -g '*.ts' -g '!*.test.*' src/
+```
+
+**判断标准**：**能被别处复用的才该抽**。编号前缀（"民"）、程序代码（"CC"）、可配置类词（"民诉"）是**不同用途**，不抽。
+
+---
+
+## 四、软删 / 硬删口径不一致
+
+**症状**：列表看不到某个案件，但知道 ID 就能下载它的材料；或删材料把审核记录一起删了。
+
+**怎么查**：对每个「按 matterId 取数」的查询，确认 `where` 里有没有 `deletedAt: null`：
+
+```bash
+rg -n "matterId" -A3 src/lib/approvals/documents.ts | grep -E "deletedAt|count|findFirst"
+```
+
+**两个已修的点**：
+
+- `canReadDocument` 的 matter 分支此前**没有** `deletedAt: null`（`listMatters` / `assertCanReadMatter` 都有）
+- `hardDeleteDocument` 会经 `onDelete: Cascade` 抹掉 `ReviewRecord`（合规证据）→ 已加运行时保护：有审核记录的材料禁止硬删
+
+**判断原则**：软删可恢复，所以「恢复后材料自动重新可下载」不算冲突；但**审核留痕不该因删材料而消失**。
+
+---
+
+## 五、错误类型与文案
+
+**三个具体问题**：
+
+1. **抛 `new Error` 而非 `ActionError`** → `actionErrorMessage` 不识别，用户看到 Next.js 通用错误页而不是那句中文提示
+2. **zod 默认 message 是英文**（`"Too small: expected string to have >=2 characters"`）→ `parseInput` 已加中文兜底
+3. **技术错误误导**：发票重复凭据编号落到 `P2010(23505)`，被翻译成「账务或授权已变化，请刷新后重试」——对「编号已登记过」完全是误导
+
+**怎么查**：
+
+```bash
+# 业务断言抛 Error 而非 ActionError
+rg -n "throw new Error\(" -g '*.ts' -g '!*.test.*' src/
+
+# schema.parse（会漏英文结构）vs parseInput（中文可读）
+rg -n "\.parse\(" -g '*.ts' -g '!*.test.*' src/server | grep -v "JSON.parse"
+```
+
+---
+
+## 六、我自己的误判模式（13 次，最该防的）
+
+**比缺陷更难防的是「用对的工具读错的信号」。**
+
+| # | 误判 | 正确做法 |
+|---|---|---|
+| 1–5 | 把浏览器缓存当代码回归（或反之） | **看 `lang` 属性**：空 ⇒ 错误页 ⇒ 真回归；有值 ⇒ 可能是旧构建 |
+| 6 | 防御措施误报（`/500/i` 匹配了含 "500" 的正常页面） | 正则要**精确到完整错误串** |
+| 7 | "某处缺少 X" 的中途结论 | 必须**读完数据流出口**才能断言 |
+| 8 | 把「文件里所有 export function」当成「调用该断言的函数」 | 用 `awk` 定位**调用行所属函数**，不是文件级列表 |
+| 9 | 统计零引用时**漏掉 `src/tests/`** | 有测试覆盖 = 有意保留，是保留判断的第一手证据 |
+| 10 | `rg -l` 命中文件就判「符号存在」 | **看具体行**（`rg -n`）——命中的可能是我自己写的注释 |
+| 11 | 用 `disabled={pending}` 精确匹配，漏掉 `busyId === id` 等写法 | 判断「有没有保护」必须看**实际形态**，不能套单一模式 |
+| 12 | `rg -L` 语义误解（那是跟随符号链接，不是"不含匹配"） | 用 `--files-without-match` 或逐行判断 |
+| 13 | **批量正则替换误伤同类字符串**（给 select 加 `matterId` 时打中了没有该字段的 Intake） | 批量替换前**确认目标串唯一**；宁可逐处改 |
+
+**共同点**：都是「工具用对了，信号读错了」。
+
+**防范**：任何"我发现 X" 的结论，先问一句——**我是怎么知道的？我的检测方式会不会误报？**
+
+---
+
+## 七、每次审计的固定动作
+
+```bash
+# 1) 静态：类型 + 测试 + lint
+npx tsc --noEmit
+npx vitest run
+npx eslint <改动的文件>
+
+# 2) 数据：schema 与库是否漂移
+npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \
+                        --to-schema-datamodel prisma/schema.prisma --script
+#    期望 "This is an empty migration."
+
+# 3) 真机：83 项 UI 巡检
+sh scripts/verify-ui.sh chrome && node scripts/verify-ui.mjs all
+
+# 4) 部署后：镜像 ID 与 BUILD_ID 都要变
+docker images lawlink-app --format "{{.ID}} {{.CreatedAt}}"
+curl -s http://localhost:3000/api/version    # 期望 b2026...，不是 dev
+```
+
+**`BUILD_ID` 必须是真实值**：它是「页面已过期」检测的依据。`dev` 会让检测失效，用户可能撞到 `Failed to find Server Action`。`docker compose build` 要在**同一个 shell** 里先 `export BUILD_ID=...`。
+
+---
+
+## 八、这份清单怎么用
+
+**新增功能时**：
+1. 走一遍第一节（隔离墙）——问「这个新入口要不要墙」
+2. 涉及日期解析 → 用 `sh-time` 的函数，自己别写 `new Date`
+3. 涉及金额 → 用 `Decimal.plus`，别 `acc + Number(x)`
+4. 抛出业务错误 → `ActionError`，不是 `Error`
+5. 表单校验 → `parseInput`，不是 `schema.parse`
+
+**做审计时**：
+- 从第一节往下扫，每节都给了 grep 命令
+- 结论前先过第六节（我自己的误判模式）
+
+**这份清单不保证穷尽**——它只记录已经踩过的坑。新坑出现了就补进来。
