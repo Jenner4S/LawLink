@@ -297,7 +297,11 @@ export default async function MatterDetailPage({ params }: PageProps) {
                 : null
             }
             invoicePending={signals.invoicePending}
-            service={null}
+            service={
+              matter.serviceStart || matter.serviceEnd
+                ? { start: matter.serviceStart, end: matter.serviceEnd }
+                : null
+            }
           />
         }
         timeNode={
