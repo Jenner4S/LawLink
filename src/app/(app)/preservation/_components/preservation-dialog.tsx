@@ -357,15 +357,23 @@ export function AddPropertyDialog({ open, onOpenChange, targetId }: { open: bool
 
 export function RenewPropertyDialog({ open, onOpenChange, property }: { open: boolean; onOpenChange: (o: boolean) => void; property: { id: string; expiryDate: Date } }) {
   const [isPending, startTransition] = useTransition();
-  const [days, setDays] = useState("365");
+  // 2026-11-19：单位从「天」改为可选 年/月/日，默认「1 年」。
+  // 日期不再由前端算——此前 `原到期日 + 365 × 86400000` 跨闰年会少一天
+  // （2027-06-15 得 2028-06-14，法定一年是 2028-06-15）。现在服务端用
+  // computeDeadlineDate 按单位计算，与「默认到期日」同一套逻辑。
+  const [amount, setAmount] = useState("1");
+  const [unit, setUnit] = useState<"DAYS" | "MONTHS" | "YEARS">("YEARS");
   const [note, setNote] = useState("");
 
   function handleSubmit() {
-    const d = parseInt(days) || 365;
-    const newExpiry = new Date(property.expiryDate.getTime() + d * 86400000);
+    const value = parseInt(amount, 10);
+    if (!Number.isInteger(value) || value <= 0) {
+      toast.error("请输入正整数");
+      return;
+    }
     startTransition(async () => {
       try {
-        await renewProperty({ propertyId: property.id, newExpiryDate: newExpiry, renewalDuration: d, note });
+        await renewProperty({ propertyId: property.id, renewalDuration: value, renewalUnit: unit, note });
         toast.success("续保成功");
         onOpenChange(false);
       } catch (err) {
@@ -381,7 +389,23 @@ export function RenewPropertyDialog({ open, onOpenChange, property }: { open: bo
         <FormDialogBody>
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">当前到期日：{formatDate(property.expiryDate)}</p>
-          <Field label="续保天数"><Input type="number" value={days} onChange={(e) => setDays(e.target.value)} className="h-9 text-xs font-mono" /></Field>
+          <Field label="续保期限">
+            <div className="flex gap-2">
+              <Input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} className="h-9 flex-1 text-xs font-mono" />
+              <select
+                value={unit}
+                onChange={(e) => setUnit(e.target.value as "DAYS" | "MONTHS" | "YEARS")}
+                className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="YEARS">年</option>
+                <option value="MONTHS">月</option>
+                <option value="DAYS">天</option>
+              </select>
+            </div>
+          </Field>
+          <p className="text-[11px] text-muted-foreground">
+            按「年 / 月」续保时按日历计算（含闰年），不会出现「一年少一天」；按「天」续保按自然日累加。
+          </p>
           <Field label="备注"><Input value={note} onChange={(e) => setNote(e.target.value)} className="h-9 text-xs" /></Field>
         </div>
         </FormDialogBody>

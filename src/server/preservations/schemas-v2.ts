@@ -74,10 +74,23 @@ export const propertyUpdateSchema = z.object({
   amount: z.coerce.number().nonnegative().optional().nullable(),
 });
 
+/**
+ * 续保入参（2026-11-19 改）
+ *
+ * 此前由调用方传 newExpiryDate，服务端只做「必须晚于原到期日」的比较——
+ * 日期怎么算完全取决于调用方。UI 用 `原到期日 + 天数 × 86400000` 推进，
+ * 跨闰年会少一天：2027-06-15 续保 365 天得 2028-06-14，而法定一年是 2028-06-15。
+ * 方向偏早虽不越法定期限，但对客户是少保护一天，且台账写「续保 365 天」与实际不符。
+ *
+ * 现在只收「数值 + 单位」，由服务端用 computeDeadlineDate 计算（与默认到期日同一函数，
+ * 月末钳制/跨闰年都正确）。调用方无法再传入一个算错的日期。
+ */
 export const propertyRenewSchema = z.object({
   propertyId: z.string().cuid(),
-  newExpiryDate: z.coerce.date(),
-  renewalDuration: z.coerce.number().int().positive(),
+  renewalDuration: z.coerce.number().int().positive().max(3600),
+  // 必须显式指定单位：不给默认值。否则旧载荷 { renewalDuration: 365 }（语义是天）
+  // 会被 zod 默认成 365 年（zod 默认 YEARS 与 DB 默认 DAYS 倒置），到期日跳到 2393 年。
+  renewalUnit: z.enum(["DAYS", "MONTHS", "YEARS"]),
   note: z.string().max(300).optional().or(z.literal("")),
 });
 

@@ -2307,6 +2307,10 @@ model PreservationPropertyRenewal {
   oldExpiryDate   DateTime
   newExpiryDate   DateTime
   renewalDuration Int
+  /// 续保单位（2026-11-19）：此前只有天数，导致「续保一年」被记成「续保 365 天」，
+  /// 而闰年 365 天 ≠ 一年（2027-06-15 + 365 天 = 2028-06-14，法定应为 2028-06-15）。
+  /// 单位决定 renewedAt 的日期算法，也是台账可读性的依据。
+  renewalUnit     DeadlinePeriodUnit @default(DAYS)
   note            String?
 
   performedById String

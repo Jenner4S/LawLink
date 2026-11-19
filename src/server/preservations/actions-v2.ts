@@ -2,6 +2,7 @@
 import { roleMutation, checkRoleMutation } from "@/lib/roles/service";
 import { parseInput } from "@/lib/parse-input";
 import { isManager } from "@/lib/permissions";
+import { computeDeadlineDate } from "@/lib/deadline-rules";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -368,7 +369,11 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
   await assertCanAccessPreservationCaseRecord(session.user.id, prop.target.case);
   if (prop.status === "LIFTED") throw new ActionError("已解除的保全不可续保");
   if (prop.target.case.matterId) await assertMatterWritable(prop.target.case.matterId);
-  if (data.newExpiryDate <= prop.expiryDate) {
+  // 2026-11-19：日期由服务端按「数值 + 单位」计算，不再接受调用方传入的日期。
+  // computeDeadlineDate 与「默认到期日」用的是同一个函数，月末钳制与跨闰年都正确：
+  // 2027-06-15 + 1 年 = 2028-06-15（此前 UI 按 365 天算得 2028-06-14，少保护一天）。
+  const newExpiryDate = computeDeadlineDate(prop.expiryDate, data.renewalDuration, data.renewalUnit);
+  if (newExpiryDate <= prop.expiryDate) {
     throw new ActionError("新到期日必须晚于原到期日");
   }
 
@@ -379,15 +384,16 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
         propertyId: data.propertyId,
         renewedAt: new Date(),
         oldExpiryDate: prop.expiryDate,
-        newExpiryDate: data.newExpiryDate,
+        newExpiryDate,
         renewalDuration: data.renewalDuration,
+        renewalUnit: data.renewalUnit,
         note: data.note?.trim() || null,
         performedById: session.user.id
       }
     });
     await db.preservationProperty.update({
       where: { id: data.propertyId },
-      data: { expiryDate: data.newExpiryDate, status: "RENEWED" }
+      data: { expiryDate: newExpiryDate, status: "RENEWED" }
     });
     // F-1 阶段一：续封改期后旧档位登记全部作废（到期日变了，旧档位提醒失效）
     await voidPendingPreservation([data.propertyId], "SUPERSEDED", "RENEWED", db);
