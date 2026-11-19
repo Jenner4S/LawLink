@@ -124,6 +124,46 @@ async function connect() {
 }
 
 /** 导航并等待「有实质内容」。返回耗时 ms。 */
+/**
+ * 页面健康诊断（2026-11-20 新增）。
+ *
+ * 为什么需要它：我在 5 轮里 5 次「读错信号」——
+ *   30 轮把 :focus-visible 的假阳性当缺陷
+ *   31 轮把导出 API 当成案件详情
+ *   33 轮用 raw client 复现失败就否定报告
+ *   33 轮把缓存的旧构建当成功部署
+ *   39 轮把「Server Action 失效」直接归因缓存，实际是真回归
+ *
+ * 最后一次尤其危险：缓存与真回归的 DOM 信号相近，但性质完全不同。
+ * 这里把它们区分开——只看一个指标就下结论是误判的根源。
+ */
+async function diagnosePage(ctx) {
+  const raw = await ctx.evaluate(`(function(){
+    var t = document.body.innerText || "";
+    var html = document.documentElement;
+    return JSON.stringify({
+      lang: html.getAttribute("lang") || "",
+      chars: t.trim().length,
+      // Next.js 错误页的特征文案
+      looksLikeErrorPage: /This page couldn.t load|Application error|Minified React error|Internal Server Error/i.test(t),
+      // 未水合/旧构建：页面有内容但 Server Action 找不到
+      hasActionMismatch: /Failed to find Server Action/i.test(t),
+      // 500 页面：只认完整短语，不用裸 "500" ——
+      // 页面里任何数字（金额、条数）都可能含 500，用裸数字判断会误报。
+      // 我第一版就是 /500|server error/，结果把 /admin/express（内容完全正常）
+      // 判成错误页，这是本项目第 6 次「自己制造的误判」。
+      isServerError: /Internal Server Error|Application error: a server-side exception/i.test(t),
+      title: document.title || ""
+    });
+  })()`);
+  const d = raw ? JSON.parse(raw) : {};
+  let verdict = "ok";
+  if (d.looksLikeErrorPage || d.isServerError) verdict = "error-page";
+  else if (d.lang === "" && d.chars < 200) verdict = "not-rendered"; // 错误页无 lang，是关键判据
+  else if (d.chars === 0) verdict = "empty";
+  return { ...d, verdict };
+}
+
 async function goto(ctx, path, { minChars = 60, timeout = 15000 } = {}) {
   const t0 = Date.now();
   await ctx.send("Page.navigate", { url: BASE + path });
@@ -136,7 +176,8 @@ async function goto(ctx, path, { minChars = 60, timeout = 15000 } = {}) {
     );
     if (ready || waited >= timeout) break;
   }
-  return Date.now() - t0;
+  const diag = await diagnosePage(ctx);
+  return { ms: Date.now() - t0, ...diag };
 }
 
 /** 等某个选择器出现，超时抛错（比固定 sleep 可靠）。 */
@@ -253,10 +294,15 @@ const ROUTES = [
 async function checkRoutes(ctx) {
   section(`路由巡检（${ROUTES.length} 条）`);
   for (const route of ROUTES) {
-    const ms = await goto(ctx, route, { minChars: 40 });
-    const err = await hasError(ctx);
-    const empty = await ctx.evaluate("document.body.innerText.trim().length < 40");
-    record("routes", route, !err && !empty, err ? "页面报错" : empty ? "内容为空" : `${ms}ms`);
+    const d = await goto(ctx, route, { minChars: 40 });
+    // 用诊断结论判定，并给出**具体**失败原因（而不是笼统的「内容为空」）
+    const ok = d.verdict === "ok";
+    const reason =
+      d.verdict === "error-page" ? `错误页：${d.title || "无标题"}`
+      : d.verdict === "not-rendered" ? `未渲染（lang 为空、正文 ${d.chars} 字）— 真回归，非缓存`
+      : d.verdict === "empty" ? "正文为空"
+      : `${d.ms}ms`;
+    record("routes", route, ok, reason);
   }
 }
 
@@ -447,8 +493,8 @@ async function checkTiming(ctx) {
     ["/admin/audit", "审计管理"], ["/finance/reconciliation", "财务核销"]
   ];
   for (const [path, name] of PAGES) {
-    const ms = await goto(ctx, path);
-    record("timing", name, ms < 3000, `${ms}ms`);
+    const d = await goto(ctx, path);
+    record("timing", name, d.ms < 3000 && d.verdict === "ok", `${d.ms}ms${d.verdict !== "ok" ? " ⚠️ " + d.verdict : ""}`);
   }
 }
 

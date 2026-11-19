@@ -139,6 +139,52 @@ TZ=UTC-8      → 2026-12-31 + 1 年 = 2027-12-30 ❌
 
 ---
 
+## 三点五、区分「缓存」与「真回归」（第 5 次误判的教训）
+
+第 39 轮我把 `Server Action` 失败的报错直接归因为浏览器缓存——因为第 30 轮遇过同样的提示。**那次是真回归。**
+
+| 现象 | 缓存（旧构建） | 真回归 |
+|---|---|---|
+| 报错 | `Failed to find Server Action` | 同左，**无法靠报错区分** |
+| `document.documentElement.lang` | **有值**（页面正常渲染，只是逻辑旧） | **为空**（错误页不设 lang） |
+| 页面标题 | 正常 | 可能为 `LawLink — 律师案件管理系统`（fallback） |
+| `document.body.innerText` | 有完整内容 | 只有 `This page couldn't load` 之类 |
+
+**判据：`lang` 是否为空。** 错误页不会设置 `lang`。
+
+工具的 `diagnosePage()` 已经把这个判据编码进去了，会直接返回 `verdict`：
+`ok` / `error-page` / `not-rendered` / `empty`。**不要自己盯报错文案猜。**
+
+---
+
+## 三点六、防御措施本身也会误判（第 6 次）
+
+我为防误判写了 `diagnosePage()`，**它第一次运行就误报了**：
+
+```js
+// ❌ 我写的
+isServerError: /500|server error/i.test(t)
+
+// 结果：/admin/express（内容完全正常）被判成错误页，
+// 因为页面里任何含 "500" 的数字（金额、条数）都会命中。
+```
+
+**教训：判断条件里的裸数字是最危险的正则。**
+
+```js
+// ✅ 只认完整短语
+isServerError: /Internal Server Error|Application error: a server-side exception/i.test(t)
+```
+
+**同型风险清单**（写检查规则时逐条自查）：
+- 裸数字 `500` / `404` / `0` —— 会命中业务数据
+- 裸单词 `error` / `fail` —— 会命中正常文案（"失败率""错误日志"）
+- 关键字猜测（"本案" vs 实际用词"案件"）—— 第 31 轮踩过
+
+**规则：宁可用完整短语、宁可漏报（漏报会被下一条规则补上），也不要宽匹配。**
+
+---
+
 ## 四、检查清单（每次提交前）
 
 - [ ] `npx vitest run` 全绿
