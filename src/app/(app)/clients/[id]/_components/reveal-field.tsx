@@ -67,11 +67,3 @@ export function RevealField({
     </span>
   );
 }
-
-/** 把身份证号/统一社会信用代码脱敏：保留前 4 位与后 4 位 */
-export function maskIdNumber(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const s = String(value);
-  if (s.length <= 8) return "****";
-  return `${s.slice(0, 4)}${"*".repeat(Math.max(4, s.length - 8))}${s.slice(-4)}`;
-}

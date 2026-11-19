@@ -7,7 +7,8 @@ import { ChevronLeft, Folder, Users, CreditCard, UserRound } from "lucide-react"
 import { getClientById, getClientFinanceSummary } from "@/server/clients/actions";
 import { getClientInsights } from "@/server/clients/insights";
 import { isManager } from "@/lib/permissions";
-import { RevealField, maskIdNumber } from "./_components/reveal-field";
+import { RevealField } from "./_components/reveal-field";
+import { maskIdNumber, maskPhone } from "@/lib/ui/mask";
 import { decryptIdNumber } from "@/lib/clients/id-number-crypto";
 import { clientTypeLabel, cooperationStatusLabel, genderLabel, matterCategoryLabel, matterStatusLabel } from "@/lib/enums";
 import { matterHref } from "@/lib/matters/route";
@@ -166,7 +167,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                         <RevealField
                           kind="contactPhone"
                           targetId={c.id}
-                          masked={c.phone.length > 4 ? `${c.phone.slice(0, 3)}****${c.phone.slice(-2)}` : "****"}
+                          masked={maskPhone(c.phone)}
                         />
                       ) : null}
                       {c.email ? <span>· {c.email}</span> : null}
