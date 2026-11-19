@@ -377,8 +377,32 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
     throw new ActionError("新到期日必须晚于原到期日");
   }
 
+  // 2026-11-21 修复（P1，多智能体审计「并发安全」维度）：
+  //
+  // 原实现把 `findUnique` 读到的 `prop.expiryDate` 拿到事务外算新日期，
+  // 然后在事务里**无条件** `update({ where: { id } })` 写回。
+  //
+  // 两人同时续封同一笔保全时：
+  //   都读到 expiryDate = 2027-01-01 → 都算出 2029-01-01（各续两年）
+  //   → 两条续封记录都写进台账，但到期日只被推到 2029-01-01 一次。
+  // 账面显示续了四年，实际只延了两年。**保全提前到期 = 保全效力丧失**，
+  // 这在律所是执业事故，不只是数据不准。
+  //
+  // 改成条件更新（compare-and-set）：只有「到期日仍是我们读到的那个值」才写。
+  // 抢输的一方 count=0，明确报冲突让律师刷新重试，而不是静默吞掉一次续期。
+  //
+  // 顺序也调了：先更新到期日、再写续封记录。
+  // 万一中途失败，宁可「保全已延期但台账少一条」（有利方向），
+  // 不能「台账写了延期但保全没延」（危险方向）。
   await prisma.$transaction(async db => {
     await checkRoleMutation(db, session.user, "matters.write");
+    const updated = await db.preservationProperty.updateMany({
+      where: { id: data.propertyId, expiryDate: prop.expiryDate, status: { not: "LIFTED" } },
+      data: { expiryDate: newExpiryDate, status: "RENEWED" }
+    });
+    if (updated.count === 0) {
+      throw new ActionError("该保全的到期日已被他人续封或变更，请刷新后按最新到期日重试");
+    }
     await db.preservationPropertyRenewal.create({
       data: {
         propertyId: data.propertyId,
@@ -390,10 +414,6 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
         note: data.note?.trim() || null,
         performedById: session.user.id
       }
-    });
-    await db.preservationProperty.update({
-      where: { id: data.propertyId },
-      data: { expiryDate: newExpiryDate, status: "RENEWED" }
     });
     // F-1 阶段一：续封改期后旧档位登记全部作废（到期日变了，旧档位提醒失效）
     await voidPendingPreservation([data.propertyId], "SUPERSEDED", "RENEWED", db);

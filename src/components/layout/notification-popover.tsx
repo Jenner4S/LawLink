@@ -16,6 +16,8 @@ import {
 } from "@/server/notifications/actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { actionErrorMessage } from "@/lib/action-error";
 
 const typeIcons: Record<string, string> = {
   PRESERVATION_EXPIRY: "🛡️",
@@ -111,18 +113,39 @@ export function NotificationPopover() {
     return () => clearInterval(timer);
   }, [poll]);
 
+  /**
+   * 2026-11-21 修复（P2，多智能体审计「错误处理」维度）：
+   * 这三个处理器原来都是裸 `async`，`onClick` 直接绑定。
+   * React 会丢弃返回的 Promise，任何异常都变成 unhandled rejection ——
+   * 用户看到的是「点了没反应」：铃铛不弹、红点不消、点通知不跳转，
+   * 屏幕上没有任何解释。对靠提醒盯期限的律师，等于一条期限提醒被静默吞掉。
+   *
+   * 现在统一 try/catch + toast。**注意两个刻意的取舍**：
+   *   · 标记已读失败时**仍然跳转** —— 用户点通知是想看内容，
+   *     不能因为「已读状态没写进去」就把人拦在原地；未读数保持原样才是正确的。
+   *   · 拉取通知失败时保留上一次的列表，不清空 —— 清空等于告诉用户「没有通知」，
+   *     那比显示旧数据更误导。
+   */
   const handleOpen = async (isOpen: boolean) => {
     setOpen(isOpen);
-    if (isOpen) {
+    if (!isOpen) return;
+    try {
       const list = await getNotifications({ limit: 20 });
       setNotifications(list);
+    } catch (err) {
+      toast.error("通知列表加载失败", { description: actionErrorMessage(err) });
     }
   };
 
   const handleMarkRead = async (id: string, href?: string | null) => {
-    await markNotificationRead(id);
-    setUnread((prev) => Math.max(0, prev - 1));
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true, readAt: new Date() } : n));
+    try {
+      await markNotificationRead(id);
+      setUnread((prev) => Math.max(0, prev - 1));
+      setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true, readAt: new Date() } : n));
+    } catch (err) {
+      // 已读没写成，红点保持 —— 但不要拦住用户去看内容
+      toast.error("标记已读失败", { description: actionErrorMessage(err) });
+    }
     if (href) {
       setOpen(false);
       router.push(href);
@@ -130,9 +153,13 @@ export function NotificationPopover() {
   };
 
   const handleMarkAllRead = async () => {
-    await markAllNotificationsRead();
-    setUnread(0);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true, readAt: new Date() })));
+    try {
+      await markAllNotificationsRead();
+      setUnread(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true, readAt: new Date() })));
+    } catch (err) {
+      toast.error("全部标记已读失败", { description: actionErrorMessage(err) });
+    }
   };
 
   return (
