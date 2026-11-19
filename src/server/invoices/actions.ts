@@ -363,7 +363,7 @@ export async function getInvoiceStats() {
       _sum: { amount: true },
       where: { invoice: issuedWhere }
     });
-    adjustmentTotal = adjustments.reduce((acc, r) => acc + Number(r._sum.amount ?? 0), 0);
+    adjustmentTotal = adjustments.reduce((acc, r) => acc.plus(r._sum.amount ?? 0), new Prisma.Decimal(0)).toNumber();
   } catch {
     // InvoiceAdjustment 表尚未迁移的库：无红冲能力，净额即票面
     adjustmentTotal = 0;

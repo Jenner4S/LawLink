@@ -476,8 +476,15 @@ export async function getMatterFinance(matterId: string) {
     })
   ]);
 
+  // 2026-11-20（A10 修复）：金额累加一律走 Decimal。
+  //
+  // 原实现是 `acc + Number(e.amount)` —— 每项先转 IEEE-754 双精度再累加。
+  // 实测 100 笔 1234.56 会得到 123455.99999999984（Decimal 累加是 123456）。
+  // 误差虽小，但同一系统里「有的地方用 Decimal 累加、有的地方用 float 累加」
+  // 本身就是不一致：合计值与明细之和对不上时，没人能一眼判断哪个对。
+  // 这里改为与 sumAmounts 相同的做法——Decimal 累加，最后才 toNumber()。
   const sum = (filter: (e: (typeof entries)[number]) => boolean) =>
-    entries.filter(filter).reduce((acc, e) => acc + Number(e.amount), 0);
+    entries.filter(filter).reduce((acc, e) => acc.plus(e.amount), new Prisma.Decimal(0)).toNumber();
 
   let invoiceAdjustmentTotal = 0;
   try {
@@ -486,7 +493,7 @@ export async function getMatterFinance(matterId: string) {
       _sum: { amount: true },
       where: { invoice: { matterId } }
     });
-    invoiceAdjustmentTotal = rows.reduce((acc, r) => acc + Number(r._sum.amount ?? 0), 0);
+    invoiceAdjustmentTotal = rows.reduce((acc, r) => acc.plus(r._sum.amount ?? 0), new Prisma.Decimal(0)).toNumber();
   } catch {
     // InvoiceAdjustment 表尚未迁移的库：无红冲能力，净额即票面
     invoiceAdjustmentTotal = 0;
@@ -500,14 +507,14 @@ export async function getMatterFinance(matterId: string) {
     outstanding: facts ? Number(facts.lawyerSummary.outstanding) : Math.max(0,legacyReceivable-legacyReceived),
     allocated: facts ? Number(facts.lawyerSummary.receivable)-Number(facts.lawyerSummary.outstanding) : legacyReceived,
     clientFunds: facts ? Number(facts.summary.clientFundsReceived) : 0,
-    contractAmount: facts ? sumAmounts(facts.billings.filter(b=>b.signedAt&&b.moneyKind==='LAWYER_FEE').map(b=>({amount:b.contractAmount}))) : billings.filter(b=>b.signedAt).reduce((acc, b) => acc + Number(b.contractAmount), 0),
+    contractAmount: facts ? sumAmounts(facts.billings.filter(b=>b.signedAt&&b.moneyKind==='LAWYER_FEE').map(b=>({amount:b.contractAmount}))) : billings.filter(b=>b.signedAt).reduce((acc, b) => acc.plus(b.contractAmount), new Prisma.Decimal(0)).toNumber(),
     receivable: facts ? Number(facts.lawyerSummary.receivable) : legacyReceivable,
     received: facts ? Number(facts.lawyerSummary.netReceived) : legacyReceived,
     pendingReceived: sum((e) => e.type === "RECEIVED" && e.confirmState === "PENDING"),
     refund: facts ? sumAmounts(facts.refunds) : sum((e) => e.type === "REFUND"),
     cost: facts ? sumAmounts(facts.expenses.map(e=>({amount:e.amount.minus(e.reversed)}))) : sum((e) => e.type === "COST"),
     commission: facts ? sumAmounts(facts.commissions.map(c=>({amount:c.accrued}))) : sum((e) => e.type === "COMMISSION"),
-    invoiced: issuedInvoices.reduce((acc, i) => acc + Number(i.amount), 0) - invoiceAdjustmentTotal
+    invoiced: issuedInvoices.reduce((acc, i) => acc.plus(i.amount), new Prisma.Decimal(0)).toNumber() - invoiceAdjustmentTotal
   };
 
   return serializeDecimals({ billings, entries, plans, stats, ledgerReady:Boolean(facts) });
