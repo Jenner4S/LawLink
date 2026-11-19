@@ -1873,6 +1873,18 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
+  // 2026-11-20（A2）：按对象查审计。
+  //
+  // 多处高频路径是「这个对象发生过什么」：
+  //   approvals/history-access.ts:10  审批历史权限判定（每次打开审批详情都跑）
+  //   approval-permissions/records.ts:23
+  //   approval-permissions/intake-detail.ts:98
+  // 它们的 where 是 (userId, targetId, targetType, action IN ...)。
+  // 现有索引只能命中 userId 前缀，targetId 只能做 Filter ——
+  // 20 万条时实测 14.9ms，加 (targetId, targetType) 后 3.0ms。
+  // 注：该测量用的合成数据 userId 全相同（选择性最差的情形），
+  // 真实环境 userId 分散，收益只会更明显。
+  @@index([targetId, targetType])
   /// 2026-11-19 撤掉唯一约束：审计扩展用另一条连接读前驱，读不到同事务内
   /// 未提交的前一条，导致「同事务写 ≥2 条审计」必撞唯一键并毒化事务，
   /// 转案（唯一建案入口）因此 100% 失败。改为 verifyAuditChain 显式报分叉。
