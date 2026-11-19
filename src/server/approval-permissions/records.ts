@@ -8,6 +8,8 @@ import { ActionError } from "@/lib/action-error";
 
 export type ApprovalRecord = Omit<ApprovalWorkspaceRow, "task"> & {
   requesterId: string | null; intakeOwnerId?: string | null; history: ApprovalHistoryEntry[]; participantIds: string[];
+  /** 2026-11-20：隔离墙判定需要具体案件 id；此前只取了 matter.title 做展示。 */
+  matterId: string | null;
 };
 
 // 只在服务端加载最小业务索引，详情和附件在对象级授权后另行读取。
@@ -15,11 +17,11 @@ export async function loadApprovalRecords(filter?: { action: ApprovalAction; id:
   const action = filter ? canonicalApprovalAction(filter.action) : null;
   const whereId = filter ? { id: filter.id } : {};
   const [intakes, documents, archives, invoices, seals, logs] = await Promise.all([
-    !action || action === "INTAKE_APPROVE" ? prisma.intake.findMany({ where: { ...whereId, status: { not: "INTAKE" } }, select: { id: true, title: true, status: true, receivedAt: true, ownerUserId: true, createdById: true, createdBy: { select: { name: true } }, matter: { select: { title: true } } } }) : [],
-    !action || action === "DOCUMENT_APPROVE" ? prisma.document.findMany({ where: { ...whereId, deletedAt: null }, select: { id: true, name: true, status: true, createdAt: true, updatedAt: true, uploadedById: true, uploadedBy: { select: { name: true } }, approvedById: true, approvedBy: { select: { name: true } }, approvedAt: true, reviewedById: true, reviewedBy: { select: { name: true } }, reviewedAt: true, matter: { select: { title: true } } } }) : [],
-    !action || action === "ARCHIVE_APPROVE" ? prisma.archiveRecord.findMany({ where: whereId, select: { id: true, archiveNo: true, status: true, archivedAt: true, archivedBy: true, archivedById: true, reviewedById: true, reviewedAt: true, reviewNote: true, matter: { select: { title: true } } } }) : [],
-    !action || action === "INVOICE_APPROVE" ? prisma.invoiceRequest.findMany({ where: whereId, select: { id: true, buyerName: true, title: true, amount: true, status: true, requestedAt: true, requestedById: true, requestedBy: { select: { name: true } }, processedById: true, processedBy: { select: { name: true } }, processedAt: true, processNote: true, matter: { select: { title: true } } } }) : [],
-    !action || action === "SEAL_APPROVE" ? prisma.sealRequest.findMany({ where: whereId, select: { id: true, documentTitle: true, status: true, requestedAt: true, requestedById: true, requestedBy: { select: { name: true } }, approvedById: true, approvedBy: { select: { name: true } }, approvedAt: true, approveNote: true, stampedById: true, stampedByUser: { select: { name: true } }, stampedAt: true, matter: { select: { title: true } } } }) : [],
+    !action || action === "INTAKE_APPROVE" ? prisma.intake.findMany({ where: { ...whereId, status: { not: "INTAKE" } }, select: { id: true, title: true, status: true, receivedAt: true, ownerUserId: true, createdById: true, createdBy: { select: { name: true } }, matter: { select: { id: true, title: true } } } }) : [],
+    !action || action === "DOCUMENT_APPROVE" ? prisma.document.findMany({ where: { ...whereId, deletedAt: null }, select: { id: true, matterId: true, name: true, status: true, createdAt: true, updatedAt: true, uploadedById: true, uploadedBy: { select: { name: true } }, approvedById: true, approvedBy: { select: { name: true } }, approvedAt: true, reviewedById: true, reviewedBy: { select: { name: true } }, reviewedAt: true, matter: { select: { title: true } } } }) : [],
+    !action || action === "ARCHIVE_APPROVE" ? prisma.archiveRecord.findMany({ where: whereId, select: { id: true, matterId: true, archiveNo: true, status: true, archivedAt: true, archivedBy: true, archivedById: true, reviewedById: true, reviewedAt: true, reviewNote: true, matter: { select: { title: true } } } }) : [],
+    !action || action === "INVOICE_APPROVE" ? prisma.invoiceRequest.findMany({ where: whereId, select: { id: true, matterId: true, buyerName: true, title: true, amount: true, status: true, requestedAt: true, requestedById: true, requestedBy: { select: { name: true } }, processedById: true, processedBy: { select: { name: true } }, processedAt: true, processNote: true, matter: { select: { title: true } } } }) : [],
+    !action || action === "SEAL_APPROVE" ? prisma.sealRequest.findMany({ where: whereId, select: { id: true, matterId: true, documentTitle: true, status: true, requestedAt: true, requestedById: true, requestedBy: { select: { name: true } }, approvedById: true, approvedBy: { select: { name: true } }, approvedAt: true, approveNote: true, stampedById: true, stampedByUser: { select: { name: true } }, stampedAt: true, matter: { select: { title: true } } } }) : [],
     prisma.auditLog.findMany({ where: { action: { in: Object.keys(APPROVAL_EVENTS) }, ...(filter ? { targetId: filter.id, targetType: approvalTargetType(filter.action) } : {}) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, action: true, targetId: true, targetType: true, userId: true, user: { select: { name: true } }, createdAt: true, detail: true } })
   ]);
   const historyMap = new Map<string, ApprovalHistoryEntry[]>();
@@ -60,21 +62,31 @@ export async function loadApprovalRecords(filter?: { action: ApprovalAction; id:
   function fallback(id: string, label: string, userId: string | null, at: Date | null, userName?: string | null, note?: string | null): ApprovalHistoryEntry[] {
     return userId && at ? [{ id: `legacy-${id}-${label}`, label, userId, userName: userName ?? "历史处理人（姓名未记录）", at, note: note ?? null, decision: true, legacy: true }] : [];
   }
-  for (const r of intakes) add({ id: r.id, action: "INTAKE_APPROVE", title: r.title, status: r.status === "PENDING_CONFIRMATION" ? "PENDING" : r.status, submittedAt: r.receivedAt, intakeOwnerId: r.ownerUserId, requesterId: r.createdById, requester: r.createdBy.name, matter: r.matter?.title ?? r.title });
+  for (const r of intakes) add({ id: r.id, action: "INTAKE_APPROVE", title: r.title, status: r.status === "PENDING_CONFIRMATION" ? "PENDING" : r.status, submittedAt: r.receivedAt, intakeOwnerId: r.ownerUserId, requesterId: r.createdById, requester: r.createdBy.name, matter: r.matter?.title ?? r.title, matterId: r.matter?.id ?? null });
   for (const r of documents) {
     const history = historyMap.get(`DOCUMENT_APPROVE:${r.id}`) ?? [];
     if (r.status !== "PENDING_REVIEW" && !r.approvedAt && !r.reviewedAt && !history.length) continue;
-    add({ id: r.id, action: "DOCUMENT_APPROVE", title: r.name, status: r.status === "PENDING_REVIEW" ? "PENDING" : r.status, submittedAt: history.find(e => e.label === "提交审核")?.at ?? r.createdAt, requesterId: r.uploadedById, requester: r.uploadedBy.name, matter: r.matter?.title ?? "非案件事项" }, [...fallback(r.id, "审批通过", r.approvedById, r.approvedAt, r.approvedBy?.name), ...fallback(r.id, "驳回修改", r.reviewedById, r.reviewedAt, r.reviewedBy?.name)]);
+    add({ id: r.id, action: "DOCUMENT_APPROVE", title: r.name, status: r.status === "PENDING_REVIEW" ? "PENDING" : r.status, submittedAt: history.find(e => e.label === "提交审核")?.at ?? r.createdAt, requesterId: r.uploadedById, requester: r.uploadedBy.name, matter: r.matter?.title ?? "非案件事项", matterId: r.matterId ?? null }, [...fallback(r.id, "审批通过", r.approvedById, r.approvedAt, r.approvedBy?.name), ...fallback(r.id, "驳回修改", r.reviewedById, r.reviewedAt, r.reviewedBy?.name)]);
   }
-  for (const r of archives) add({ id: r.id, action: "ARCHIVE_APPROVE", title: `${r.matter.title} · ${r.archiveNo}`, status: r.status === "PENDING_REVIEW" ? "PENDING" : r.status === "APPROVED" ? "FILED" : r.status, submittedAt: r.archivedAt, requesterId: r.archivedById, requester: r.archivedBy, matter: r.matter.title }, fallback(r.id, r.status === "REJECTED" ? "驳回归档" : "审批通过并归档", r.reviewedById, r.reviewedAt, r.reviewedById ? reviewerNames.get(r.reviewedById) : null, r.reviewNote));
-  for (const r of invoices) add({ id: r.id, action: "INVOICE_APPROVE", title: [r.title ?? "开票申请", `¥${Number(r.amount).toLocaleString("zh-CN")}`, r.buyerName ? `抬头 ${r.buyerName}` : null].filter(Boolean).join(" · "), status: r.status === "APPROVED" ? "WAITING_INVOICE" : r.status, submittedAt: r.requestedAt, requesterId: r.requestedById, requester: r.requestedBy.name, matter: r.matter?.title ?? "非案件事项" }, fallback(r.id, r.status === "ISSUED" ? "完成开票" : r.status === "REJECTED" ? "驳回开票" : "审批通过", r.processedById, r.processedAt, r.processedBy?.name, r.processNote));
-  for (const r of seals) add({ id: r.id, action: "SEAL_APPROVE", title: r.documentTitle, status: r.status === "APPROVED" ? "WAITING_STAMP" : r.status, submittedAt: r.requestedAt, requesterId: r.requestedById, requester: r.requestedBy.name, matter: r.matter?.title ?? "非案件事项" }, [...fallback(r.id, r.status === "REJECTED" ? "驳回用章" : "审批通过", r.approvedById, r.approvedAt, r.approvedBy?.name, r.approveNote), ...fallback(r.id, "完成盖章回填", r.stampedById, r.stampedAt, r.stampedByUser?.name)]);
+  for (const r of archives) add({ id: r.id, action: "ARCHIVE_APPROVE", title: `${r.matter.title} · ${r.archiveNo}`, status: r.status === "PENDING_REVIEW" ? "PENDING" : r.status === "APPROVED" ? "FILED" : r.status, submittedAt: r.archivedAt, requesterId: r.archivedById, requester: r.archivedBy, matter: r.matter.title, matterId: r.matterId ?? null }, fallback(r.id, r.status === "REJECTED" ? "驳回归档" : "审批通过并归档", r.reviewedById, r.reviewedAt, r.reviewedById ? reviewerNames.get(r.reviewedById) : null, r.reviewNote));
+  for (const r of invoices) add({ id: r.id, action: "INVOICE_APPROVE", title: [r.title ?? "开票申请", `¥${Number(r.amount).toLocaleString("zh-CN")}`, r.buyerName ? `抬头 ${r.buyerName}` : null].filter(Boolean).join(" · "), status: r.status === "APPROVED" ? "WAITING_INVOICE" : r.status, submittedAt: r.requestedAt, requesterId: r.requestedById, requester: r.requestedBy.name, matter: r.matter?.title ?? "非案件事项", matterId: r.matterId ?? null }, fallback(r.id, r.status === "ISSUED" ? "完成开票" : r.status === "REJECTED" ? "驳回开票" : "审批通过", r.processedById, r.processedAt, r.processedBy?.name, r.processNote));
+  for (const r of seals) add({ id: r.id, action: "SEAL_APPROVE", title: r.documentTitle, status: r.status === "APPROVED" ? "WAITING_STAMP" : r.status, submittedAt: r.requestedAt, requesterId: r.requestedById, requester: r.requestedBy.name, matter: r.matter?.title ?? "非案件事项", matterId: r.matterId ?? null }, [...fallback(r.id, r.status === "REJECTED" ? "驳回用章" : "审批通过", r.approvedById, r.approvedAt, r.approvedBy?.name, r.approveNote), ...fallback(r.id, "完成盖章回填", r.stampedById, r.stampedAt, r.stampedByUser?.name)]);
   const terminations=await executionTerminations(prisma);
   for(const row of rows){if(!['INVOICE_APPROVE','SEAL_APPROVE'].includes(row.action))continue;const terms=terminations.filter(t=>(row.action==='INVOICE_APPROVE'?t.invoiceId:t.sealId)===row.id);if(terms.some(t=>t.status==='CONFIRMED'))row.status='EXECUTION_TERMINATED';else if(terms.some(t=>t.status==='PENDING'))row.status='TERMINATION_PENDING';}
   return rows;
 }
 
 export async function approvalRecordAccess(user: { id: string; role: string; systemRole: string }, row: ApprovalRecord) {
+  // 2026-11-20：隔离墙优先于一切「关系型」放行。
+  // 下面的 readable 判据全部基于关系（申请人 / 收案主办 / 参与人 / 有任务），
+  // 没有一条看墙。于是「先提交申请、后因利益冲突被隔离」时，被墙者仍能在审批工作台
+  // 看到该案件这条申请的标题、金额、当事人。墙必须排在前面：关系再近，被隔离就是不得接触。
+  if (row.matterId) {
+    const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
+    if (await isMatterWalledFor(prisma, { matterId: row.matterId, userId: user.id, role: user.role })) {
+      return { task: null, readable: false };
+    }
+  }
   let task: ApprovalWorkspaceRow["task"] = null;
   if (row.status === "PENDING" && await canApproveItem(user.id, row.action, row.id)) task = "approve";
   if (row.status === "WAITING_INVOICE" && await canExecuteInvoice(user.id, row.id)) task = "issue";
