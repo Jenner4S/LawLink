@@ -22,7 +22,30 @@
     box-shadow: var(--sh-well);
   }
   select:focus-visible { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(0, 123, 127, 0.12); }
-  select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  /*
+   * 焦点环视觉统一（2026-11-19）
+   *
+   * 澄清：这里**不是**修复「焦点不可见」。我最初用 el.focus() 程序化聚焦去测，
+   * 得出「12 个元素里 11 个不可见」的结论——那是**假阳性**：:focus-visible 只在
+   * 键盘交互时激活，程序化聚焦不会触发，于是读到的 outline 恒为 none。
+   * 改用真实 Tab 键复测，修复前后都是 10/10 可见，浏览器默认焦点环一直在工作。
+   *
+   * 保留这条规则的实际价值只有两点，均为视觉一致性：
+   *   1. 把浏览器默认的黑色/蓝色焦点环改为品牌 teal，与全站配色统一；
+   *   2. outline-offset: 2px 让焦点环与元素留出间隙，在密集卡片里更清晰。
+   *
+   * 用 :where() 保持零特异性，表单控件自己的 box-shadow 焦点样式会覆盖它。
+   */
+  :where(a, button, summary, [role="button"], [role="tab"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
+
+  /* 深色底上改用浅色焦点环，避免与背景融为一体 */
+  :where(.signal-strip, .dos-head, [data-tone="dark"]):where(a, button):focus-visible {
+    outline-color: hsl(var(--card));
+  }  select:disabled { opacity: 0.55; cursor: not-allowed; }
 
   :root {
     /* v4 墨案：shadcn 语义变量全部映射为 docs/mockup/v4/design-system.css 色值 */
