@@ -1226,6 +1226,7 @@ describe("跨环节一致性：编号链 / 外键链 / 审计链 / 终态财务"
     expect(chain.skippedLegacy).toBe(0);
     // 注：「无分叉时 forks === null」的契约由本文件之外的纯函数用例覆盖；
     // 端到端链上必然存在分叉（见下），这里断言的是分叉场景的那一侧。
+    // 分叉 ≠ 覆盖缺口：全图遍历会走完每条分支，forks 只用于说明「链在这处分岔过」。
 
     // 分叉场景（本链必然有：D-2 事务内写 INTAKE_APPROVE + 复核审计，D-3 事务内写两条探针）。
     // 不再用「总数 > checked」把覆盖缺口固化成预期，而是要求 verifyAuditChain **显式指出分叉点**：
@@ -1243,8 +1244,13 @@ describe("跨环节一致性：编号链 / 外键链 / 审计链 / 终态财务"
       `[business-chain] 审计链：ok=${chain.ok} checked=${chain.checked} unchecked=${chain.unchecked} ` +
       `forks=${chain.forks!.length} 带摘要总数=${total}`
     );
+    // 覆盖账必须自洽
     expect(chain.checked + chain.unchecked).toBe(total);
-    expect(chain.unchecked).toBeGreaterThan(0);
+    // 2026-11-19 全图遍历后：分叉的每条分支都会被走到，因此端到端链上应**零缺口**。
+    // （旧实现是单链遍历，分叉处只走第一条，剩下一股永远不被校验，所以当时只能断言
+    //   「unchecked > 0」把它固化成预期——那不是契约，那是缺陷。）
+    expect(chain.unchecked).toBe(0);
+    expect(chain.checked).toBe(total);
   });
 
   it("终态一致：归档后财务数字与前序登记一致，且每笔金额都能对上来源", async () => {

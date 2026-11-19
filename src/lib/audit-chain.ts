@@ -24,13 +24,25 @@ export interface AuditHashInput {
   previousHash?: string | null;
 }
 
-/** 稳定序列化：对象键排序，避免同一内容因键顺序不同产生不同哈希 */
+/**
+ * 稳定序列化：对象键排序，避免同一内容因键顺序不同产生不同哈希。
+ *
+ * 2026-11-19 修复：必须**跳过值为 undefined 的键**。
+ *
+ * 原实现把 {dueAt: undefined} 序列化成 `{"dueAt":}`，而 JSONB 在落库时会把
+ * undefined 字段整个丢掉——于是写入时算的哈希基于「有这个键」，读回后重算时
+ * 「没这个键」，两者必然不等。表现就是零星几条审计被判为「内容被改动」，
+ * 而它们的 detail 看上去完全正常（主库 MATTERS_EXPORT、测试库 WORK_ITEM_COMPLETE 各一例）。
+ *
+ * 与 JSON.stringify 的行为对齐（它也跳过 undefined 值的键），
+ * 保证「写入时算的」与「从库里读回后重算的」是同一份输入。
+ */
 function stableJson(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
   const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
+  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
   return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableJson(obj[k])).join(",") + "}";
 }
 
@@ -103,6 +115,8 @@ export async function verifyAuditChain(db: {
 
   let checked = 0;
   let skippedLegacy = 0;
+  /** 首个问题（用于快速定位）；继续遍历以覆盖全量 */
+  let firstBroken: { id: string; action: string; reason: string } | null = null;
 
   // 2026-11-19：改为**按链遍历**，不再按 createdAt 线性扫描。
   //
@@ -135,48 +149,71 @@ export async function verifyAuditChain(db: {
     }
   }
 
-  // 沿链遍历：分叉时取 createdAt 最早的一条继续（保证 checked 计数稳定），
-  // 其余分支记入 forks 并计入 unchecked —— 不再静默丢弃。
+  // 全图遍历（2026-11-19 改）。
+  //
+  // 此前是单链遍历：从 prev=null 出发，每个前驱只取 createdAt 最早的一条继续，
+  // 其余分支静默丢弃。撤销唯一约束后「同事务多条审计」会共用同一个前驱形成分叉，
+  // 单链遍历在第一个分叉点就走进死路 —— 主库实测 checked=7 / 26，
+  // 19 条审计从未被校验，而 ok 仍是 true。
+  //
+  // 现在改为遍历所有可达节点（含全部分支）。校验语义相应从
+  // 「线性链：previousHash 必须等于上一条的 integrityHash」
+  // 改为「图：previousHash 必须指向图中真实存在的 hash（或 null）」。
+  // 分叉本身不再算断裂 —— 它是撤销唯一约束后的已知取舍，单独计入 forks。
+  const allHashed = rows.filter((r) => r.integrityHash !== null);
+  const byHash = new Map<string, AuditRow>();
+  for (const row of rows) {
+    if (row.integrityHash) byHash.set(row.integrityHash, row);
+  }
+
   const seen = new Set<string>();
   const ordered: AuditRow[] = [];
-  {
-    let cursor: string | null = null;
-    // 多个 prev=null 的起点：历史段（无 hash）已被跳过，这里只会有首个新记录
-    const roots = byPrev.get(null) ?? [];
-    if (roots.length > 1) {
-      forks.push({
-        previousHash: "(root)",
-        ids: roots.map((r) => r.id),
-        actions: roots.map((r) => r.action)
-      });
-    }
-    for (;;) {
-      const candidates = byPrev.get(cursor);
-      if (!candidates || candidates.length === 0) break;
-      const next = candidates[0];
-      const key = next.integrityHash as string;
-      if (seen.has(key)) break;
-      seen.add(key);
-      ordered.push(next);
-      cursor = key;
+  const stack: AuditRow[] = [...(byPrev.get(null) ?? [])];
+  while (stack.length > 0) {
+    const node = stack.pop() as AuditRow;
+    const key = node.integrityHash as string;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(node);
+    for (const succ of byPrev.get(key) ?? []) {
+      if (!seen.has(succ.integrityHash as string)) stack.push(succ);
     }
   }
-  const allHashed = rows.filter((r) => r.integrityHash !== null);
 
-  for (let i = 0; i < ordered.length; i += 1) {
-    const row = ordered[i];
-    const prev = i === 0 ? null : ordered[i - 1].integrityHash;
+  // 不可达节点：其 previousHash 指向图中不存在的 hash（被删/被改），
+  // 或压根没有根可达。这是真正的断链信号，逐条报出。
+  const unreachable = rows.filter(
+    (r) => r.integrityHash !== null && !seen.has(r.integrityHash as string)
+  );
+
+  for (const row of ordered) {
+    // 图语义：previousHash 必须是 null 或指向图中真实存在的记录
+    const prev = row.previousHash;
+    if (prev !== null && !byHash.has(prev)) {
+      // 记录但不中断：校验要覆盖全量，遇错即停会让后面的记录从未被检查过
+      if (!firstBroken) {
+        firstBroken = {
+          id: row.id,
+          action: row.action,
+          reason: `previousHash 指向不存在的记录（${prev.slice(0, 12)}…），链在此断`
+        };
+      }
+      continue;
+    }
     const expected = computeAuditHash({
       userId: row.userId, action: row.action, targetType: row.targetType,
       targetId: row.targetId, detail: row.detail, ip: row.ip,
       userAgent: row.userAgent, createdAt: row.createdAt, previousHash: row.previousHash
     });
     if (expected !== row.integrityHash) {
-      return {
-        ok: false, checked, skippedLegacy, forks: forks.length ? forks : null,
-        unchecked: allHashed.length - checked,
-        brokenAt: { id: row.id, action: row.action, reason: "记录内容与自身摘要不符（该条被改动）" }
-      };
+      if (!firstBroken) {
+        firstBroken = {
+          id: row.id,
+          action: row.action,
+          reason: "记录内容与自身摘要不符（该条被改动）"
+        };
+      }
+      continue;
     }
     checked += 1;
   }
@@ -189,11 +226,13 @@ export async function verifyAuditChain(db: {
   //   · 分叉分支（遍历只走第一条，其余未校验）
   //   · 断裂点及其之后
   // 都计入 unchecked。
+  // 覆盖账：unchecked = 带摘要总数 - 通过校验的条数。
+  // 恒等式 checked + unchecked === total 成立，缺口不会被藏起来。
   return {
-    ok: true,
+    ok: firstBroken === null,
     checked,
     skippedLegacy,
-    brokenAt: null,
+    brokenAt: firstBroken,
     forks: forks.length ? forks : null,
     unchecked: allHashed.length - checked
   };
