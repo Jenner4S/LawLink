@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, BellRing, BookOpenCheck, Bot, Building2, FileUp, KeyRound, Layers, ListChecks, Package, ScrollText, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BellRing, BookOpenCheck, Bot, Building2, FileUp, KeyRound, Layers, ListChecks, Package, ScrollText, ShieldAlert, ShieldCheck, Users } from "lucide-react";
 
 import { getSession } from "@/lib/auth/session";
 import { isSystemAdmin } from "@/lib/auth/system-role";
@@ -39,8 +39,11 @@ const adminGroups = [
   },
   {
     title: "安全与审计",
-    description: "查看系统内的重要操作记录和责任主体。",
-    items: [{ href: "/admin/audit", label: "审计日志", icon: ScrollText }]
+    description: "管理案件信息隔离，查看系统内的重要操作记录和责任主体。",
+    items: [
+      { href: "/admin/ethical-walls", label: "隔离墙", icon: ShieldAlert, description: "接案后按人员、团队、岗位隔离案件访问，对全所生效。" },
+      { href: "/admin/audit", label: "审计日志", icon: ScrollText }
+    ]
   }
 ];
 

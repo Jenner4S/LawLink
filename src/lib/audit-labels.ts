@@ -65,7 +65,9 @@ const words: Record<string, string> = {
   RETURN: "归还", REVEAL: "查看明文", RULE: "规则", SAVED: "已保存", SCHEDULE: "日程",
   SIGN: "签署", TEXT: "正文", TOTP: "二次验证", VERSION: "版本",
   // 工时与费率（P0-1）。新增审计动作必须同步补词，否则整条降级为「其他操作」。
-  TIME: "工时"
+  TIME: "工时",
+  // 隔离墙（P0-3 管理 UI 批次）。同上：新增审计动作必须同步补词。
+  ETHICAL: "合规", WALL: "隔离墙", LIFT: "解除",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

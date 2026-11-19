@@ -17,6 +17,7 @@ import {
   LogOut,
   Package,
   ScrollText,
+  ShieldAlert,
   ShieldCheck,
   Users,
   UsersRound,
@@ -68,7 +69,10 @@ export const adminNavigation: Array<{ label: string; items: AdminNavItem[] }> = 
   },
   {
     label: "安全与审计",
-    items: [{ href: "/admin/audit", label: "审计日志", icon: ScrollText, adminOnly: true }]
+    items: [
+      { href: "/admin/audit", label: "审计日志", icon: ScrollText, adminOnly: true },
+      { href: "/admin/ethical-walls", label: "隔离墙", icon: ShieldAlert, adminOnly: true }
+    ]
   }
 ];
 

@@ -22,14 +22,17 @@ function scan(pattern: string): string[] {
 
 describe("审计动作标签", () => {
   it("全仓每个 action 都能拼出中文，不落到「其他操作」", () => {
-    const actions = scan('action: ?"[A-Z_]+"');
+    // 2026-11-19：原正则 `action: ?"[A-Z_]+"` 只扫双引号字面量，
+    // 单引号与模板字符串形态的 action 会被静默漏扫（实测 handover.ts 的 9 条
+    // MATTER_HANDOVER_* 一直没被检查）。三种引号都要覆盖。
+    const actions = scan(String.raw`action: ?["\x27\x60][A-Z_]+["\x27\x60]`);
     expect(actions.length).toBeGreaterThan(150); // 扫描确实生效
     const degraded = actions.filter((a) => auditActionLabel(a) === "其他操作（详见技术详情）");
     expect(degraded, `以下动作缺词条，请补 src/lib/audit-labels.ts 的 words：\n${degraded.join("\n")}`).toEqual([]);
   });
 
   it("全仓每个 targetType 都有中文标签，不落到「其他对象」", () => {
-    const types = scan('targetType: ?"[A-Za-z]+"');
+    const types = scan(String.raw`targetType: ?["\x27\x60][A-Za-z]+["\x27\x60]`);
     expect(types.length).toBeGreaterThan(40);
     const degraded = types.filter((t) => auditTargetLabel(t) === "其他对象");
     expect(degraded, `以下对象缺标签，请补 src/lib/audit-labels.ts 的 targetLabels：\n${degraded.join("\n")}`).toEqual([]);

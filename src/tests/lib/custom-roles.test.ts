@@ -9,9 +9,12 @@ const input = { name: "档案专员", description: "", active: true, permissions
 describe("自定义角色的默认拒绝与权限范围", () => {
   it("行政不能读取案件、客户或财务，即使已加入案件也不落入助理分支", () => {
     // 2026-11-19：读取过滤器现在统一叠加隔离墙（对全所生效，含管理员），
-    // 断言显式写出两层结构，避免日后误以为可以只靠角色判定
-    expect(matterReadVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual(
-      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM")] }
+    // 断言显式写出两层结构，避免日后误以为可以只靠角色判定。
+    // 隔离墙条件含 now 时间比较——两处必须共用同一时刻，否则各自 new Date()
+    // 跨毫秒会让深度相等断言随机失败（曾出现约 40% 概率的 flake）。
+    const now = new Date();
+    expect(matterReadVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS, now)).toEqual(
+      { AND: [{ id: { in: [] } }, ethicalWallExclusion("u", "CUSTOM", now)] }
     );
     expect(matterVisibilityFilter("u", "CUSTOM")).toEqual({ id: { in: [] } });
     expect(clientVisibilityFilter("u", "CUSTOM", ADMINISTRATIVE_GRANTS)).toEqual({ id: { in: [] } });
