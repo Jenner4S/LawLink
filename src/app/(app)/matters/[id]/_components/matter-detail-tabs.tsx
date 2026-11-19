@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { contactRoleLabels } from "./info-panel";
 import { MatterArchive, TeamRailCard } from "./matter-archive";
 import { FinancePanel } from "./finance-panel";
+import { ContractConfirmationPanel } from "@/app/(app)/clients/[id]/_components/contract-confirmation-panel";
 import { EmailPanel } from "./email-panel";
 import { ImportantItemDialog } from "./procedure-content";
 import { ProcedureWorkflowPanel } from "./procedure-workflow-panel";
@@ -585,6 +586,13 @@ export function MatterDetailTabs({
                 matterId={matter.id}
                 billings={finance.billings}
                 canManage={canAssociateThisMatter && !isArchived}
+              />
+            ) : null}
+            {allowed("finance.read") ? (
+              <ContractConfirmationPanel
+                clientId={matter.primaryClient?.id ?? matter.clientLinks[0]?.client.id ?? ""}
+                matterId={matter.id}
+                canManage={Boolean(canAssociateThisMatter && !isArchived && allowed("clients.write"))}
               />
             ) : null}
             {allowed("finance.read") ? (

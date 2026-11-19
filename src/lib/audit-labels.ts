@@ -21,7 +21,9 @@ const targetLabels: Record<string, string> = {
   // 工时与费率（P0-1）
   TimeEntry: "工时记录", RateSchedule: "费率安排",
   // 通行密钥（P2-2 后半）
-  WebAuthnCredential: "通行密钥"
+  WebAuthnCredential: "通行密钥",
+  // 合同确认留痕（P1-4 降级实现）：不是电子签名，审计动作名用 CONFIRM / REVOKE，不用 SIGN
+  ContractConfirmation: "合同确认"
 };
 const words: Record<string, string> = {
   BUILTIN: "内置", ROLE: "角色", PRESENTATION: "显示资料", DEFINITION: "定义",
@@ -81,6 +83,10 @@ const words: Record<string, string> = {
   // WEBAUTHN_DELETE / WEBAUTHN_COUNTER_ANOMALY 五个动作需要。COUNTER_ANOMALY 是
   // 高危安全事件（凭证可能被克隆），审计页必须一眼能读懂，因此单列两个词。
   WEBAUTHN: "通行密钥", REGISTER: "注册", COUNTER: "计数器", ANOMALY: "异常",
+  // 合同确认留痕（P1-4 降级实现）：CONTRACT_CONFIRM / CONTRACT_REVOKE /
+  // CONTRACT_CREATE / CONTRACT_REGENERATE / CONTRACT_EXPIRE_CRON 需要。
+  // 注意：这里刻意不引入「签署」系词条名——动作语义是阅知确认，不是电子签名。
+  CONTRACT: "合同", REVOKE: "撤销", EXPIRE: "过期",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

@@ -15,6 +15,7 @@ import { FieldGrid, FieldItem, InitialAvatar } from "@/components/patterns/moan"
 import { TopbarLinkAction } from "@/components/layout/topbar-link-action";
 import { ClientEditButton } from "./_components/client-edit-button";
 import { AddContactButton, MergeBanner } from "./_components/client-detail-parts";
+import { ContractConfirmationPanel } from "./_components/contract-confirmation-panel";
 
 const COOP_BADGE: Record<string, string> = { POTENTIAL: "b-slate", NEGOTIATING: "b-amber", SIGNED: "b-teal", TERMINATED: "b-bronze" };
 const ACTIVE = new Set(["PENDING_ACCEPTANCE", "IN_PROGRESS", "ON_HOLD"]);
@@ -163,6 +164,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               ))
             )}
           </div>
+
+          <ContractConfirmationPanel clientId={client.id} canManage={canWrite} />
 
           <div className="card">
             <div className="panel-head">

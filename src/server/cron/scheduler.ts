@@ -27,6 +27,7 @@ import { runAuditCleanup } from "./jobs/audit-cleanup";
 import { runReminderLedgerCleanup } from "./jobs/reminder-ledger-cleanup";
 import { scanDueReminders, scanPreservationReminders } from "./jobs/scan-due-reminders";
 import { scanSealBackfillReminders } from "./jobs/scan-seal-backfill-reminders";
+import { expireOverdueContractConfirmations } from "./jobs/expire-contract-confirmations";
 import { runDatabaseBackup, backupCronEnabled } from "./jobs/backup-database";
 import { audit } from "@/server/audit";
 import { processDueJobs } from "./worker";
@@ -148,6 +149,18 @@ export function registerCronJobs() {
     { timezone: TIMEZONE }
   );
 
+  // 每天 03:20 合同确认链接过期清理（PENDING 且已过期 → EXPIRED；确认事实本身不受影响）
+  cron.schedule(
+    "20 3 * * *",
+    () =>
+      runWithFailureAudit(
+        "合同确认过期清理",
+        "CONTRACT_EXPIRE_FAILED_CRON",
+        () => expireOverdueContractConfirmations()
+      ),
+    { timezone: TIMEZONE }
+  );
+
   // v0.50: 每天 02:30 数据库+文件存储备份（BACKUP_CRON_ENABLED=false 可关）
   if (backupCronEnabled()) {
     cron.schedule(
@@ -193,6 +206,6 @@ export function registerCronJobs() {
   );
 
   console.log(
-    `[cron] 已注册 ${backupCronEnabled() ? 8 : 7} 个定时作业（周报推送 / 归档逾期扫描 / AuditLog 清理 / 台账保留清理 / 到期提醒扫描 / 用章回填提醒扫描${backupCronEnabled() ? " / 数据库备份" : ""} / 队列 worker），时区 Asia/Shanghai`
+    `[cron] 已注册 ${backupCronEnabled() ? 9 : 8} 个定时作业（周报推送 / 归档逾期扫描 / AuditLog 清理 / 台账保留清理 / 到期提醒扫描 / 用章回填提醒扫描 / 合同确认过期清理${backupCronEnabled() ? " / 数据库备份" : ""} / 队列 worker），时区 Asia/Shanghai`
   );
 }

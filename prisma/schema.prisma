@@ -465,6 +465,8 @@ model User {
   invoicePaymentAllocations InvoicePaymentAllocation[] @relation("InvoiceAllocationRecorder")
   commissionSettlements CommissionSettlement[] @relation("CommissionSettlementRecorder")
   confirmedReceivableConditions Receivable[] @relation("ReceivableConditionConfirmer")
+  // 合同确认留痕（P1-4 降级实现）：仅记录「客户已阅知并确认」，不构成电子签名
+  createdContractConfirmations ContractConfirmation[] @relation("ContractConfirmationCreator")
   id                     String                     @id @default(cuid())
   name                   String
   email                  String                     @unique
@@ -640,6 +642,8 @@ model Client {
   updatedAt         DateTime                @updatedAt
   Engagement        Engagement[]
 
+  contractConfirmations ContractConfirmation[]
+
   @@index([name])
   @@index([idType, idNumberBlind])
 }
@@ -770,6 +774,7 @@ model Intake {
 // ============================================================
 
 model Matter {
+  contractConfirmations ContractConfirmation[]
   ethicalWalls  EthicalWall[]
   timeEntries   TimeEntry[]
   rateSchedules RateSchedule[]
@@ -1600,6 +1605,8 @@ model Engagement {
 
   matters  EngagementMatter[]
   billings Billing[]
+
+  contractConfirmations ContractConfirmation[]
 
   @@index([clientId])
 }
@@ -3281,4 +3288,63 @@ model WebAuthnChallenge {
   usedAt    DateTime?
 
   @@index([expiresAt])
+}
+
+// ============================================================
+// 合同确认留痕（台账 P1-4 降级实现）
+// ============================================================
+//
+// 合规定位（决定功能边界，勿越过）：
+//   《中华人民共和国电子签名法》第 13 条的可靠电子签名要求「专有控制」+
+//   「签署后改动可发现」+「签署人身份可信」。本模型只保存「客户对某一版正文
+//   表示已阅知并确认」的时间/IP/UA/正文哈希，不构成电子签名，不能替代签字盖章。
+//   它的用途是证据链：事后争议时能举证「该客户于 X 时间、Y IP 确认了哈希为 Z
+//   的内容」。
+//
+// 安全约束：
+//   - 访问令牌 32 字节随机，明文只出现在发出的链接里；库中只存 SHA-256。
+//   - contentHash 是 contentSnapshot 的 SHA-256，展示与确认时均复核，
+//     防止有人直接改库里的快照（改了就与签发时的哈希对不上）。
+enum ConfirmationStatus {
+  PENDING
+  CONFIRMED
+  EXPIRED
+  REVOKED
+}
+
+model ContractConfirmation {
+  id           String  @id @default(cuid())
+  clientId     String
+  client       Client  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  engagementId String?
+  engagement   Engagement? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  matterId     String?
+  matter       Matter?  @relation(fields: [matterId], references: [id], onDelete: SetNull)
+
+  /// 送达给客户看的正文快照——事后可完整复现「客户当时看到的是什么」
+  contentSnapshot String @db.Text
+  /// contentSnapshot 的 SHA-256（客户确认后若有人改快照，这里对不上）
+  contentHash     String
+
+  /// 访问令牌的哈希（明文只出现在发出的链接里，不落库）
+  tokenHash String   @unique
+  expiresAt DateTime
+
+  status        ConfirmationStatus @default(PENDING)
+  confirmedAt   DateTime?
+  confirmedIp   String?
+  confirmedUa   String?
+  /// 客户自报姓名（可不填；用于佐证）
+  confirmerName String?
+
+  revokedAt     DateTime?
+  revokedReason String?
+  createdById   String
+  createdBy     User     @relation("ContractConfirmationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clientId, status])
+  @@index([tokenHash])
+  @@index([status, expiresAt])
 }
