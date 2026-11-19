@@ -6,6 +6,7 @@
 import type { MatterCategory, MatterStatus, ClientType, PartyType, ProcedureType } from "@prisma/client";
 
 import { matterCategoryLabel, matterStatusLabel } from "@/lib/enums";
+import { parseShDayStart } from "@/lib/ui/sh-time";
 
 /** 导入列定义（key = 内部字段，header = Excel 表头） */
 export interface ImportColumn {
@@ -94,9 +95,15 @@ export function parseImportDate(text: string | undefined): Date | null {
   const m = t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (!m) return null;
   const [, y, mo, d] = m;
-  const date = new Date(Number(y), Number(mo) - 1, Number(d));
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
+  // 2026-11-20（与 70/72/73/74 轮同源问题，这是第 4 处）：
+  //   原实现 `new Date(Number(y), Number(mo)-1, Number(d))` 有两个毛病：
+  //   ① 按**运行时区**解释 —— 容器是 UTC，导入「2026-09-20」会存成 UTC 09-20 00:00，
+  //      即上海 08:00，整体偏 8 小时；律所全部导出/展示都是上海墙钟，导入必须对齐。
+  //   ② 越界日期静默滚动 —— 2026-02-30 → 3 月 2 日、2026.13.01 → 12 月 31 日，
+  //      而 `Number.isNaN(getTime())` 对滚动后的日期返回 false，拦不住。
+  // 统一改用 lib/ui/sh-time 的 parseShDayStart（日期不存在返回 null）。
+  const key = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  return parseShDayStart(key);
 }
 
 /** 标的额解析：去掉逗号/￥/元，转数字 */
