@@ -574,7 +574,28 @@ export function toDate(s: string): Date | null {
     if (isPM && h < 12) h += 12;
     // 短信里的日期时间是法院所在地的墙钟时间（上海，UTC+8 固定、无夏令时），
     // 必须固定按 +08:00 构造；new Date(y, ...) 会按运行环境时区解释，非上海浏览器/UTC 服务器都会偏移
-    return new Date(Date.UTC(y, mo, d, h - 8, mi));
+    const built = new Date(Date.UTC(y, mo, d, h - 8, mi));
+    // 2026-11-20：回验日期是否真实存在。
+    //
+    // Date.UTC 对越界值会**静默滚动**，而短信是外部输入（当事人、法院发来的），
+    // 笔误很容易出现。实测（修复前）：
+    //   "2026-02-30 10:00" → 上海 3 月 2 日
+    //   "2026-02-29 10:00" → 3 月 1 日（非闰年）
+    //   "2026-13-45 99:99" → 2027-02-17（差了一年多）
+    // 这些值会直接喂给 generateHearingFromSms / generateDeadlineFromSms，
+    // 于是错误的开庭日与举证期限进了案件数据，且没有任何提示。
+    // 回验：把构造结果按上海墙钟取回年月日时分，必须与解析出的整数逐一相同。
+    const back = new Date(built.getTime() + 8 * 60 * 60 * 1000); // 转回上海墙钟
+    if (
+      back.getUTCFullYear() !== y ||
+      back.getUTCMonth() !== mo ||
+      back.getUTCDate() !== d ||
+      back.getUTCHours() !== h ||
+      back.getUTCMinutes() !== mi
+    ) {
+      return null;
+    }
+    return built;
   }
   return null;
 }
