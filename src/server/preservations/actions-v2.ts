@@ -250,6 +250,18 @@ export async function addTarget(input: z.infer<typeof targetCreateSchema>) {
     data: { caseId: data.caseId, name: data.name.trim(), note: data.note?.trim() || null }
   }));
 
+  // 2026-11-21 补审计（多智能体审计「审计完整性」维度）：保全域此前只审计了
+  // CASE_CREATE/UPDATE/DELETE 与 PROPERTY_CREATE/UPDATE，被保全人（target）的
+  // 增删改、财产解除/删除/续封全都没有留痕。解除或删除保全在律所是高风险动作
+  // （解除后财产可能被转移），「谁在什么时候做的」必须查得到。
+  await audit({
+    userId: session.user.id,
+    action: "PRESERVATION_TARGET_CREATE",
+    targetType: "PreservationTarget",
+    targetId: created.id,
+    detail: { caseId: data.caseId, name: created.name }
+  });
+
   revalidatePath("/preservation");
   if (cs.matterId) await revalidateMatter(cs.matterId);
   return { ok: true, id: created.id };
@@ -270,6 +282,13 @@ export async function updateTarget(input: z.infer<typeof targetUpdateSchema>) {
   if (data.name !== undefined) patch.name = data.name.trim();
   if (data.note !== undefined) patch.note = data.note?.trim() || null;
   await roleMutation(session.user, "matters.write", async roleDb => roleDb.preservationTarget.update({ where: { id: data.id }, data: patch }));
+  await audit({
+    userId: session.user.id,
+    action: "PRESERVATION_TARGET_UPDATE",
+    targetType: "PreservationTarget",
+    targetId: data.id,
+    detail: { before: { name: target.name, note: target.note }, after: { name: patch.name ?? target.name, note: data.note ?? target.note } }
+  });
   revalidatePath("/preservation");
   return { ok: true };
 }
@@ -285,6 +304,13 @@ export async function deleteTarget(id: string) {
   if (target.case.matterId) await assertMatterWritable(target.case.matterId);
 
   await roleMutation(session.user, "matters.write", async roleDb => roleDb.preservationTarget.delete({ where: { id } }));
+  await audit({
+    userId: session.user.id,
+    action: "PRESERVATION_TARGET_DELETE",
+    targetType: "PreservationTarget",
+    targetId: id,
+    detail: { name: target.name, caseId: target.case.id }
+  });
   revalidatePath("/preservation");
   return { ok: true };
 }
@@ -422,6 +448,16 @@ export async function renewProperty(input: z.infer<typeof propertyRenewSchema>) 
   }, { atomic: true });
   // ↑ atomic：CAS 更新 + 续封台账 + 作废旧档位，三件事必须一起生效。
 
+  // 续封虽然有 PreservationPropertyRenewal 台账，但审计日志是统一入口；
+  // 台账只记「续了多久」，审计记「谁在什么时候动过这条记录」。
+  await audit({
+    userId: session.user.id,
+    action: "PRESERVATION_PROPERTY_RENEW",
+    targetType: "PreservationProperty",
+    targetId: data.propertyId,
+    detail: { oldExpiryDate: prop.expiryDate.toISOString(), newExpiryDate: newExpiryDate.toISOString(), duration: data.renewalDuration, unit: data.renewalUnit }
+  });
+
   revalidatePath("/preservation");
   if (prop.target.case.matterId) await revalidateMatter(prop.target.case.matterId);
   return { ok: true };
@@ -449,6 +485,16 @@ export async function liftProperty(propertyId: string) {
   }, { atomic: true });
   // ↑ atomic：解除状态与提醒作废必须一起生效，否则会「已解除但仍收到续封提醒」。
 
+  // 2026-11-21 补审计：解除保全是律所高风险动作 —— 解除后财产可能被转移。
+  // 此前只有 case 级的 PRESERVATION_CASE_UPDATE，单笔财产解除查不到留痕。
+  await audit({
+    userId: session.user.id,
+    action: "PRESERVATION_PROPERTY_LIFT",
+    targetType: "PreservationProperty",
+    targetId: propertyId,
+    detail: { matterId: prop.target.case.matterId, expiryDate: prop.expiryDate.toISOString() }
+  });
+
   revalidatePath("/preservation");
   if (prop.target.case.matterId) await revalidateMatter(prop.target.case.matterId);
   return { ok: true };
@@ -470,6 +516,15 @@ export async function deleteProperty(id: string) {
     await voidPendingPreservation([id], "CANCELLED", "OBJECT_DELETED", roleDb);
   }, { atomic: true });
   // ↑ atomic：对象已删而登记未作废时，投递器会为一个不存在的对象发提醒。
+
+  // 2026-11-21 补审计：删除保全财产后原始记录就没了，审计是唯一的追溯线索。
+  await audit({
+    userId: session.user.id,
+    action: "PRESERVATION_PROPERTY_DELETE",
+    targetType: "PreservationProperty",
+    targetId: id,
+    detail: { matterId: property.target.case.matterId, propertyType: property.propertyType, expiryDate: property.expiryDate.toISOString() }
+  });
   revalidatePath("/preservation");
   return { ok: true };
 }

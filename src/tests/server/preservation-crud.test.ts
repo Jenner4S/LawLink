@@ -613,9 +613,14 @@ describe("财产生命周期（真库）", () => {
     expect(ledger.detail).toEqual({ reason: "LIFTED" });
   });
 
-  it("B2【缺陷固化 D-4】解除不落「解除时间」也不写审计：只靠 updatedAt 间接体现", async () => {
-    // schema 上 PreservationProperty 无 liftedAt 字段；liftProperty 也只写 status，
-    // 不调 audit()。而 addProperty/updateProperty 都写审计 —— 解除是唯一无痕的关键动作。
+  it("B2 解除写审计（D-4 已于 2026-11-21 修复；此前这条测的是缺陷本身）", async () => {
+    // 这条原本是「缺陷固化」用例：断言解除**不**写审计（action 含 LIFT 的条数为 0）。
+    // 2026-11-21 多智能体审计把它列为真缺口并修掉了 ——
+    // 解除保全是律所高风险动作（解除后财产可能被转移），
+    // 「谁在什么时候解除的」必须查得到。现在改为断言修复后的行为。
+    //
+    // 仍如实保留的事实：schema 上没有 liftedAt 字段，解除时间靠审计时间戳表达。
+    // 这是有意的取舍（不为一个时间点加迁移），但**审计必须存在**，否则连间接线索都没有。
     const { lawyer, property } = await seedChain();
     as(lawyer);
     const before = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: property.id } });
@@ -624,10 +629,17 @@ describe("财产生命周期（真库）", () => {
     await liftProperty(property.id);
 
     const after = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: property.id } });
+    expect(after.status).toBe("LIFTED");
     expect(after.updatedAt.getTime()).toBeGreaterThanOrEqual(before.updatedAt.getTime());
-    expect(
-      await prisma.auditLog.count({ where: { targetId: property.id, action: { contains: "LIFT" } } })
-    ).toBe(0);
+
+    const logs = await prisma.auditLog.findMany({
+      where: { targetId: property.id, action: "PRESERVATION_PROPERTY_LIFT" },
+      select: { userId: true, createdAt: true, detail: true }
+    });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].userId).toBe(lawyer.id);
+    // 详情里带解除前的到期日 —— 事后能复算「解除时它还剩多久」
+    expect(logs[0].detail).toMatchObject({ expiryDate: property.expiryDate.toISOString() });
   });
 
   it("B3 已解除的再解除：幂等（不抛错、状态仍 LIFTED、不重复作废）", async () => {
@@ -663,8 +675,16 @@ describe("财产生命周期（真库）", () => {
     const ledger = await prisma.reminderDelivery.findUniqueOrThrow({ where: { id: pending.id } });
     expect(ledger.status).toBe("CANCELLED");
     expect(ledger.detail).toEqual({ reason: "OBJECT_DELETED" });
-    //【缺陷固化 D-5】删除财产（连带销毁续保台账）未写审计
-    expect(await prisma.auditLog.count({ where: { action: "PRESERVATION_PROPERTY_DELETE" } })).toBe(0);
+    // 【D-5 已于 2026-11-21 修复】删除财产（连带销毁续保台账）现在写审计。
+    // 这条原本断言条数为 0 —— 那是把缺陷固化成期望。删除后原始记录就没了，
+    // 审计是唯一还能查到「谁在什么时候删了什么」的地方。
+    const delLogs = await prisma.auditLog.findMany({
+      where: { action: "PRESERVATION_PROPERTY_DELETE", targetId: property.id },
+      select: { userId: true, detail: true }
+    });
+    expect(delLogs).toHaveLength(1);
+    expect(delLogs[0].userId).toBe(lawyer.id);
+    expect(delLogs[0].detail).toMatchObject({ propertyType: property.propertyType });
   });
 
   it("B5 删除被保全人：其名下财产与续保台账一并级联删除", async () => {

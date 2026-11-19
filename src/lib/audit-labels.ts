@@ -7,7 +7,7 @@ const targetLabels: Record<string, string> = {
   ExternalContact: "外部联系人", FeeEntry: "收付记录", FirmFile: "律所文书", Hearing: "开庭",
   Intake: "收案", InvoiceRequest: "开票申请", Matter: "案件", MatterList: "案件列表",
   MatterProcedure: "案件程序", MatterStage: "案件阶段", Note: "跟进记录", Party: "当事人",
-  PreservationCase: "保全案件", PreservationProperty: "保全财产", Report: "报告", SealRequest: "用章申请",
+  PreservationCase: "保全案件", PreservationProperty: "保全财产", PreservationTarget: "被保全人", Report: "报告", SealRequest: "用章申请",
   SmsMessage: "法院短信", StageTemplate: "阶段模板", SystemSetting: "系统设置", Task: "事项",
   Team: "律师团队", User: "用户", BuiltinRole: "内置角色", RoleDefinition: "自定义角色",
   Engagement: "委托", EvidenceItem: "证据项",
@@ -88,6 +88,10 @@ const words: Record<string, string> = {
   // CONTRACT_CREATE / CONTRACT_REGENERATE / CONTRACT_EXPIRE_CRON 需要。
   // 注意：这里刻意不引入「签署」系词条名——动作语义是阅知确认，不是电子签名。
   CONTRACT: "合同", REVOKE: "撤销", EXPIRE: "过期",
+  // 保全域补审计（2026-11-21）：新增 PRESERVATION_TARGET_CREATE/UPDATE/DELETE 与
+  // PRESERVATION_PROPERTY_RENEW/LIFT/DELETE 六个动作。被保全人与续封/解除/删除
+  // 都是律所高风险操作，审计页必须一眼读懂，不能落到「其他操作」。
+  TARGET: "被保全人", RENEW: "续封",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");
