@@ -57,6 +57,14 @@ if ! node scripts/audit-write-guards.mjs | tail -2; then
   echo "    ❌ 写守卫审计发现未登记的新漏网，终止。先跑：node scripts/audit-write-guards.mjs --list" >&2
   exit 1
 fi
+# Server Action 可达性审计（2026-11-21）：清死代码时发现 `fileDocument`
+# 是一个 26 行、有权限校验、有审计、有测试的完整动作，却**全仓零调用方**。
+# 「导出即能力」是错觉 —— 全量盘点 403 个导出里 63 个前端点不到。
+# 基线棘轮：只对超出基线的新名字报警，防止这类「用户点不到的能力」继续增长。
+if ! node scripts/audit-reachability.mjs | tail -2; then
+  echo "    ❌ 可达性审计发现新的零引用动作，终止。先跑：node scripts/audit-reachability.mjs --list" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------
 echo
