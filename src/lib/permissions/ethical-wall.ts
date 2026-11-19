@@ -65,9 +65,17 @@ export function withEthicalWall(
   return { AND: [where, ethicalWallExclusion(userId, role)] };
 }
 
-/** 对象级判定：该案件是否对该用户隔离 */
+/**
+ * 对象级判定：该案件是否对该用户隔离。
+ *
+ * 这是隔离墙的**写路径**入口 —— 列表/查询用 ethicalWallExclusion 拼进 where，
+ * 而单对象校验（如财务写操作）必须用这个，否则墙只在读的时候有效。
+ *
+ * `db` 接受 PrismaClient 或 TransactionClient：写路径几乎都在事务内，
+ * 参数类型过窄会逼调用方做类型断言（2026-11-20 接线时踩到）。
+ */
 export async function isMatterWalledFor(
-  db: { ethicalWall: { findFirst: (args: unknown) => Promise<unknown> } },
+  db: Pick<Prisma.TransactionClient, "ethicalWall">,
   input: { matterId: string; userId: string; role: string }
 ): Promise<boolean> {
   const now = new Date();
