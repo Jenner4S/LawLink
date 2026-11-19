@@ -1,0 +1,16 @@
+-- 补齐 schema 声明但库中缺失的索引（2026-11-20）
+--
+-- 演变过程：
+--   20261118000001_audit_chain          CREATE INDEX "AuditLog_previousHash_idx"
+--   20261119000004_audit_chain_unique   DROP 它，改建成 UNIQUE
+--   20261119000006_audit_chain_drop_unique  DROP 掉 UNIQUE（同事务多审计会撞）
+-- 三次迁移之后，previousHash 上**一个索引都没有**，但 schema.prisma 里
+-- 仍声明着 @@index([previousHash])。
+--
+-- 后果不是功能故障，而是结构漂移：
+--   prisma migrate diff 一直报这个差异，未来任何人跑 migrate dev
+--   都会生成一条意料之外的迁移，很容易被当成噪声忽略掉真正的问题。
+--
+-- 该索引是必要的：审计链校验按 previousHash 建邻接表（byPrev），
+-- 全表扫描在审计量增长后会成为瓶颈。
+CREATE INDEX "AuditLog_previousHash_idx" ON "AuditLog"("previousHash");
