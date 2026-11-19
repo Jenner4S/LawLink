@@ -97,9 +97,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
-          {/* 编辑表单需要预填当前值：这是用户主动发起的编辑动作，编辑本身在 clientUpdateSchema
-              路径上写审计，故此处保留明文（而非走 reveal 通道重复计一次「查看」）。 */}
-          {canWrite ? <ClientEditButton client={{ ...client, idNumber: idNumber || null }} /> : null}
+          {/* 2026-11-19：不再把明文证件号传给这个客户端组件——那会让完整号码出现在首屏
+              HTML/RSC payload 里。改为点「编辑资料」时由组件自己调 revealClientIdNumber
+              拉取（同时写 CLIENT_ID_REVEAL 审计）。
+              注意：updateClient 对「未传 idNumber」的语义是清空（actions.ts:289），
+              所以编辑时必须能拿到原值，不能简单留空。 */}
+          {canWrite ? <ClientEditButton client={{ ...client, idNumber: null }} /> : null}
           <Link href={`/conflicts?name=${encodeURIComponent(client.name)}`} className="btn btn-secondary btn-sm">冲突预检</Link>
           {canMerge && insights.suspects.length === 0 ? <MergeBanner keepId={client.id} keepName={client.name} suspects={[]} canMerge={canMerge} /> : null}
           <div style={{ flex: 1 }} />
