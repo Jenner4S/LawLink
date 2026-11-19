@@ -11,7 +11,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v2.0.1 |
-| 测试基线 | **141 files / 1515 passed \| 1 skipped** |
+| 测试基线 | **141 files / 1530 passed \| 1 skipped** |
 | 类型检查 | `tsc --noEmit` **0 错误** |
 | 构建 | `npm run build` **通过** |
 | 依赖安全 | `npm audit` **0** |
@@ -239,7 +239,7 @@
 # 1. 测试与类型
 cd <repo> && set -a && . ./.env && set +a
 export DATABASE_URL="postgresql://lawlink:lawlink_dev_2026@localhost:55432/lawlink?schema=public"
-npx vitest run          # 期望 141 files / 1515 passed | 1 skipped
+npx vitest run          # 期望 141 files / 1530 passed | 1 skipped
 npx tsc --noEmit        # 期望 0 错误
 
 # 2. UI 全量巡检（83 项）
