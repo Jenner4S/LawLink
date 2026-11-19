@@ -730,6 +730,13 @@ export async function addMatterLink(
   const session = await requireSession("matters.write");
   await assertCanAssociateMatter(session.user.id, matterId);
   await assertCanAssociateMatter(session.user.id, relatedMatterId);
+  // 2026-11-21 补守卫（复核 11 个导出时发现）：归档即冻结是本项目既定规则
+  //（docs/BUGFIX-20260906.md 第 11 条：归档案件不得新增开票申请），
+  // 而这里此前只查「未删除 / 关联范围 / 隔离墙」，**不看案件状态** ——
+  // 已归档案件的关联关系仍可被增删。
+  // 只守卫**被编辑的这一侧**：把在办案件关联到已归档案件（参考同类案）仍然允许，
+  // 因为关联行记在在办案一侧，归档案件的存库字段没有被改写。
+  await assertMatterWritable(matterId);
   if (matterId === relatedMatterId) throw new ActionError("不能关联到自身");
   // v1.x P1-7: 关联关系类型（缺省兼容旧行为=一般关联）+ 建链人
   const nextRelation = relation ?? "RELATED_CASE";
@@ -752,6 +759,8 @@ export async function removeMatterLink(matterId: string, relatedMatterId: string
   const session = await requireSession("matters.write");
   await assertCanAssociateMatter(session.user.id, matterId);
   await assertCanAssociateMatter(session.user.id, relatedMatterId);
+  // 同 addMatterLink：已归档案件的关联关系不得再改（归档即冻结）
+  await assertMatterWritable(matterId);
   // 两个方向都删（无论当初谁关联谁）
   await roleMutation(session.user, "matters.write", async roleDb => roleDb.matterLink.deleteMany({
     where: {
