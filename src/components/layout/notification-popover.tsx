@@ -55,6 +55,9 @@ export function NotificationPopover() {
   const [notifications, setNotifications] = useState<Awaited<ReturnType<typeof getNotifications>>>([]);
   const [open, setOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  // 轮询连续失败次数（2026-11-21）：见 poll() 的注释 —— 静默吞掉会让用户
+  // 以为「没有新通知」，而实际上只是刷不出来。连续 2 次才提示，避免抖动骚扰。
+  const [pollFailures, setPollFailures] = useState(0);
   const router = useRouter();
 
   // 已弹过桌面通知的 id（含挂载时已存在的，避免刷新页面就刷屏）
@@ -70,6 +73,7 @@ export function NotificationPopover() {
       ]);
       setUnread(count);
       setNotifications(list);
+      setPollFailures(0);
 
       const unreadList = list.filter((n) => !n.read);
       if (!seededRef.current) {
@@ -100,7 +104,18 @@ export function NotificationPopover() {
           }
         }
       }
-    } catch {}
+    } catch (err) {
+      // 2026-11-21 修复（P2，多智能体审计「错误处理」维度）：
+      // 原来这里是 `catch {}` —— 轮询失败完全无声。用户看到的是「铃铛一直没动静」，
+      // 会以为是「没有新通知」，而实际上只是拉不到。对一个靠提醒盯期限的系统，
+      // 这等于一条期限提醒被静默吞掉，和 Round 125 修的「点了没反应」是同一类病。
+      //
+      // 但不能每次失败都弹 toast（60 秒一次会很吵）。做法：只累计次数，
+      // 由铃铛上的小角标提示；连续 2 次才显示，瞬时抖动不打扰。
+      // 错误详情只在控制台留一行，供排障。
+      console.warn("[notification] 轮询失败", err);
+      setPollFailures((n) => n + 1);
+    }
   }, [router]);
 
   useEffect(() => {
@@ -167,11 +182,24 @@ export function NotificationPopover() {
       <PopoverTrigger asChild>
         <button
           className="btn btn-secondary btn-icon relative"
-          aria-label={unread > 0 ? `通知（${unread} 条未读）` : "通知"}
+          aria-label={
+            pollFailures >= 2
+              ? `通知（刷新失败，显示的可能不是最新）${unread > 0 ? `，${unread} 条未读` : ""}`
+              : unread > 0 ? `通知（${unread} 条未读）` : "通知"
+          }
+          title={pollFailures >= 2 ? "通知刷新失败，正在自动重试" : undefined}
         >
           <Bell strokeWidth={1.8} />
           {unread > 0 && (
             <span className="absolute right-[7px] top-[7px] h-[7px] w-[7px] rounded-full border-[1.5px] border-white bg-[var(--red)]" aria-hidden />
+          )}
+          {/* 连续刷新失败时的角标：不用 toast（60 秒一次会吵），用静态提示。
+              位置放在左下，与未读红点（右上）区分开，两者可同时出现。 */}
+          {pollFailures >= 2 && (
+            <span
+              className="absolute bottom-[5px] left-[5px] h-[6px] w-[6px] rounded-full bg-[var(--amber,#f59e0b)]"
+              aria-hidden
+            />
           )}
         </button>
       </PopoverTrigger>

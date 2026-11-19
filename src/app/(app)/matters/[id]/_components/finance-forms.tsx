@@ -55,7 +55,21 @@ export function AddBillingSheet({
   matterId: string;
 }) {
   const router=useRouter();
-  useEffect(()=>{if(!open)return;let active=true;void getMatterFinance(matterId).then(fin=>{if(active&&fin.ledgerReady){onOpenChange(false);router.push(`/finance/reconciliation?matterId=${matterId}`);}}).catch(()=>{});return()=>{active=false;};},[open,matterId,onOpenChange,router]);
+  // 2026-11-21 修复（P2，多智能体审计「错误处理」维度）：
+  // 原来是 `.catch(()=>{})` —— 拉取财务数据失败时用户看到的是「点了没反应」：
+  // 弹窗没关、也没跳转、还没有任何解释。
+  // 现在把失败原因说出来，用户至少知道该重试还是找管理员。
+  useEffect(()=>{
+    if(!open)return;
+    let active=true;
+    void getMatterFinance(matterId).then(fin=>{
+      if(active&&fin.ledgerReady){onOpenChange(false);router.push(`/finance/reconciliation?matterId=${matterId}`);}
+    }).catch((err)=>{
+      if(!active)return;
+      toast.error("财务数据加载失败", { description: actionErrorMessage(err) });
+    });
+    return()=>{active=false;};
+  },[open,matterId,onOpenChange,router]);
   const [isPending, startTransition] = useTransition();
   const [contractFile, setContractFile] = useState<File | null>(null);
   const {

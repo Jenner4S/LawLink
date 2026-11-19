@@ -73,6 +73,9 @@ export function DocumentReviewDialog({
 }: Props) {
   const [view, setView] = useState<View>({ kind: "list" });
   const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
+  // 历史刷新失败标记（2026-11-21）：失败时保留旧列表不清空，
+  // 并用这个标记在历史区标一行提示，避免把「加载失败」呈现成「没有历史」。
+  const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +115,17 @@ export function DocumentReviewDialog({
       setView({ kind: "result", result: r, isNew: true });
       setSaved(false);
       // 重新拉历史（新审查已落库）
-      listReviewHistory({ documentId }).then(setHistory).catch(() => {});
+      // 2026-11-21 修复（P2，多智能体审计「错误处理」维度）：
+      // 原来是 `.catch(() => {})` —— 历史拉失败时弹窗里显示的是**上一轮或空的历史**，
+      // 用户会以为「这份材料以前没审过」。这是 Round 8「系统说没有，其实是没查到」
+      // 的同一类病：把「加载失败」呈现成「没有」。
+      // 现在明确说出来，历史区保持原样（不清空），并标注刷新失败。
+      listReviewHistory({ documentId })
+        .then((h) => { setHistory(h); setHistoryLoadFailed(false); })
+        .catch((err) => {
+          setHistoryLoadFailed(true);
+          toast.error("审查历史刷新失败", { description: actionErrorMessage(err) });
+        });
     } catch (err) {
       setError(err instanceof Error ? actionErrorMessage(err) : "AI 审查失败");
     } finally {
@@ -239,14 +252,24 @@ export function DocumentReviewDialog({
                     {loadingHistory ? "…" : history.length}
                   </span>
                 </h4>
+                {historyLoadFailed && (
+                  <p className="mb-2 rounded border border-[var(--amber,#f59e0b)]/40 bg-[var(--amber,#f59e0b)]/10 px-2 py-1 text-[11px] text-muted-foreground">
+                    历史刷新失败，下面显示的可能不是最新记录。稍后重开本窗口会再拉一次。
+                  </p>
+                )}
                 {loadingHistory ? (
                   <p className="py-6 text-center text-xs text-muted-foreground">加载中…</p>
                 ) : history.length === 0 ? (
-                  <EmptyState
-                    compact
-                    title="还没有 AI 审查记录"
-                    description="点上方「开始 AI 审查」并选择材料，审查结果会保存在这里，可随时回看。"
-                  />
+                  // 失败时**不能**说「还没有记录」—— 那正是把「没查到」说成「没有」。
+                  historyLoadFailed ? (
+                    <p className="py-6 text-center text-xs text-muted-foreground">历史记录加载失败，无法确认是否有记录。</p>
+                  ) : (
+                    <EmptyState
+                      compact
+                      title="还没有 AI 审查记录"
+                      description="点上方「开始 AI 审查」并选择材料，审查结果会保存在这里，可随时回看。"
+                    />
+                  )
                 ) : (
                   <ul className="space-y-1.5">
                     {history.map((h) => (
