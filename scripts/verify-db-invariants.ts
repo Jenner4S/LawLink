@@ -174,6 +174,66 @@ async function main() {
     record("borrow-grant", "生效中的借阅单必须有对应归档记录", rows.map((r) => `borrowId=${r.id}`));
   }
 
+  // ── 7. 跨表状态一致：结案案件不得有未办结事项 ────────────
+  // closeMatter 已用 closureReady 门禁拦截；这里守的是**绕过门禁**的情形
+  //（直接改库、未来新增的写入路径、迁移脚本）。「A 表说结完了、B 表说还有活」
+  // 是律师最容易在庭上被问住的一类矛盾，单表校验发现不了。
+  {
+    const rows = await prisma.$queryRaw<{ id: string; internalCode: string; detail: string }[]>`
+      SELECT m.id, m."internalCode",
+             concat_ws(' / ',
+               CASE WHEN EXISTS (SELECT 1 FROM "Task" t WHERE t."matterId"=m.id AND t.completed=false)
+                    THEN '未办结任务' END,
+               CASE WHEN EXISTS (SELECT 1 FROM "Deadline" d JOIN "MatterProcedure" p ON p.id=d."procedureId"
+                                 WHERE p."matterId"=m.id AND d.completed=false)
+                    THEN '未办结期限' END,
+               CASE WHEN EXISTS (SELECT 1 FROM "Hearing" h JOIN "MatterProcedure" p2 ON p2.id=h."procedureId"
+                                 WHERE p2."matterId"=m.id AND h."startsAt" > now())
+                    THEN '未来开庭' END) AS detail
+      FROM "Matter" m
+      WHERE m.status = 'CLOSED' AND m."deletedAt" IS NULL
+        AND (EXISTS (SELECT 1 FROM "Task" t WHERE t."matterId"=m.id AND t.completed=false)
+          OR EXISTS (SELECT 1 FROM "Deadline" d JOIN "MatterProcedure" p ON p.id=d."procedureId"
+                     WHERE p."matterId"=m.id AND d.completed=false)
+          OR EXISTS (SELECT 1 FROM "Hearing" h JOIN "MatterProcedure" p2 ON p2.id=h."procedureId"
+                     WHERE p2."matterId"=m.id AND h."startsAt" > now()))
+      LIMIT 20`;
+    record(
+      "closed-matter-open-work",
+      "结案案件无未办结事项",
+      rows.map((r) => `${r.internalCode}（${r.detail}）`)
+    );
+  }
+
+  // ── 8. 跨表状态一致：归档记录与案件状态同步 ──────────────
+  // approveArchiveRecord 在同一事务里同时置 record=APPROVED 与 matter=ARCHIVED，
+  // 所以两个方向都必须成立。任一方向不一致都说明有路径只改了一半。
+  //
+  // 未纳入（如实记）："程序 CONCLUDED 但环节仍 ACTIVE" —— 曾想加，核对后确认
+  // 程序是按「填写结案时间」置为 CONCLUDED 的，环节状态是独立字段，
+  // ACTIVE 属正常，加了就是假阳性。不验证过的规则不进不变量。
+  {
+    const approvedNotArchived = await prisma.$queryRaw<{ archiveNo: string; internalCode: string; status: string }[]>`
+      SELECT a."archiveNo", m."internalCode", m.status::text AS status
+      FROM "ArchiveRecord" a JOIN "Matter" m ON m.id = a."matterId"
+      WHERE a.status = 'APPROVED' AND m.status <> 'ARCHIVED' AND m."deletedAt" IS NULL
+      LIMIT 20`;
+    const archivedWithoutRecord = await prisma.$queryRaw<{ internalCode: string }[]>`
+      SELECT m."internalCode"
+      FROM "Matter" m
+      WHERE m.status = 'ARCHIVED' AND m."deletedAt" IS NULL
+        AND NOT EXISTS (SELECT 1 FROM "ArchiveRecord" a WHERE a."matterId" = m.id AND a.status = 'APPROVED')
+      LIMIT 20`;
+    record(
+      "archive-status-sync",
+      "归档记录与案件状态同步",
+      [
+        ...approvedNotArchived.map((r) => `${r.archiveNo}: 记录已批准但案件状态=${r.status}`),
+        ...archivedWithoutRecord.map((r) => `${r.internalCode}: 案件已归档但无已批准归档记录`)
+      ]
+    );
+  }
+
   // ── 6. 外键孤儿（恢复完整性佐证）─────────────────────────
   // 数据库约束本应保证；若恢复不完整（比如某张表漏了），这里会暴露。
   {
