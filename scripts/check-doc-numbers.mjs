@@ -68,25 +68,89 @@ const LEDGER = path.join(ROOT, "docs/BACKLOG-20261118.md");
 const FIX = process.argv.includes("--fix");
 
 /** 跑一次测试，取出 "Tests  N passed" 里的 N。失败返回 null，绝不返回空串。 */
-function measureTests() {
+/**
+ * 跑测试这件事一次只能有一个（2026-11-21 加）。
+ *
+ * 起因：`check-doc-numbers` 和 `mutation-check` 都会跑完整 `vitest run`。
+ * 两个同时跑时，各自那些「真库测试」会同时 `CREATE DATABASE`，
+ * 撞上 PostgreSQL 的模板库锁，一边报：
+ *   LockAcquireExtended  ...  CREATE DATABASE
+ * 于是 vitest 退出码 1，本脚本读不到测试数，屏幕上出现「实际 ?」。
+ *
+ * 这在我这儿发生过三次，每次都要花时间排查「到底文档错了还是没测成」。
+ * 用 mkdir 做原子锁（POSIX 上 mkdir 是原子的），让第二个进程排队等，
+ * 而不是两个一起撞死。
+ *
+ * 超时上限 15 分钟（全量测试约 2-3 分钟，留足余量）；超时后不强等，
+ * 继续往下跑并把原因说出来 —— 卡死比失败更糟。
+ */
+const LOCK_PARENT = path.join(ROOT, "node_modules", ".cache");
+const LOCK_DIR = path.join(LOCK_PARENT, "lawlink-test-run.lock");
+
+async function withTestLock(fn) {
+  // 父目录可能不存在（干净的 node_modules 没有 .cache）—— 先建，
+  // 否则 mkdirSync(recursive:false) 抛 ENOENT，被外层 catch 当成「测试没跑起来」。
+  fs.mkdirSync(LOCK_PARENT, { recursive: true });
+  const start = Date.now();
+  const deadline = start + 15 * 60_000;
+  let waited = false;
+  while (true) {
+    try {
+      fs.mkdirSync(LOCK_DIR, { recursive: false });
+      fs.writeFileSync(path.join(LOCK_DIR, "pid"), String(process.pid));
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      if (!waited) {
+        console.error("  ⏳ 另一个进程正在跑测试，排队等待（避免撞 PostgreSQL 模板库锁）…");
+        waited = true;
+      }
+      if (Date.now() > deadline) {
+        console.error("  ⚠️ 等锁超过 15 分钟，放弃等待，继续尝试（可能会因并发失败）");
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
   try {
-    const out = execFileSync("npx", ["vitest", "run"], {
+    return await fn();
+  } finally {
+    try {
+      fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+    } catch {
+      /* 清锁失败不影响主流程 */
+    }
+  }
+}
+
+async function measureTests() {
+  try {
+    const out = await withTestLock(() => execFileSync("npx", ["vitest", "run"], {
       cwd: ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 64 * 1024 * 1024,
       env: process.env
-    });
+    }));
     const m = out.match(/Tests\s+(\d+) passed/);
     if (!m) {
       // 2026-11-21：实测过一种情况 —— 同时有另一个 vitest 在跑时，
       // 输出可能被交错的进程信息打乱、匹配不到这一行。
       // 返回 null 而不是 0，让主流程报「未知」而不是「文档写错了」。
-      console.error("  ⚠️ 从 vitest 输出里读不到『Tests N passed』（可能同时有别的测试进程在跑）");
+      // 把输出末尾打出来 —— 光说「读不到」帮不了排查，得看到它到底印了什么。
+      const tail = out.split("\n").filter((l) => /Test|Tests|Files|fail|passed/i.test(l)).slice(-6).join("\n");
+      console.error("  ⚠️ 从 vitest 输出里读不到『Tests N passed』。相关行：");
+      console.error(tail ? tail.split("\n").map((l) => "      " + l).join("\n") : "      （输出里没有任何 Tests 相关行）");
       return null;
     }
     return Number(m[1]);
-  } catch {
+  } catch (err) {
+    // 2026-11-21：原来这里静默返回 null，于是「vitest 根本没跑起来」和
+    // 「跑起来了但输出格式变了」在屏幕上完全一样（都是 实际 ?）。
+    // 现在把原因打出来 —— 诊断的价值在于指向对的地方。
+    const status = err && typeof err === "object" && "status" in err ? `退出码 ${err.status}` : "无退出码";
+    const stderr = err && typeof err === "object" && "stderr" in err && err.stderr ? String(err.stderr).slice(-400) : "";
+    console.error(`  ⚠️ vitest 没有正常跑完（${status}）${stderr ? `，stderr 末尾：\n${stderr}` : ""}`);
     return null;
   }
 }
@@ -163,7 +227,7 @@ function writeBack(label, from, to, apply) {
  * 主流程
  * ------------------------------------------------------------------ */
 const actual = {
-  tests: measureTests(),
+  tests: await measureTests(),
   ledger: measureLedger(),
   migrations: measureMigrations(),
   driftOk: measureDrift()
@@ -176,8 +240,28 @@ const shown = {
 };
 
 let fail = 0;
+/**
+ * 三态输出（2026-11-21 修）。
+ *
+ * 原先只有两态：相等 ✅ / 不等 ❌。但「实测值拿不到」时 act 是 null，
+ * 于是也走 ❌ 分支，屏幕上出现「文档 1462 实际 ? ❌」——
+ * 读起来像「文档写错了」，实际是「这次没测成」。
+ *
+ * 这两种情况的后续动作完全不同：
+ *   ❌ 要改文档（或改代码）
+ *   ⚠️ 要换时机重跑（比如另一个 vitest 正在跑，输出交错）
+ *
+ * 现在分开：act 为 null 报 ⚠️ 且**不计入失败**（但整轮仍返回非零，
+ * 因为「没验成」不能当通过）。这样屏幕上的指向永远是对的。
+ */
 const row = (label, doc, act, ok) => {
-  console.log(`  ${label.padEnd(10)} 文档 ${String(doc ?? "?").padEnd(6)} 实际 ${String(act ?? "?").padEnd(6)} ${ok ? "✅" : "❌"}`);
+  const cell = (v) => String(v ?? "?").padEnd(6);
+  if (act === null || act === undefined) {
+    console.log(`  ${label.padEnd(10)} 文档 ${cell(doc)} 实际 ${cell(act)} ⚠️ 未测成（不是文档错）`);
+    fail = 1; // 没验成也不算通过
+    return;
+  }
+  console.log(`  ${label.padEnd(10)} 文档 ${cell(doc)} 实际 ${cell(act)} ${ok ? "✅" : "❌"}`);
   if (!ok) fail = 1;
 };
 row("测试数", shown.tests, actual.tests, shown.tests === actual.tests);
