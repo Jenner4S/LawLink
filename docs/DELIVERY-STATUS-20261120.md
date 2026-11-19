@@ -1,7 +1,7 @@
 # LawLink 交付状态总览
 
 > 更新：2026-11-20（Round 78）
-> 依据：`docs/BACKLOG-20261118.md`（**313 条记录**）与 git 提交历史
+> 依据：`docs/BACKLOG-20261118.md`（**387 条记录**）与 git 提交历史
 > 用途：一眼看清「哪些已完成、哪些等决策、哪些缺外部条件」
 
 ---
@@ -11,7 +11,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v2.0.1 |
-| 测试基线 | **137 files / 1399 passed \| 1 skipped** |
+| 测试基线 | **141 files / 1420 passed \| 1 skipped** |
 | 类型检查 | `tsc --noEmit` **0 错误** |
 | 构建 | `npm run build` **通过** |
 | 依赖安全 | `npm audit` **0** |
@@ -19,7 +19,7 @@
 | UI 验证 | `node scripts/verify-ui.mjs all` **83 项全通过** |
 | 数据基线 | Client 11 / Matter 7 / Party 14 / User 10 / AuditLog 294 |
 | 数据库 | **15 个迁移**（含 `0_init` 基线），最新 `20261120000003_audit_log_previous_hash_index` |
-| 台账 | `docs/BACKLOG-20261118.md` **313 条**记录 |
+| 台账 | `docs/BACKLOG-20261118.md` **387 条**记录 |
 
 ---
 
@@ -239,7 +239,7 @@
 # 1. 测试与类型
 cd <repo> && set -a && . ./.env && set +a
 export DATABASE_URL="postgresql://lawlink:lawlink_dev_2026@localhost:55432/lawlink?schema=public"
-npx vitest run          # 期望 137 files / 1399 passed | 1 skipped
+npx vitest run          # 期望 141 files / 1420 passed | 1 skipped
 npx tsc --noEmit        # 期望 0 错误
 
 # 2. UI 全量巡检（83 项）
