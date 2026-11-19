@@ -35,7 +35,7 @@ export async function closeMatter(input: CloseMatterInput) {
   const session = await requireSession("matters.write");
   const data = parseInput(closeMatterSchema, input);
   await assertMatterWritable(data.id);
-  await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以结案");
+  await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以结案", session.user.role);
 
   await prisma.$transaction(async (tx) => {
     await checkRoleMutation(tx, session.user, "matters.write");
@@ -83,7 +83,7 @@ export async function reopenMatter(id: string) {
   const matter = await prisma.matter.findUnique({ where: { id }, select: { status: true } });
   if (!matter) throw new ActionError("案件不存在");
   await assertMatterWritable(id);
-  await assertCanLeadMatter(session.user.id, id, "仅案件主办/协办可以重新开放案件");
+  await assertCanLeadMatter(session.user.id, id, "仅案件主办/协办可以重新开放案件", session.user.role);
   if (matter.status === "ARCHIVED") {
     throw new ActionError("已归档案件不能重新开放");
   }
@@ -124,7 +124,7 @@ export async function holdMatter(input: HoldMatterInput) {
   const session = await requireSession("matters.write");
   const data = parseInput(holdMatterSchema, input);
   await assertMatterWritable(data.id);
-  await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以暂停案件");
+  await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以暂停案件", session.user.role);
 
   await prisma.$transaction(async (tx) => {
     await checkRoleMutation(tx, session.user, "matters.write");
@@ -175,7 +175,7 @@ export async function completeMatterService(input: CompleteMatterServiceInput) {
   const matter = await prisma.matter.findUnique({ where: { id: data.id }, select: { serviceStatus: true } });
   if (!matter) throw new ActionError("案件不存在");
   await assertMatterWritable(data.id);
-  await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以完成服务");
+  await assertCanLeadMatter(session.user.id, data.id, "仅案件主办/协办可以完成服务", session.user.role);
   if (matter.serviceStatus === "SERVICE_COMPLETED") throw new ActionError("服务已完成，请勿重复操作");
 
   await prisma.$transaction(async (tx) => {
@@ -216,7 +216,7 @@ export async function activateMatterService(id: string) {
   const matter = await prisma.matter.findUnique({ where: { id }, select: { serviceStatus: true } });
   if (!matter) throw new ActionError("案件不存在");
   await assertMatterWritable(id);
-  await assertCanLeadMatter(session.user.id, id, "仅案件主办/协办可以恢复服务");
+  await assertCanLeadMatter(session.user.id, id, "仅案件主办/协办可以恢复服务", session.user.role);
   if (matter.serviceStatus === "SERVICE_ACTIVE") throw new ActionError("服务尚在进行中");
 
   await prisma.$transaction(async (tx) => {

@@ -101,7 +101,7 @@ export async function renderTemplate(input: z.infer<typeof templateRenderSchema>
   const data = parseInput(templateRenderSchema, input);
 
   await assertMatterWritable(data.matterId);
-  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可生成文书");
+  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可生成文书", session.user.role);
 
   // 取模板 + docxBlob
   const tmpl = await prisma.documentTemplate.findUnique({

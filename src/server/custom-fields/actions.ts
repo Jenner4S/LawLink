@@ -125,7 +125,7 @@ export async function saveMatterCustomValues(
   // 被 fail-closed 一律拒绝（功能缺陷）；与案件编辑同 key
   const session = await requireSession("matters.write");
   await assertMatterWritable(matterId);
-  await assertCanLeadMatter(session.user.id, matterId, "仅案件主办/协办可编辑");
+  await assertCanLeadMatter(session.user.id, matterId, "仅案件主办/协办可编辑", session.user.role);
 
   // 仅保留当前已启用字段定义的键，避免脏数据
   const defs = await prisma.customFieldDef.findMany({

@@ -270,7 +270,7 @@ export async function deleteDocument(id: string) {
   if (doc.matterId) {
     await assertDocumentWritable(doc.matterId, { kind: "modify" });
     if (doc.uploadedById !== session.user.id) {
-      await assertCanLeadMatter(session.user.id, doc.matterId, "只能删除自己上传的材料，或由本案主办/协办删除");
+      await assertCanLeadMatter(session.user.id, doc.matterId, "只能删除自己上传的材料，或由本案主办/协办删除", session.user.role);
     }
   } else if (
     doc.uploadedById !== session.user.id &&

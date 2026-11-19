@@ -21,7 +21,7 @@ import { ActionError } from "@/lib/action-error";
 
 /** 判断当前用户是否能编辑该案件的卷宗结构（仅本案 LEAD / CO_LEAD） */
 async function requireFolderEditor(matterId: string, session: { user: { id: string; role: string } }) {
-  await assertCanLeadMatter(session.user.id, matterId, "仅案件主办/协办可管理卷宗");
+  await assertCanLeadMatter(session.user.id, matterId, "仅案件主办/协办可管理卷宗", session.user.role);
 }
 
 export async function listFoldersByMatter(matterId: string) {

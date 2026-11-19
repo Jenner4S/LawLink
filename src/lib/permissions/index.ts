@@ -250,7 +250,9 @@ export async function assertCanAssociateMatter(
 export async function assertCanLeadMatter(
   userId: string,
   matterId: string,
-  message = "仅案件主办/协办可操作"
+  message = "仅案件主办/协办可操作",
+  /** 2026-11-20：隔离墙判定需要角色（ROLE 类隔离按岗位登记） */
+  role?: string
 ): Promise<void> {
   const row = await prisma.matter.findFirst({
     where: {
@@ -259,41 +261,51 @@ export async function assertCanLeadMatter(
       OR: [
         { ownerId: userId },
         { members: { some: { userId, role: { in: ["LEAD", "CO_LEAD"] } } } }
-      ]
+      ],
+      // 2026-11-20：隔离墙。此前 27 处调用（程序编辑、期限调整、状态流转…）
+      // 对「被墙隔离的主办/协办」敞开——墙的意义是不得接触该案，与自己是不是主办无关。
+      ...ethicalWallExclusion(userId, role ?? "")
     },
     select: { id: true }
   });
-  if (!row) throw new Error(message);
+  // 抛 ActionError 而不是 Error：后者不会被 actionErrorMessage 识别为业务错误，
+  // 用户会看到 Next.js 的通用错误页而不是这句中文提示。
+  if (!row) throw new ActionError(message);
 }
 
 /** 当前主办律师断言：用于变更承办团队、删除案件等所有权级操作 */
 export async function assertCanOwnMatter(
   userId: string,
   matterId: string,
-  message = "仅案件主办律师可操作"
+  message = "仅案件主办律师可操作",
+  role?: string
 ): Promise<void> {
   const row = await prisma.matter.findFirst({
     where: {
       id: matterId,
       deletedAt: null,
-      ownerId: userId
+      ownerId: userId,
+      // 2026-11-20：隔离墙（含删除案件、交接等 4 处调用）。
+      ...ethicalWallExclusion(userId, role ?? "")
     },
     select: { id: true }
   });
-  if (!row) throw new Error(message);
+  if (!row) throw new ActionError(message);
 }
 
 /** 修改断言：只允许主办或案件成员，不因管理角色放开 */
 export async function assertCanModifyMatter(
   userId: string,
-  _role: string,
+  role: string,
   matterId: string
 ): Promise<void> {
   const matter = await prisma.matter.findFirst({
     where: {
       id: matterId,
       deletedAt: null,
-      ...matterAssociationFilter(userId)
+      ...matterAssociationFilter(userId),
+      // 2026-11-20：隔离墙（此前 `_role` 参数存在却没被用到）。
+      ...ethicalWallExclusion(userId, role ?? "")
     },
     select: { id: true }
   });

@@ -54,7 +54,7 @@ export async function archiveMatter(input: ArchiveSubmitInput) {
   const supplement=initial.status==='ARCHIVED';
   if(supplement){if(scopeFor(session.user,'archive.supplement')!=='OWN')throw new ActionError('补充归档须独立授权');}
   else await assertMatterWritable(data.matterId);
-  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可以提交归档申请");
+  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可以提交归档申请", session.user.role);
 
   const matter = await prisma.matter.findUnique({
     where: { id: data.matterId },
@@ -488,7 +488,7 @@ export async function rejectArchiveRecord(input: { archiveId: string; note: stri
  */
 export async function getArchivePrepData(matterId: string) {
   const session = await requireSession("archive.submit");
-  await assertCanLeadMatter(session.user.id, matterId, "仅案件主办/协办可以准备归档");
+  await assertCanLeadMatter(session.user.id, matterId, "仅案件主办/协办可以准备归档", session.user.role);
   const matter = await prisma.matter.findUnique({
     where: { id: matterId },
     select: {

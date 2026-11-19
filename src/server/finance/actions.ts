@@ -113,7 +113,7 @@ export async function deleteBilling(id: string) {
     await assertMatterWritable(billing.matterId, { allowFinanceRole: true });
   } else {
     await assertMatterWritable(billing.matterId);
-    await assertCanLeadMatter(session.user.id, billing.matterId, "仅案件主办/协办或财务可删除合同");
+    await assertCanLeadMatter(session.user.id, billing.matterId, "仅案件主办/协办或财务可删除合同", session.user.role);
   }
 
   await roleMutation(session.user, "finance.write", async roleDb => roleDb.billing.delete({ where: { id } }));
@@ -417,7 +417,7 @@ export async function setCommissionPlan(input: CommissionPlanSetInput) {
   const session = await requireSession("finance.write");
   const data = parseInput(commissionPlanSetSchema, input);
   await assertMatterWritable(data.matterId);
-  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可设置分成方案");
+  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办可设置分成方案", session.user.role);
 
   await prisma.$transaction(async db => {
     await db.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(72606101)`;

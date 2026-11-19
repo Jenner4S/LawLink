@@ -169,7 +169,7 @@ export async function deleteProcedure(id: string) {
 
   await assertCanHandleMatter(session.user, procedure.matterId);
   await assertMatterWritable(procedure.matterId);
-  await assertCanLeadMatter(session.user.id, procedure.matterId, "仅案件主办/协办可以删除程序");
+  await assertCanLeadMatter(session.user.id, procedure.matterId, "仅案件主办/协办可以删除程序", session.user.role);
 
   await roleMutation(session.user, "schedule.write", async roleDb => roleDb.matterProcedure.delete({ where: { id } }));
   await audit({

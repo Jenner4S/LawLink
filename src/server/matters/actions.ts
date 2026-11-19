@@ -1001,7 +1001,7 @@ export async function updateMatterTeam(input: {
   });
   if (!matter) throw new ActionError("案件不存在");
   await assertMatterWritable(input.matterId);
-  await assertCanOwnMatter(session.user.id, input.matterId, "只有当前主办律师可以修改承办团队");
+  await assertCanOwnMatter(session.user.id, input.matterId, "只有当前主办律师可以修改承办团队", session.user.role);
 
   await assertAssignableColleagues([input.ownerId, ...input.coLeadIds, ...input.assistantIds], matter.members.map((m) => m.userId));
   if (input.ownerId !== matter.ownerId) await assertAssignableColleagues([input.ownerId]);
@@ -1089,7 +1089,7 @@ export async function updateMatterBasicInfo(input: MatterUpdateBasicInput) {
   });
   if (!matter) throw new ActionError("案件不存在");
   await assertMatterWritable(data.id);
-  await assertCanLeadMatter(session.user.id, data.id, "只有案件主办/协办可以编辑案件基本信息");
+  await assertCanLeadMatter(session.user.id, data.id, "只有案件主办/协办可以编辑案件基本信息", session.user.role);
   await assertCauseAllowedForMatter(data.id, data.causeId);
 
   await roleMutation(session.user, "matters.write", async roleDb => roleDb.matter.update({
@@ -1131,7 +1131,7 @@ export async function updateMatterBasicInfo(input: MatterUpdateBasicInput) {
 export async function softDeleteMatter(id: string) {
   const session = await requireSession("matters.write");
   await assertMatterWritable(id);
-  await assertCanOwnMatter(session.user.id, id, "只有当前主办律师可以删除案件");
+  await assertCanOwnMatter(session.user.id, id, "只有当前主办律师可以删除案件", session.user.role);
 
   // 2026-09-19 审计：删除前拦截未决交接与未结责任，否则遗留永久 PENDING 的交接、
   // 以及工作台里持续提醒却无入口关闭的待办（提醒查询不过滤 deletedAt）。

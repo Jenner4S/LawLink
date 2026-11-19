@@ -76,7 +76,7 @@ export async function createInvoiceRequest(input: z.infer<typeof createSchema>) 
   await assertCanAssociateMatter(session.user.id, data.matterId);
   await assertMatterWritable(data.matterId);
 
-  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办律师可申请开票");
+  await assertCanLeadMatter(session.user.id, data.matterId, "仅案件主办/协办律师可申请开票", session.user.role);
 
   // 两套入口一套规则（2026-09-20 A 批 P2-15）：旧表单缺少开票类型、名目、抬头与开票依据，
   // 无法满足「关联案件必传开票依据、专票校验购方六要素」的现行服务端规则。此入口已无页面
