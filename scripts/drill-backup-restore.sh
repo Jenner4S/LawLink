@@ -183,6 +183,29 @@ else
   echo "  ⚠️  跳过存储比对：${ST_MAIN} 不存在"
 fi
 
+# 4.7 应用级不变量（2026-11-21 新增）
+#
+# 「表一样、行数一样、内容摘要一样」只证明**数据搬过去了**，
+# 不证明**应用能正常用它**。这一项在恢复出来的库上跑应用自己依赖的那些
+# 不变量（文档族唯一 isLatest、提醒无悬空、审计链连续、至少有可用超管…），
+# 是「恢复后系统可用」与「恢复后看起来一样」的分界线。
+echo ""
+echo "[4.7] 应用级不变量（在恢复库上跑，不是主库）"
+INV_OUT="$WORK/invariants.log"
+if DATABASE_URL="postgresql://${POSTGRES_USER:-lawlink}:${POSTGRES_PASSWORD:-}@localhost:${POSTGRES_PORT:-55432}/${RT_DB}?schema=public" \
+   npx tsx scripts/verify-db-invariants.ts > "$INV_OUT" 2>&1; then
+  pass "恢复库通过全部应用级不变量"
+  grep -E "⚠️" "$INV_OUT" | sed 's/^/     /' || true
+else
+  RC=$?
+  if [ "$RC" -eq 2 ]; then
+    fail "不变量检查脚本自身没跑成（不是数据问题），日志见 ${INV_OUT}"
+  else
+    fail "恢复库有应用级不变量被破坏："
+    grep -E "❌|^ +brokenAt|^ +familyId|^ +borrowId" "$INV_OUT" | head -10 | sed 's/^/     /'
+  fi
+fi
+
 # ── 5. 结论 ──────────────────────────────────────────────
 echo "[5/5] 结论"
 if [ "$FAIL" -eq 0 ]; then
