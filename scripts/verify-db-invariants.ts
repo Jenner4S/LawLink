@@ -267,6 +267,54 @@ async function main() {
     );
   }
 
+  // ── 14. 分成链路：派生的分成合计不得超过其基数 ───────────
+  // 规则出自 `allocateCommissions`：它先校验「比例合计 ≤ 100%、逐个非负、
+  // 受益人不重复」，再按基数×比例分并处理尾差。既然总比例 ≤ 100，
+  // 同一笔实收派生的分成合计就必然 ≤ 实收金额。
+  //
+  // 为什么值得全库查：分成是律所分出去的真金白银。合计超过基数意味着
+  // 分出去的钱比收进来的还多 —— 而这种错只会在月底结算时才被发现，
+  // 且已经付出去了。
+  {
+    const rows = await prisma.$queryRaw<{ code: string; paid: string; shares: string; n: string }[]>`
+      SELECT m."internalCode" AS code,
+             f.amount::text AS paid,
+             SUM(c.amount)::text AS shares,
+             count(*)::text AS n
+      FROM "FeeEntry" f
+      JOIN "FeeEntry" c ON c."parentFeeEntryId" = f.id AND c.type = 'COMMISSION'
+      JOIN "Matter" m ON m.id = f."matterId"
+      WHERE m."deletedAt" IS NULL
+      GROUP BY f.id, f.amount, m."internalCode"
+      HAVING SUM(c.amount) > f.amount
+      LIMIT 20`;
+    record(
+      "commission-share-cap",
+      "分成合计不超过其基数",
+      rows.map((r) => `${r.code}：实收 ${r.paid}，分出 ${r.shares}（${r.n} 人）`)
+    );
+  }
+
+  // ── 15. 分成链路：结算必须挂在真正的分成计提上 ───────────
+  // `CommissionSettlement.commissionEntryId` 有外键指向 FeeEntry，
+  // 但**外键不校验 type** —— 直接写库或未来新路径可以把结算挂在实收行上，
+  // 于是 commissionPositions 那条 `WHERE f.type='COMMISSION'` 就永远看不到它，
+  // 这笔钱在账面上既不减应付也不计已付，等于凭空消失。
+  {
+    const rows = await prisma.$queryRaw<{ code: string; kind: string; type: string }[]>`
+      SELECT m."internalCode" AS code, s.kind::text AS kind, f.type::text AS type
+      FROM "CommissionSettlement" s
+      JOIN "FeeEntry" f ON f.id = s."commissionEntryId"
+      JOIN "Matter" m ON m.id = f."matterId"
+      WHERE f.type <> 'COMMISSION'
+      LIMIT 20`;
+    record(
+      "settlement-on-commission",
+      "分成结算只挂在 COMMISSION 计提上",
+      rows.map((r) => `${r.code}：结算 ${r.kind} 挂在 ${r.type} 行上`)
+    );
+  }
+
   // ── 9. 金额链路：应收余额与核销明细一致 ──────────────────
   // 规则来源**不是我自己想的**：`ledger-mutations.ts` 在每次核销前就有
   //   SELECT COALESCE(SUM(amount-"reversedAmount"),0) FROM "Allocation" WHERE "receivableId"=…
