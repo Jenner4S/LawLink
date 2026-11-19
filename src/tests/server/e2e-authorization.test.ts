@@ -18,6 +18,7 @@ const { db, session, canRead } = vi.hoisted(() => {
     intake: { findMany: vi.fn(async () => []), findUnique: vi.fn() },
     document: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0), findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
+    sealRequest: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     systemSetting: { findUnique: vi.fn(async () => null) },
     // 2026-11-20：AI 外发入口新增隔离墙检查，需 mock ethicalWall.findFirst。
     // 默认返回 null（无墙），个别用例可改返回值验证「有墙时拒绝」。

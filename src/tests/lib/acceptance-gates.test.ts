@@ -22,6 +22,10 @@ const { db, session, canRead } = vi.hoisted(() => {
     client: { findMany: vi.fn(async () => []) },
     intake: { findMany: vi.fn(async () => []) },
     document: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
+    // 2026-11-21：搜索改了批量预取（canReadDocument 的 ctx 参数），
+    // 现在会额外查 user 与 sealRequest —— 补上，否则 globalSearch 会撞 undefined。
+    user: { findUnique: vi.fn(async () => ({ role: "CUSTOM", active: true })) },
+    sealRequest: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     jobQueue: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     engagement: { findUnique: vi.fn(), update: vi.fn() },
     engagementMatter: { upsert: vi.fn() },

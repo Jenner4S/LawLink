@@ -19,7 +19,7 @@
 | UI 验证 | `node scripts/verify-ui.mjs all` **83 项全通过** |
 | 数据基线 | Client 11 / Matter 7 / Party 14 / User 10 / AuditLog 294 |
 | 数据库 | **15 个迁移**（含 `0_init` 基线），最新 `20261120000003_audit_log_previous_hash_index` |
-| 台账 | `docs/BACKLOG-20261118.md` **447 条**记录 |
+| 台账 | `docs/BACKLOG-20261118.md` **452 条**记录 |
 
 ---
 
@@ -119,7 +119,7 @@
 
 | 项 | 结果 |
 |---|---|
-| Prisma `include` 是否 N+1 | ✅ **不是**——**2026-11-21 重测（Prisma query 事件计数）**：案件列表 4 条 / 客户列表 **447 条**（原写 2，实为 findMany + contacts + count）/ 财务台账 1 / 审计日志 2。**都是常数级，不随页大小增长**，N+1 结论成立 |
+| Prisma `include` 是否 N+1 | ✅ **不是**——**2026-11-21 重测（Prisma query 事件计数）**：案件列表 4 条 / 客户列表 **452 条**（原写 2，实为 findMany + contacts + count）/ 财务台账 1 / 审计日志 2。**都是常数级，不随页大小增长**，N+1 结论成立 |
 | 手写循环 N+1 | ✅ 找到并修了两轮：开票依据校验原本每份一次 `findUnique`（5 份 = 6 条）→ Round 60 改批量（2 条）→ **2026-11-21 发现那 2 条查的是同一批 document，可合并，现为 1 条** |
 | 批处理任务循环查询 | 已知取舍：`cron/worker.ts` 邮件摘要每用户 2 次查询，低频且用户数有限，不合并 |
 

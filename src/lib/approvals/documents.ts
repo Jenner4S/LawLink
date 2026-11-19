@@ -5,8 +5,31 @@ import { isManager } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { canApproveItem, canExecuteInvoice } from "./service";
 import { hasHandledApproval } from "./history-access";
-export async function canReadDocument(userId: string, doc: { id: string; uploadedById: string; matterId: string | null; intakeId: string | null; deletedAt?: Date | null }) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, active: true } });
+/**
+ * 批量场景的预取上下文（2026-11-21 加，性能 P1-2）。
+ *
+ * 背景：全局搜索对最多 200 个候选**逐条**调 `canReadDocument`，而它每次都
+ * 重查 `user`（1 次）+ `sealRequest`（1 次）+ 可能的隔离墙与归属查询。
+ * 200 份材料 = 至少 400 次往返，而其中前两项对同一用户/同一批文档是重复的。
+ *
+ * 传 ctx 时这两项走预取，不传则行为完全不变（27 个既有调用点不用改）。
+ * 语义严格等价：预取的数据就是那些查询会返回的东西，不做任何放宽。
+ */
+export type DocumentReadContext = {
+  /** 预取的 user 行；undefined = 没预取（照旧查库） */
+  user?: { role: string; active: boolean } | null;
+  /** 预取的 sealRequest（按 docId 索引）；undefined = 没预取 */
+  sealsByDocId?: Map<string, { id: string; requestedById: string | null; approvedById: string | null; stampedById: string | null; status: string } | null>;
+};
+
+export async function canReadDocument(
+  userId: string,
+  doc: { id: string; uploadedById: string; matterId: string | null; intakeId: string | null; deletedAt?: Date | null },
+  ctx?: DocumentReadContext
+) {
+  const user = ctx?.user !== undefined
+    ? ctx.user
+    : await prisma.user.findUnique({ where: { id: userId }, select: { role: true, active: true } });
   if (!user?.active || doc.deletedAt) return false;
   const access = await resolveRoleUser(userId, user.role);
   if (!access.enabled) return false;
@@ -30,7 +53,9 @@ export async function canReadDocument(userId: string, doc: { id: string; uploade
   const canReadBusiness = hasCustomPermission(access, "documents.download") && hasCustomPermission(access, "matters.read");
   // 仅合伙人岗位直通全所材料；managerAuthorized 按契约只开放「可见」，附件下载不随管理权放大（AGENTS 业务管理权决议）
   if (isManager(access.role)) return true;
-  const seal = await prisma.sealRequest.findFirst({ where: { OR: [{ draftDocId: doc.id }, { stampedDocId: doc.id }] }, select: { id: true, requestedById: true, approvedById: true, stampedById: true, status: true } });
+  const seal = ctx?.sealsByDocId !== undefined
+    ? (ctx.sealsByDocId.get(doc.id) ?? null)
+    : await prisma.sealRequest.findFirst({ where: { OR: [{ draftDocId: doc.id }, { stampedDocId: doc.id }] }, select: { id: true, requestedById: true, approvedById: true, stampedById: true, status: true } });
   if (seal) {
     return seal.requestedById === userId || seal.approvedById === userId || seal.stampedById === userId
       || (seal.status === "PENDING" && await canApproveItem(userId, "SEAL_APPROVE", seal.id))
