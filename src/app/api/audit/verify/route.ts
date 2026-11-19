@@ -33,11 +33,43 @@ export async function GET() {
     {
       ...result,
       checkedAt: new Date().toISOString(),
-      note:
-        result.skippedLegacy > 0
-          ? `有 ${result.skippedLegacy} 条记录写入于启用链式审计之前，无摘要，未参与校验`
-          : undefined
+      note: buildNote(result)
     },
     { status: result.ok ? 200 : 409 }
   );
+}
+
+/**
+ * 把校验结果翻译成一句人能读懂的话（2026-11-19）。
+ *
+ * 只有 skippedLegacy 时说明历史段；出现 unchecked 时必须解释缺口从哪来——
+ * 否则运维看到 409 和一个 unchecked 数字，不知道该担心还是该忽略。
+ */
+function buildNote(result: {
+  skippedLegacy: number;
+  unchecked: number;
+  forks: unknown[] | null;
+  brokenAt: { action: string; reason: string } | null;
+}): string | undefined {
+  const parts: string[] = [];
+  if (result.skippedLegacy > 0) {
+    parts.push(`有 ${result.skippedLegacy} 条记录写入于启用链式审计之前，无摘要，未参与校验`);
+  }
+  if (result.forks?.length) {
+    parts.push(
+      `链在 ${result.forks.length} 处存在分叉（同一前驱有多条后继）：这是「同一事务内写多条审计」的已知形态，` +
+        `不影响可用性，分支已全部校验`
+    );
+  }
+  if (result.unchecked > 0) {
+    parts.push(
+      `有 ${result.unchecked} 条未通过校验` +
+        (result.brokenAt
+          ? `（首个为 ${result.brokenAt.action}：${result.brokenAt.reason}）。` +
+            `若该记录写入于 2026-11-19 之前，可能是旧版序列化对 undefined 字段处理不一致所致，` +
+            `新写入不受影响`
+          : "")
+    );
+  }
+  return parts.length ? parts.join("；") : undefined;
 }
