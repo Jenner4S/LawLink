@@ -180,7 +180,7 @@ export function MatterDetailTabs({
   preservationCases,
   evidenceItems,
   notes,
-  reviewNode, responsibilityNode, closureNode, conflictNode,
+  reviewNode, responsibilityNode, closureNode, conflictNode, timeNode,
   capabilities = { aiReview: false, caseSearch: false }
 }: {
   matter: MatterPayload;
@@ -223,6 +223,8 @@ export function MatterDetailTabs({
   responsibilityNode?: React.ReactNode;
   closureNode?: React.ReactNode;
   conflictNode?: React.ReactNode;
+  /** 工时页签（P0-1 阶段 1-b） */
+  timeNode?: React.ReactNode;
   /** 外部能力是否已配置：AI 文书审查 / 元典类案检索（未配置不显示入口） */
   capabilities?: { aiReview: boolean; caseSearch: boolean };
 }) {
@@ -575,6 +577,7 @@ export function MatterDetailTabs({
         sealNode={
           <ApprovalsPanel matterId={matter.id} matterTitle={matter.title} sealContracts={sealContracts} canRequest={canAssociateThisMatter && allowed("seals.request")} />
         }
+        timeNode={timeNode}
       />
 
       <Sheet open={caseSearchOpen} onOpenChange={setCaseSearchOpen}>

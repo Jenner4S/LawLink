@@ -15,7 +15,9 @@ const targetLabels: Record<string, string> = {
   ArchiveBorrowRequest: "案卷借阅申请", CommissionSettlement: "分成结算", DeadlineRule: "期限规则",
   FeeEntryList: "收付记录列表", FinanceCorrection: "财务更正", Holiday: "放假安排",
   Payment: "实收", Receivable: "应收", ReminderDelivery: "提醒送达台账",
-  UserIdentityDocument: "人员证件资料"
+  UserIdentityDocument: "人员证件资料",
+  // 工时与费率（P0-1）
+  TimeEntry: "工时记录", RateSchedule: "费率安排"
 };
 const words: Record<string, string> = {
   BUILTIN: "内置", ROLE: "角色", PRESENTATION: "显示资料", DEFINITION: "定义",
@@ -60,7 +62,9 @@ const words: Record<string, string> = {
   NOTIFY: "通知", PHONE: "电话", PHOTO: "照片", POLICY: "制度", POST: "事后",
   REBIND: "重新绑定", RECEIVABLE: "应收", RECIPIENT: "接收人", RENDER: "渲染", RESET: "重置",
   RETURN: "归还", REVEAL: "查看明文", RULE: "规则", SAVED: "已保存", SCHEDULE: "日程",
-  SIGN: "签署", TEXT: "正文", TOTP: "二次验证", VERSION: "版本"
+  SIGN: "签署", TEXT: "正文", TOTP: "二次验证", VERSION: "版本",
+  // 工时与费率（P0-1）。新增审计动作必须同步补词，否则整条降级为「其他操作」。
+  TIME: "工时"
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

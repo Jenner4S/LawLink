@@ -9,6 +9,7 @@ import {
   CalendarClock,
   Check,
   CircleDollarSign,
+  Clock3,
   FileCheck2,
   FileText,
   FolderOpen,
@@ -686,8 +687,8 @@ export type WorkflowApi = {
   currentStageName: string | null;
 };
 
-/** 案卷工作台页签（docs/UI-MATTER-DOSSIER-PLAN.md 第三版） */
-export type DossierView = "archive" | "work" | "money" | "seal";
+/** 案卷工作台页签（docs/UI-MATTER-DOSSIER-PLAN.md 第三版；2026-11-19 增「工时」） */
+export type DossierView = "archive" | "work" | "money" | "time" | "seal";
 
 /** 待办「等待他人」：审批中的用印、归档等 */
 export type WaitingItem = { key: string; title: string; meta: string; onOpen?: () => void };
@@ -722,6 +723,7 @@ export function ProcedureWorkflowPanel({
   materialsExtra,
   onCaseSearch,
   financeNode,
+  timeNode,
   sealNode,
   waiting
 }: {
@@ -753,6 +755,8 @@ export function ProcedureWorkflowPanel({
   /** 全部环节范围下材料之后的补充内容（AI 审查总览） */
   materialsExtra?: React.ReactNode;
   financeNode?: React.ReactNode;
+  /** 工时页签（P0-1 阶段 1-b，案件页注入） */
+  timeNode?: React.ReactNode;
   sealNode?: React.ReactNode;
   waiting?: WaitingItem[];
 }) {
@@ -839,6 +843,7 @@ export function ProcedureWorkflowPanel({
     { key: "archive", label: "案件档案", show: true, icon: FileText },
     { key: "work", label: "办案进程", show: true, icon: ListChecks, count: actions.length, hot: actions.some((a) => a.days !== null && a.days < 0) },
     { key: "money", label: "委托与财务", show: Boolean(financeNode), icon: CircleDollarSign },
+    { key: "time", label: "工时", show: Boolean(timeNode), icon: Clock3 },
     { key: "seal", label: "审批用印", show: Boolean(sealNode), icon: Stamp, count: viewCounts?.seal }
   ];
 
@@ -930,6 +935,7 @@ export function ProcedureWorkflowPanel({
       ) : null}
 
       {view === "money" ? financeNode : null}
+      {view === "time" ? timeNode : null}
       {view === "seal" ? sealNode : null}
         </div>
         <aside className="dos-rail">

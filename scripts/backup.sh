@@ -60,6 +60,31 @@ else
   echo "  跳过: 存储目录不存在"
 fi
 
+# 2.5 存储一致性校验（2026-11-19 新增）
+# 背景：容器卷为空而数据库里有文档记录时，备份会「成功」但文书全丢——
+# 这是最危险的静默失败：库能恢复，文书打不开。
+# 判据：Document.path 的数量应与存储目录的实际文件数相符。
+echo "[2.5/3] 校验存储一致性..."
+DB_DOC_COUNT=$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
+  'select count(*) from "Document" where path is not null' 2>/dev/null | tr -d ' ')
+DB_DOC_COUNT=${DB_DOC_COUNT:-0}
+STORAGE_FILE_COUNT=$(find "$STORAGE_DIR" -type f ! -name '.gitkeep' 2>/dev/null | wc -l | tr -d ' ')
+echo "  数据库文档数: ${DB_DOC_COUNT} | 存储文件数: ${STORAGE_FILE_COUNT}"
+
+if [ "$DB_DOC_COUNT" -gt 0 ] && [ "$STORAGE_FILE_COUNT" -eq 0 ]; then
+  echo "" >&2
+  echo "错误: 数据库有 ${DB_DOC_COUNT} 份文档，但存储目录 ${STORAGE_DIR} 为空。" >&2
+  echo "      继续备份会得到「库能恢复、文书全丢」的假成功，已中止。" >&2
+  echo "      请确认 APP_STORAGE_DIR 是否指向应用实际写入的目录" >&2
+  echo "      （容器部署时通常是命名卷，而不是宿主机的 ./storage）。" >&2
+  rm -rf "$BACKUP_PATH"
+  exit 1
+fi
+
+if [ "$STORAGE_FILE_COUNT" -lt "$DB_DOC_COUNT" ]; then
+  echo "  警告: 存储文件数少于数据库文档数，可能有 ${DB_DOC_COUNT} - ${STORAGE_FILE_COUNT} 份文书缺失" >&2
+fi
+
 # 3. 元信息
 echo "[3/3] 写入元信息..."
 ENCRYPTED="false"
@@ -73,9 +98,11 @@ cat > "${BACKUP_PATH}/manifest.json" << EOF
   "database": "${DB_NAME}",
   "storage_path": "${STORAGE_DIR}",
   "encrypted": "${ENCRYPTED}",
+  "documentCount": ${DB_DOC_COUNT},
+  "storageFileCount": ${STORAGE_FILE_COUNT},
   "files": [
-    {"name": "database.dump", "type": "pg_dump custom compressed"},
-    {"name": "storage.tar.gz", "type": "tar gzip"}
+    {"name": "database.dump", "type": "pg_dump custom compressed", "sha256": "$(sha256sum "${BACKUP_PATH}/database.dump" 2>/dev/null | cut -d" " -f1)"},
+    {"name": "storage.tar.gz", "type": "tar gzip", "sha256": "$(sha256sum "${BACKUP_PATH}/storage.tar.gz" 2>/dev/null | cut -d" " -f1)"}
   ]
 }
 EOF

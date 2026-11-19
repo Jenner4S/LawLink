@@ -18,7 +18,9 @@ if [ -f .env ]; then
 fi
 
 DB_URL="${DATABASE_URL:-}"
-STORAGE_DIR="${STORAGE_PATH:-./storage}"
+# 2026-11-19：与 backup.sh / 应用侧统一为 APP_STORAGE_DIR（此前读 STORAGE_PATH，
+# 该变量应用侧不存在，恢复时会把文书解到错误目录）
+STORAGE_DIR="${APP_STORAGE_DIR:-./storage}"
 
 if [ -z "$DB_URL" ]; then
   echo "错误: DATABASE_URL 未设置"

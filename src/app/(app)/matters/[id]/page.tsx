@@ -21,6 +21,8 @@ import { matterHref } from "@/lib/matters/route";
 import { prisma } from "@/lib/prisma";
 import { nullableDecimalToNumber, serializeDecimals } from "@/lib/decimal";
 import { MatterDetailTabs } from "./_components/matter-detail-tabs";
+import { TimePanel } from "./_components/time-panel";
+import { getMatterTimeBoard } from "@/server/time/actions";
 import { listNotes } from "@/server/notes/actions";
 import { ReviewSummaryCard } from "./_components/review-summary-card";
 import { listEvidenceItems } from "@/server/evidence/actions";
@@ -205,6 +207,9 @@ export default async function MatterDetailPage({ params }: PageProps) {
   const preservationCasesForClient = serializeDecimals(preservationCases);
 
   const conflictReview=await readMatterReview(prisma,matter.id);
+  // P0-1 阶段 1-b：工时页签（列表 + 三角汇总）。可见性由 getMatterTimeBoard 内部
+  // 复用 assertCanReadMatter 判定，与本案详情页同一断言。
+  const timeBoard = allowed("matters.read") ? await getMatterTimeBoard(matter.id).catch(() => null) : null;
   return (
     <>
       {/* 墨案 04 页面骨架由 MatterDetailTabs 统一承载：
@@ -245,6 +250,15 @@ export default async function MatterDetailPage({ params }: PageProps) {
         }}
         reviewNode={
           reviewSummary ? <ReviewSummaryCard summary={reviewSummary} matterId={matter.id} /> : undefined
+        }
+        timeNode={
+          timeBoard ? (
+            <TimePanel
+              matterId={matter.id}
+              board={timeBoard}
+              canWrite={allowed("matters.write") && matter.status !== "ARCHIVED"}
+            />
+          ) : undefined
         }
       />
     </>

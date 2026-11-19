@@ -26,6 +26,8 @@ import {
   type NormalizedRow
 } from "@/lib/imports/matter-import";
 import { ActionError } from "@/lib/action-error";
+import type { ConflictConclusion, ConflictSeverity } from "@prisma/client";
+import { recordImportConflictReview } from "./conflict";
 
 async function requireManager() {
   const session = await requireSession();
@@ -302,7 +304,14 @@ async function createOneMatter(n: NormalizedRow, currentUserId: string) {
       });
 
     await seedDefaultFolders(tx, matter.id, n.category);
-    return matter;
+
+    // P1-1：导入必须跑利益冲突检索。历史案件迁进来后，所内必须知道本案对方是不是
+    // 本所代理过的客户（执业违规风险）。口径与收案转正式案件完全一致——复用
+    // recordMatterReviewTx，落 ConflictCheck(matterId) + ConflictHit，不重写算法。
+    // 与建案同一事务：检索失败整行回滚，不留「案件已建但从未检索」的半状态。
+    const conflict = await recordImportConflictReview(tx, currentUserId, matter.id);
+
+    return { ...matter, conflict };
   });
 
   return { ...result, causeDowngradeReason };
@@ -316,8 +325,20 @@ export interface ImportResult {
     title: string;
     /** 案由与案件类别不匹配、已降级为自由文本；需事后人工核对 */
     causeDowngradeReason?: string;
+    /** 本行利益冲突检索记录 ID（P1-1）；老库未启用动态复核时缺省 */
+    conflictCheckId?: string;
+    /** 命中冲突条数；0 表示系统检索未命中（与收案「未命中（系统自动提示）」同口径） */
+    conflictHitCount?: number;
+    /** 命中中的最高严重度 */
+    conflictMaxSeverity?: ConflictSeverity;
+    /** 检索结论：未命中自动 DIFFERENT；有命中停在 PENDING 等律师复核 */
+    conflictConclusion?: ConflictConclusion;
+    /** 中文一行摘要，命中时写明「命中 N 条冲突」 */
+    conflictSummary?: string;
   }[];
   failed: { rowNo: number; error: string }[];
+  /** 本次导入的利益冲突检索汇总（P1-1）：检出/未检出/跳过（老库未启用） */
+  conflictTotals?: { checked: number; hitRows: number; hitCount: number; skipped: number };
 }
 
 /** 确认导入：逐行事务、失败不阻断，返回成功/失败清单 */
@@ -340,17 +361,34 @@ export async function commitMatterImportAction(input: {
       const { errors, normalized } = validateRow(raw);
       if (!normalized) throw new Error(errors.join("；") || "行校验失败");
       const m = await createOneMatter(normalized, session.user.id);
+      const c = m.conflict;
       succeeded.push({
         rowNo,
         internalCode: m.internalCode,
         firmCaseNo: m.firmCaseNo,
         title: m.title,
-        ...(m.causeDowngradeReason ? { causeDowngradeReason: m.causeDowngradeReason } : {})
+        ...(m.causeDowngradeReason ? { causeDowngradeReason: m.causeDowngradeReason } : {}),
+        ...(c
+          ? {
+              conflictCheckId: c.checkId,
+              conflictHitCount: c.hitCount,
+              ...(c.maxSeverity ? { conflictMaxSeverity: c.maxSeverity } : {}),
+              conflictConclusion: c.conclusion,
+              conflictSummary: c.summary
+            }
+          : {})
       });
     } catch (e) {
       failed.push({ rowNo, error: e instanceof Error ? e.message : "导入失败" });
     }
   }
+
+  const conflictTotals = {
+    checked: succeeded.filter((r) => r.conflictCheckId).length,
+    hitRows: succeeded.filter((r) => (r.conflictHitCount ?? 0) > 0).length,
+    hitCount: succeeded.reduce((sum, r) => sum + (r.conflictHitCount ?? 0), 0),
+    skipped: succeeded.filter((r) => !r.conflictCheckId).length
+  };
 
   await audit({
     userId: session.user.id,
@@ -359,10 +397,15 @@ export async function commitMatterImportAction(input: {
     detail: {
       succeeded: succeeded.length,
       failed: failed.length,
-      causeDowngraded: succeeded.filter((r) => r.causeDowngradeReason).length
+      causeDowngraded: succeeded.filter((r) => r.causeDowngradeReason).length,
+      // P1-1：导入触发的冲突检索在顶层审计里也要看得见（逐件明细另记 MATTER_CONFLICT_RUN）
+      conflictChecked: conflictTotals.checked,
+      conflictHitRows: conflictTotals.hitRows,
+      conflictHitCount: conflictTotals.hitCount,
+      conflictSkipped: conflictTotals.skipped
     }
   });
 
   revalidatePath("/matters");
-  return { succeeded, failed };
+  return { succeeded, failed, conflictTotals };
 }
