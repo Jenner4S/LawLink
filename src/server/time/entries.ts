@@ -110,6 +110,17 @@ export interface MatterTimeSummary {
  *   - 投入高、折算高、已收低 → 这个案子在亏
  *   - 投入高、折算低 → 报价偏低，或大量不可计费工作
  */
+/**
+ * 工时汇总（内部辅助）。
+ *
+ * 2026-11-20：**本函数不做权限校验**，它直接按 matterId 聚合。
+ * 唯一调用方是同目录 actions.ts 的 getMatterTimeBoard，那里已经做了
+ * `requireSession("matters.read")` + `assertCanReadMatter(...)`（后者含隔离墙）。
+ *
+ * 之所以仍然 export：跨文件复用。但新增调用方**必须自己先做鉴权**，
+ * 否则等于绕过 permission 层。审计时按这个注释核对，不要因为「它在 lib 层」
+ * 就假设安全。
+ */
 export async function getMatterTimeSummary(matterId: string): Promise<MatterTimeSummary> {
   const agg = await prisma.timeEntry.aggregate({
     where: { matterId },
