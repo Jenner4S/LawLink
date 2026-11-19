@@ -255,6 +255,7 @@ describe("A 客户建档（createClient）", () => {
     const individual = await createClient({
       name: "张三",
       type: "INDIVIDUAL",
+      cooperationStatus: "SIGNED",
       idType: "ID_CARD",
       idNumber: "330106199003071234",
       phone: "13800000001",
@@ -682,7 +683,8 @@ describe("F 程序（addProcedure）", () => {
       engagement: "INFORMATIONAL",
       handlingAgency: "杭州市中级人民法院",
       jurisdiction: "浙江省杭州市",
-      acceptedAt: new Date("2026-11-18T10:00:00+08:00").toISOString(), // action 只收 ISO 字符串（z.string()，不 coerce）
+      // schema 是 z.string()（不 coerce），传 ISO 字符串；tsc 看到的是 transform 后的 Date 输出类型，故显式收窄
+      acceptedAt: "2026-11-18T10:00:00+08:00" as unknown as Date,
       isExternalLead: false,
       leadLawyerId: lawyer.id
     });
