@@ -1,7 +1,7 @@
 # LawLink 交付状态总览
 
-> 更新：2026-11-20（Round 57）
-> 依据：`docs/BACKLOG-20261118.md`（**236 条记录**）与 git 提交历史
+> 更新：2026-11-20（Round 69）
+> 依据：`docs/BACKLOG-20261118.md`（**278 条记录**）与 git 提交历史
 > 用途：一眼看清「哪些已完成、哪些等决策、哪些缺外部条件」
 
 ---
@@ -19,7 +19,7 @@
 | UI 验证 | `node scripts/verify-ui.mjs all` **83 项全通过** |
 | 数据基线 | Client 11 / Matter 7 / Party 14 / User 10 / AuditLog 294 |
 | 数据库 | **12 个迁移**（含 `0_init` 基线），最新 `20261119000006_audit_chain_drop_unique` |
-| 台账 | `docs/BACKLOG-20261118.md` **236 条**记录 |
+| 台账 | `docs/BACKLOG-20261118.md` **278 条**记录 |
 
 ---
 
@@ -47,7 +47,20 @@
 | 日期格式 | ✅ | 9 处重复包装已消除 |
 | 财务口径 | ✅ | 两步确认实收（无人例外）、核销对应、分成上限 |
 | 引用完整性 | ✅ | 7 项检查全 0（无孤儿数据） |
+| 软删口径一致 | ✅ | `canReadDocument` 补 `deletedAt: null`，与 `listMatters` / `assertCanReadMatter` 对齐（此前「列表看不到但能下载材料」）|
+| 审核留痕保护 | ✅ | 有 `ReviewRecord` 的材料禁止硬删（此前 `onDelete: Cascade` 会连审核记录一起抹掉）|
+| 金额累加一致 | ✅ | 5 处 `acc + Number(x)` 全部改为 `Decimal.plus`（此前 float 累加，100 笔 1234.56 会差 1.6e-10）|
 | 备份与恢复 | ✅ | 演练通过（`docs/BACKUP-RESTORE-DRILL-20261119.md`） |
+
+### 并发与一致性（Round 61–68 新验）
+
+| 项 | 结果 |
+|---|---|
+| 材料版本链唯一性 | ✅ `@@unique([familyId, version])`，实测并发写同版本第二个被拒 |
+| 分页稳定性 | ✅ 所有下推排序加 `id` tiebreaker，三排序各遍历零重复 |
+| 审计对象索引 | ✅ `(targetId, targetType)`，14.9ms → 3.0ms |
+| **多进程并发** | ✅ 两个独立 node 进程抢同一 advisory lock，串行化生效、无丢更新 |
+| 进程内状态 | ✅ **没有**——登录限流是数据库级，全仓无 `new Map()` 限流 |
 
 ### 运维与部署（Round 54–56 新验）
 
