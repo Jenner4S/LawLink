@@ -1152,6 +1152,22 @@ export async function softDeleteMatter(id: string) {
   if ((await readWorkRows(prisma)).some(w => w.matterId === id && w.state === "OPEN")) {
     throw new ActionError("案件存在未办结事项（任务/期限/开庭），请先办结或作废后再删除");
   }
+  // 2026-11-21（软删除一致性扫描发现）：有待审归档申请时不允许删除。
+  //
+  // 不拦的话可以这样走：提交归档（PENDING_REVIEW）→ 删除案件 → 管理员批准。
+  // approveArchiveRecord 会把 matter.status 改成 ARCHIVED 并分配归档编号，
+  // 而它指向的案件已 deletedAt≠null；归档列表自己过滤 `matter: { deletedAt: null }`，
+  // 于是这条归档记录**从此不可见**——一次静默的记录丢失，而审批人以为处理完了。
+  //
+  // 修在入口而不是出口：不让系统进入不一致状态，也给用户明确动作
+  //（先完成或驳回归档）。未做的如实记：删除与审批并发仍无序列化，
+  // 但需要「恰好同时」且稳态已被堵住，暂不为此加行锁。
+  const pendingArchive = await prisma.archiveRecord.count({
+    where: { matterId: id, status: "PENDING_REVIEW" }
+  });
+  if (pendingArchive > 0) {
+    throw new ActionError("案件有正在审批的归档申请，请先完成或驳回归档后再删除");
+  }
 
   await roleMutation(session.user, "matters.write", async roleDb => roleDb.matter.update({
     where: { id },
