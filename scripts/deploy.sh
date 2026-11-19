@@ -83,7 +83,16 @@ echo
 echo "==> [4/5] Docker 构建与启动"
 # ---------------------------------------------------------------
 PREV_IMAGE=$(docker images lawlink-app --format "{{.ID}}" | head -1 || true)
-docker compose --profile full build app
+
+# 构建期网络（2026-11-21）：Alpine 官方 CDN 与 npm registry 在中国大陆常不可达
+# （实测 alpinelinux CDN / npmjs / github 全部超时，aliyun / tuna 正常）。
+# Dockerfile 已把镜像源做成 build arg，默认仍是官方源；这里把环境变量透传过去，
+# 需要时这样部署：
+#   ALPINE_MIRROR=mirrors.aliyun.com NPM_REGISTRY=https://registry.npmmirror.com ./scripts/deploy.sh
+BUILD_ARGS=()
+if [ -n "${ALPINE_MIRROR:-}" ]; then BUILD_ARGS+=(--build-arg "ALPINE_MIRROR=${ALPINE_MIRROR}"); fi
+if [ -n "${NPM_REGISTRY:-}" ]; then BUILD_ARGS+=(--build-arg "NPM_REGISTRY=${NPM_REGISTRY}"); fi
+docker compose --profile full build "${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}" app
 # 只重建 app，不动 db ——
 # `up -d --force-recreate` 会重建所有服务的容器，包括 postgres。
 # 实测（2026-11-20）它确实把 lawlink-db 一起 Recreate 了：数据卷还在所以没丢，

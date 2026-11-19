@@ -1,7 +1,26 @@
 # LawLink 应用容器
 # 多阶段构建：deps → builder → runner
+#
+# ## 构建期网络（2026-11-21 补充）
+#
+# Alpine 官方 CDN（dl-cdn.alpinelinux.org）与 npm registry 在中国大陆常不可达。
+# 本项目面向中国律所自部署，这不是个例。因此把镜像源做成**可覆盖的 build arg**：
+# 默认仍是官方源（不改变任何现有用户的构建行为），需要时这样构建：
+#
+#   docker compose build \
+#     --build-arg ALPINE_MIRROR=mirrors.aliyun.com \
+#     --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+#
+# 实测（2026-11-21）：aliyun / tuna 可达（200），alpinelinux CDN、npmjs、github 均超时。
+ARG ALPINE_MIRROR=dl-cdn.alpinelinux.org
+ARG NPM_REGISTRY=https://registry.npmjs.org
 
 FROM node:22-alpine AS deps
+# 若指定了备用 Alpine 镜像，先改写 /etc/apk/repositories
+ARG ALPINE_MIRROR
+RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
+      sed -i "s|dl-cdn.alpinelinux.org|${ALPINE_MIRROR}|g" /etc/apk/repositories; \
+    fi
 WORKDIR /app
 # openssl 必须显式安装（2026-09-21 Docker 部署验证暴露）：node:22-alpine 只带
 # libssl3，不带 openssl 命令行；Prisma 在安装/生成时用它探测 OpenSSL 版本，探测
@@ -10,9 +29,14 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat openssl
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci
+ARG NPM_REGISTRY
+RUN npm ci --registry="${NPM_REGISTRY}"
 
 FROM node:22-alpine AS builder
+ARG ALPINE_MIRROR
+RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
+      sed -i "s|dl-cdn.alpinelinux.org|${ALPINE_MIRROR}|g" /etc/apk/repositories; \
+    fi
 
 # 构建标识必须在此阶段注入，否则客户端 chunk 里拿不到值（预渲染页在 build 时求值）
 ARG BUILD_ID=dev
@@ -34,6 +58,10 @@ FROM builder AS prod-deps
 RUN npm prune --omit=dev && npm cache clean --force
 
 FROM node:22-alpine AS runner
+ARG ALPINE_MIRROR
+RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
+      sed -i "s|dl-cdn.alpinelinux.org|${ALPINE_MIRROR}|g" /etc/apk/repositories; \
+    fi
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
