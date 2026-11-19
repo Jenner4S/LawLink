@@ -3,8 +3,6 @@ import type {
   LitigationStanding,
   PartyRole,
   PartyType,
-  ProcedureEngagement,
-  ProcedureOutcome,
   Prisma
 } from "@prisma/client";
 import { parseShDayEnd, parseShDayStart, shDayKey, shTime } from "@/lib/ui/sh-time";
@@ -30,25 +28,12 @@ const partyRoleLabel: Record<PartyRole, string> = {
 };
 
 // 2026-11-21：定义已移到 lib/enums.ts（界面层也要用），此处保留 re-export 不破既有 import。
-import { procedureStatusLabel as _psl } from "@/lib/enums";
+import { procedureStatusLabel as _psl, procedureOutcomeLabel as _pol } from "@/lib/enums";
 export { procedureStatusLabel } from "@/lib/enums";
 
-export const procedureEngagementLabel: Record<ProcedureEngagement, string> = {
-  ENGAGED: "承办",
-  INFORMATIONAL: "仅登记"
-};
+export { procedureEngagementLabel } from "@/lib/enums";
 
-export const procedureOutcomeLabel: Record<ProcedureOutcome, string> = {
-  WON: "胜诉",
-  PARTIAL_WON: "部分胜诉",
-  LOST: "败诉",
-  MEDIATED: "调解",
-  WITHDRAWN: "撤诉",
-  DISMISSED: "驳回",
-  COMPLETED: "完成",
-  TRANSFERRED: "移送",
-  OTHER: "其他"
-};
+export { procedureOutcomeLabel } from "@/lib/enums";
 
 const TAB_FILE_KEY: Record<MattersExportTab, string> = {
   all: "all",
@@ -69,7 +54,7 @@ export function formatProcedureSummary(procedures: MatterExportRow["procedures"]
         procedure.status ? _psl[procedure.status] : "",
         procedure.acceptedAt ? `受理:${formatDate(procedure.acceptedAt)}` : "",
         procedure.concludedAt ? `结案:${formatDate(procedure.concludedAt)}` : "",
-        procedure.outcome ? `结果:${procedureOutcomeLabel[procedure.outcome]}` : ""
+        procedure.outcome ? `结果:${_pol[procedure.outcome]}` : ""
       ].filter(Boolean).join(" / ")
     )
     .join("；");

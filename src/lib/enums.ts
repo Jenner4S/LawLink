@@ -13,6 +13,8 @@ import type {
   UserRole,
   ProcedureType,
   ProcedureStatus,
+  ProcedureOutcome,
+  ProcedureEngagement,
   LitigationStanding,
   FeeType,
   InvoiceRequestStatus,
@@ -367,4 +369,23 @@ export const procedureStatusLabel: Record<ProcedureStatus, string> = {
   PENDING: "未开始",
   IN_PROGRESS: "进行中",
   CONCLUDED: "已结束"
+};
+
+/** 程序结果（胜诉/调解/驳回…）。与 procedureStatusLabel 同批从 server 层收进这里。 */
+export const procedureOutcomeLabel: Record<ProcedureOutcome, string> = {
+  WON: "胜诉",
+  PARTIAL_WON: "部分胜诉",
+  LOST: "败诉",
+  MEDIATED: "调解",
+  WITHDRAWN: "撤诉",
+  DISMISSED: "驳回",
+  COMPLETED: "完成",
+  TRANSFERRED: "移送",
+  OTHER: "其他"
+};
+
+/** 程序委托状态（承办/协办/未委托）。 */
+export const procedureEngagementLabel: Record<ProcedureEngagement, string> = {
+  ENGAGED: "承办",
+  INFORMATIONAL: "仅登记"
 };
