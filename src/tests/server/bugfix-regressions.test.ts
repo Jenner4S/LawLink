@@ -86,7 +86,10 @@ beforeEach(() => {
   db.invoiceRequest.create.mockResolvedValue({ id: "invoice-example" });
   db.document.create.mockResolvedValue({ id: "invoice-document" }); db.document.findUnique.mockResolvedValue({ id: "evidence-example" });
   // 开票依据同案校验（2026-09-19 体检 P2）：findMany 返回与证据 id 等长的集合表示全部属于本案
-  db.document.findMany.mockResolvedValue([{ id: "evidence-example" }]);
+  // 2026-11-21：开票依据的两类校验合并成一次 findMany 后，需要完整字段
+  // （matterId / deletedAt 用于「本案有效材料」判定）。此前只 mock 了 { id }，
+  // 合并后它会因 doc.deletedAt === undefined 被判为「已删除」。
+  db.document.findMany.mockResolvedValue([{ id: "evidence-example", matterId: invoiceInput.matterId ?? null, intakeId: null, uploadedById: "u", deletedAt: null }]);
   writeFile.mockResolvedValue("mock-only-no-file-written");
   // F-1：日程提醒登记走台账（createMany 默认成功；updateMany 默认零命中）
   db.reminderDelivery.createMany.mockResolvedValue({ count: 1 });

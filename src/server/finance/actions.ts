@@ -687,30 +687,36 @@ export async function createInvoiceRequest(input: {
   await requireApprovalRoute({ action: "INVOICE_APPROVE", category: approvalMatter?.category ?? null, requesterId: session.user.id });
   const evidenceDocIds = input.evidenceDocIds ?? [];
   if (evidenceDocIds.length) {
-    // 开票依据是本案合规证据链（须为同案有效材料），仅"本人可读"不够——跨案材料可读不等于可作本案依据
-    if (input.matterId) {
-      const docs = await prisma.document.findMany({
-        where: { id: { in: evidenceDocIds }, matterId: input.matterId, deletedAt: null },
-        select: { id: true }
-      });
-      if (docs.length !== new Set(evidenceDocIds).size) throw new ActionError("开票依据必须为本案有效材料");
-    } else {
-      const docs = await prisma.document.findMany({
-        where: { id: { in: evidenceDocIds }, deletedAt: null },
-        select: { id: true }
-      });
-      if (docs.length !== new Set(evidenceDocIds).size) throw new ActionError("开票依据不存在或已删除");
-    }
-    // 2026-11-20 性能：上面已按 id 批量查过一次，这里不再逐条 findUnique。
-    // 原实现是 N+1 —— 每份开票依据多打一次库，5 份依据就是 5 次往返，
-    // 而数据其实已经在手。改为一次性取出 canReadDocument 需要的字段，
-    // 权限判定仍然逐条执行（语义不变，只是数据来源从数据库换成内存）。
+    // 开票依据是本案合规证据链（须为同案有效材料），仅"本人可读"不够——跨案材料可读不等于可作本案依据。
+    //
+    // 2026-11-20/21 两次收敛，同一批 id 从 6 条 SQL 降到 1 条：
+    //   原始        1 条前置 + 每份一次 findUnique（5 份 = 6 条）
+    //   第一次修复  1 条前置 + 1 条批量（2 条）—— 但两条查的是同一批 document
+    //   本次        1 条：一次取出全部需要的字段，两类校验都在内存里做
+    //
+    // 为什么能合：前置校验只要 id，权限校验要 id + 归属 + 软删状态，
+    // 后者是前者的超集。分开查等于同一行数据读两遍。
+    // 语义保持不变：先判「是否本案有效材料」，再判「当前用户是否可读」，顺序与文案都照旧。
     const docIds = [...new Set(evidenceDocIds)];
     const docRows = await prisma.document.findMany({
       where: { id: { in: docIds } },
       select: { id: true, uploadedById: true, matterId: true, intakeId: true, deletedAt: true }
     });
     const docById = new Map(docRows.map((d) => [d.id, d]));
+
+    // 第一类校验（原本是独立的一次 findMany）：必须为本案有效材料
+    const valid = docIds.filter((id) => {
+      const doc = docById.get(id);
+      if (!doc || doc.deletedAt !== null) return false;
+      return input.matterId ? doc.matterId === input.matterId : true;
+    });
+    if (valid.length !== docIds.length) {
+      throw new ActionError(
+        input.matterId ? "开票依据必须为本案有效材料" : "开票依据不存在或已删除"
+      );
+    }
+
+    // 第二类校验：逐条判可读（数据已在内存，不再打库）
     for (const id of docIds) {
       const doc = docById.get(id);
       if (!doc || !await canReadDocument(session.user.id, doc)) throw new ActionError("开票依据不存在或无权访问");
