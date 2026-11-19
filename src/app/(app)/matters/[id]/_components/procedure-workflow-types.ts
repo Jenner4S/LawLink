@@ -257,3 +257,20 @@ export type ActionItem = {
   memoId?: string;
   pendingConfirm?: boolean;
 };
+
+export type LogKind = "talk" | "court" | "note" | "task" | "express" | "memo" | "sys";
+
+export type LogItem = {
+  key: string;
+  kind: LogKind;
+  at: Date;
+  stageName: string | null;
+  title: string;
+  body: string | null;
+  meta: string;
+  channelTone?: "court" | "talk";
+  stageTag?: string | null;
+  eventType?: string;
+  memo?: { id: string; done: boolean };
+  express?: { id: string; outbound: boolean };
+};

@@ -110,7 +110,6 @@ import {
 } from "./procedure-workflow-guides";
 import {
   COURT_PROCEDURE_SOURCE,
-  JUDGMENT_NOTE_TAG,
   stageNoteTag
 } from "./procedure-workflow-types";
 import {
@@ -118,15 +117,20 @@ import {
   buildActionItems,
   defaultInsertTarget,
   formatBytes,
-  formatDateTimeShort,
+  buildLogItems,
+  defaultCategoryForStage,
+  documentMatchesStage,
   parseInsertTarget,
   shortDay,
+  stageMaterialTag,
   stageChainDate,
   stageGuideFor
 } from "./procedure-workflow-derive";
 import type {
   ActionItem,
   DossierView,
+  LogItem,
+  LogKind,
   WaitingItem,
   WorkflowApi,
   WorkflowDocument,
@@ -598,20 +602,8 @@ function StageGuideBody({ guide }: { guide: StageGuide }) {
 
 
 /** 研判笔记归属环节（tags「环节:xxx」） */
-function noteStage(note: WorkflowNote) {
-  return note.tags?.find((t) => t.startsWith("环节:"))?.slice(3) ?? null;
-}
 
 
-
-const NOTE_CHANNEL_LABEL: Record<string, string> = {
-  PHONE: "电话沟通",
-  WECHAT: "微信沟通",
-  EMAIL: "邮件往来",
-  MEETING: "面谈",
-  COURT: "法院沟通",
-  OTHER: "办案记录"
-};
 
 const EVENT_TONE: Record<string, { bg: string; fg: string; icon: typeof FileText }> = {
   FEE_RECEIVED: { bg: "var(--green-bg)", fg: "var(--green)", icon: CircleDollarSign },
@@ -1072,142 +1064,7 @@ function NextActions({
 /* 经办记录：只放已发生的事——沟通、研判、完成的任务、已开庭、系统事件    */
 /* ------------------------------------------------------------------ */
 
-type LogKind = "talk" | "court" | "note" | "task" | "express" | "memo" | "sys";
-type LogItem = {
-  key: string;
-  kind: LogKind;
-  at: Date;
-  stageName: string | null;
-  title: string;
-  body: string | null;
-  meta: string;
-  channelTone?: "court" | "talk";
-  stageTag?: string | null;
-  eventType?: string;
-  memo?: { id: string; done: boolean };
-  express?: { id: string; outbound: boolean };
-};
 
-function buildLogItems({
-  procedure,
-  stages,
-  notes,
-  events,
-  users,
-  expresses
-}: {
-  procedure: WorkflowProcedure | null;
-  stages: WorkflowStage[];
-  notes: WorkflowNote[];
-  events: WorkflowTimelineEvent[];
-  users: UserOption[];
-  expresses: ExpressItem[];
-}): LogItem[] {
-  // 时间归段：记录落在其前最近开始的环节；研判笔记环节标签、任务所属环节优先
-  const started = (procedure?.stages ?? [])
-    .filter((s) => s.status !== "HIDDEN" && s.startedAt)
-    .sort((a, b) => new Date(a.startedAt!).getTime() - new Date(b.startedAt!).getTime());
-  const stageByTime = (at: Date) => {
-    let hit: string | null = null;
-    for (const s of started) if (new Date(s.startedAt!).getTime() <= at.getTime()) hit = s.name;
-    return hit;
-  };
-  const nameOf = (id: string | null) => (id ? users.find((u) => u.id === id)?.name ?? null : null);
-  const items: LogItem[] = [];
-  const now = Date.now();
-
-  for (const note of notes) {
-    const at = new Date(note.occurredAt);
-    const judgment = note.tags.includes(JUDGMENT_NOTE_TAG);
-    const kind: LogKind = judgment ? "note" : note.channel === "COURT" ? "court" : "talk";
-    items.push({
-      key: `n-${note.id}`,
-      kind,
-      at,
-      stageName: noteStage(note) ?? stageByTime(at),
-      title: judgment ? "研判笔记" : `${NOTE_CHANNEL_LABEL[note.channel] ?? "办案记录"}${note.withWhom ? ` · ${note.withWhom}` : ""}`,
-      body: note.content,
-      meta: `${note.author.name} · ${formatDateTimeShort(at)}`,
-      stageTag: noteStage(note)
-    });
-  }
-  for (const stage of stages) {
-    for (const task of stage.tasks) {
-      if (!task.completed || !task.completedAt) continue;
-      const at = new Date(task.completedAt);
-      const assignee = nameOf(task.assigneeId);
-      items.push({
-        key: `t-${task.id}`,
-        kind: "task",
-        at,
-        stageName: stage.name,
-        title: `完成任务：${task.title}`,
-        body: null,
-        meta: [assignee ? `经办 ${assignee}` : null, formatDateTimeShort(at)].filter(Boolean).join(" · ")
-      });
-    }
-  }
-  const hearingStage = stages.find((s) => /开庭|庭审|询问/.test(s.name))?.name ?? null;
-  for (const hearing of procedure?.hearings ?? []) {
-    const at = new Date(hearing.startsAt);
-    if (at.getTime() > now) continue;
-    // 标题点名了环节（如「庭前会议」）时归该环节，否则归开庭环节
-    const named = stages.find((s) => hearing.title.includes(s.name))?.name ?? null;
-    items.push({
-      key: `h-${hearing.id}`,
-      kind: "court",
-      at,
-      stageName: named ?? hearingStage ?? stageByTime(at),
-      title: `已开庭：${hearing.title}`,
-      body: null,
-      meta: [hearing.room, formatDateTimeShort(at)].filter(Boolean).join(" · "),
-      channelTone: "court"
-    });
-  }
-  for (const memo of (procedure?.memos ?? []).filter((m) => m.done)) {
-    const at = new Date(memo.createdAt);
-    items.push({
-      key: `m-${memo.id}`,
-      kind: "memo",
-      at,
-      stageName: stageByTime(at),
-      title: memo.done ? "备忘（已办）" : "备忘",
-      body: memo.content,
-      meta: [formatDateTimeShort(at), memo.done && memo.doneAt ? `${formatDateTimeShort(new Date(memo.doneAt))} 办结` : null].filter(Boolean).join(" · "),
-      memo: { id: memo.id, done: memo.done }
-    });
-  }
-  for (const ex of expresses) {
-    const at = new Date(ex.createdAt);
-    const outbound = ex.direction === "OUTBOUND";
-    items.push({
-      key: `x-${ex.id}`,
-      kind: "express",
-      at,
-      stageName: stageByTime(at),
-      title: `${outbound ? "寄出" : "收件"}：${ex.purpose}`,
-      body: null,
-      meta: [ex.companyCode ?? "快递公司待识别", ex.trackingNo, ex.lastState ?? "待跟踪", ex.lastUpdateAt ? `更新 ${formatDateTimeShort(new Date(ex.lastUpdateAt))}` : null].filter(Boolean).join(" · "),
-      express: { id: ex.id, outbound }
-    });
-  }
-  for (const event of events) {
-    // 材料在「材料与证据」；任务、开庭已按实际结果入记录，避免同一件事出现两次
-    if (["DOCUMENT_UPLOADED", "TASK_ADDED", "HEARING_SCHEDULED", "DEADLINE_ADDED"].includes(event.eventType)) continue;
-    const at = new Date(event.occurredAt);
-    items.push({
-      key: `e-${event.id}`,
-      kind: "sys",
-      at,
-      stageName: stageByTime(at),
-      title: event.title,
-      body: null,
-      meta: [formatDateTimeShort(at), event.content].filter(Boolean).join(" · "),
-      eventType: event.eventType
-    });
-  }
-  return items.sort((a, b) => b.at.getTime() - a.at.getTime());
-}
 
 const LOG_FILTERS: { key: "all" | LogKind; label: string }[] = [
   { key: "all", label: "全部" },
@@ -2729,24 +2586,8 @@ function statusForStage(
 
 
 
-function stageMaterialTag(stageName: string) {
-  return `阶段:${stageName}`;
-}
 
-function documentMatchesStage(
-  document: WorkflowDocument,
-  stage: { id: string | null; name: string }
-) {
-  // v0.48: 外键归属优先——已明确归属某环节的材料不再按模式匹配到其他环节
-  if (document.stageId) return stage.id !== null && document.stageId === stage.id;
-  if (document.tags?.includes(stageMaterialTag(stage.name))) return true;
-  const guide = stageGuideFor(stage.name);
-  return guide.materialCategories.includes(document.category) || guide.materialPattern.test(document.name);
-}
 
-function defaultCategoryForStage(stageName: string): DocumentCategory {
-  return stageGuideFor(stageName).defaultCategory;
-}
 
 function buildSourceOptions(procedure: WorkflowProcedure) {
   const seen = new Set<string>([COURT_PROCEDURE_SOURCE]);

@@ -209,3 +209,214 @@ describe("环节插入位置（defaultInsertTarget / parseInsertTarget 往返）
     expect(parseInsertTarget("", stages).position).toBe("END");
   });
 });
+
+/* ==================================================================
+ * 第二组（2026-11-21 补）：经办记录聚合 + 材料与环节的匹配
+ *
+ * 这两块同样是纯规则、此前零覆盖：
+ *   buildLogItems        决定「经办记录里出现哪些条目、归到哪个环节、按什么顺序」
+ *   documentMatchesStage 决定「一份材料算不算某个环节的」
+ * ================================================================== */
+
+const { buildLogItems, documentMatchesStage, noteStage, stageMaterialTag } = await import(
+  "@/app/(app)/matters/[id]/_components/procedure-workflow-derive"
+);
+
+function note(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "n1",
+    channel: "PHONE",
+    withWhom: null,
+    occurredAt: inDays(-1),
+    content: "沟通内容",
+    tags: [],
+    author: { id: "u1", name: "张三" },
+    ...over
+  } as never;
+}
+
+describe("buildLogItems —— 经办记录里出现什么", () => {
+  it("只收**已完成**的任务；未完成的在待办里，不能重复出现在记录里", () => {
+    const s = stage({
+      key: "k1",
+      name: "庭前准备",
+      tasks: [
+        { id: "t-done", title: "已完成", description: null, dueAt: null, completed: true, completedAt: inDays(-1), priority: 1, stageId: null, assigneeId: "u1" },
+        { id: "t-open", title: "未完成", description: null, dueAt: null, completed: false, completedAt: null, priority: 1, stageId: null, assigneeId: null }
+      ]
+    });
+    const items = buildLogItems({ procedure: procedure(), stages: [s], notes: [], events: [], users: [{ id: "u1", name: "张三" }], expresses: [] });
+    expect(items.map((i) => i.title)).toEqual(["完成任务：已完成"]);
+    expect(items[0].meta).toContain("经办 张三");
+  });
+
+  it("只收**已过去**的开庭；未来的在待办里", () => {
+    const p = procedure({
+      hearings: [
+        { id: "h-past", title: "开庭", room: "第三法庭", address: null, startsAt: inDays(-2) },
+        { id: "h-future", title: "开庭", room: null, address: null, startsAt: inDays(3) }
+      ]
+    });
+    const items = buildLogItems({ procedure: p, stages: [], notes: [], events: [], users: [], expresses: [] });
+    expect(items.filter((i) => i.kind === "court").map((i) => i.title)).toEqual(["已开庭：开庭"]);
+  });
+
+  it("开庭标题点名了环节时归该环节，否则归开庭环节", () => {
+    const stagesList = [
+      stage({ key: "k1", name: "庭前会议" }),
+      stage({ key: "k2", name: "开庭审理" })
+    ];
+    const p = procedure({
+      hearings: [
+        { id: "h1", title: "庭前会议", room: null, address: null, startsAt: inDays(-1) },
+        { id: "h2", title: "第一次庭审", room: null, address: null, startsAt: inDays(-1) }
+      ]
+    });
+    const items = buildLogItems({ procedure: p, stages: stagesList, notes: [], events: [], users: [], expresses: [] });
+    const byTitle = Object.fromEntries(items.map((i) => [i.title, i.stageName]));
+    expect(byTitle["已开庭：庭前会议"]).toBe("庭前会议"); // 标题点名 → 归该环节
+    expect(byTitle["已开庭：第一次庭审"]).toBe("开庭审理"); // 否则归开庭环节
+  });
+
+  it("研判笔记单独成类，标题固定为「研判笔记」；法院渠道记作 court", () => {
+    const items = buildLogItems({
+      procedure: procedure(),
+      stages: [],
+      notes: [
+        note({ id: "n1", tags: ["研判笔记"], content: "判断" }),
+        note({ id: "n2", channel: "COURT" }),
+        note({ id: "n3", channel: "WECHAT", withWhom: "王法官" })
+      ],
+      events: [],
+      users: [],
+      expresses: []
+    });
+    const map = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(map["n-n1"].kind).toBe("note");
+    expect(map["n-n1"].title).toBe("研判笔记");
+    expect(map["n-n2"].kind).toBe("court");
+    expect(map["n-n3"].kind).toBe("talk");
+    expect(map["n-n3"].title).toBe("微信沟通 · 王法官");
+  });
+
+  it("环节归属：笔记自带的「环节:xxx」标签优先于按时间推断", () => {
+    const s = stage({ key: "k1", name: "立案" });
+    const p = procedure({ stages: [{ ...s, startedAt: inDays(-10) } as never] });
+    const items = buildLogItems({
+      procedure: p,
+      stages: [s],
+      notes: [note({ tags: ["环节:开庭审理"], occurredAt: inDays(-1) })],
+      events: [],
+      users: [],
+      expresses: []
+    });
+    expect(items[0].stageName).toBe("开庭审理"); // 标签优先，不是按时间推出的「立案」
+    expect(items[0].stageTag).toBe("开庭审理");
+  });
+
+  it("系统事件里，材料/任务/开庭/期限这四类被排除（已在别处呈现，避免同一件事出现两次）", () => {
+    const mk = (id: string, eventType: string) => ({ id, eventType, title: `事件${id}`, content: null, occurredAt: inDays(-1) });
+    const items = buildLogItems({
+      procedure: procedure(),
+      stages: [],
+      notes: [],
+      events: [
+        mk("e1", "DOCUMENT_UPLOADED"),
+        mk("e2", "TASK_ADDED"),
+        mk("e3", "HEARING_SCHEDULED"),
+        mk("e4", "DEADLINE_ADDED"),
+        mk("e5", "MATTER_STATUS_CHANGED")
+      ],
+      users: [],
+      expresses: []
+    });
+    expect(items.map((i) => i.key)).toEqual(["e-e5"]);
+  });
+
+  it("快递按方向区分「寄出 / 收件」；无快递公司时显示「待识别」", () => {
+    const base = { trackingNo: "SF123", lastState: null, lastUpdateAt: null, createdAt: inDays(-1) };
+    const items = buildLogItems({
+      procedure: procedure(),
+      stages: [],
+      notes: [],
+      events: [],
+      users: [],
+      expresses: [
+        { ...base, id: "x1", direction: "OUTBOUND", purpose: "送达起诉状", companyCode: "SF" },
+        { ...base, id: "x2", direction: "INBOUND", purpose: "回执", companyCode: null }
+      ] as never
+    });
+    const map = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(map["x-x1"].title).toBe("寄出：送达起诉状");
+    expect(map["x-x2"].title).toBe("收件：回执");
+    expect(map["x-x2"].meta).toContain("快递公司待识别");
+  });
+
+  it("备忘只收已办的（未办的在待办里）", () => {
+    const p = procedure({
+      memos: [
+        { id: "m1", content: "已办", done: true, doneAt: inDays(-1), createdAt: inDays(-3) },
+        { id: "m2", content: "未办", done: false, doneAt: null, createdAt: inDays(-3) }
+      ]
+    });
+    const items = buildLogItems({ procedure: p, stages: [], notes: [], events: [], users: [], expresses: [] });
+    expect(items.map((i) => i.key)).toEqual(["m-m1"]);
+    expect(items[0].title).toBe("备忘（已办）");
+  });
+
+  it("整体按时间**倒序**（最近的记录在最上面）", () => {
+    const items = buildLogItems({
+      procedure: procedure(),
+      stages: [],
+      notes: [note({ id: "n-old", occurredAt: inDays(-5) }), note({ id: "n-new", occurredAt: inDays(-1) })],
+      events: [{ id: "e1", eventType: "MATTER_STATUS_CHANGED", title: "中间", content: null, occurredAt: inDays(-3) }],
+      users: [],
+      expresses: []
+    });
+    expect(items.map((i) => i.key)).toEqual(["n-n-new", "e-e1", "n-n-old"]);
+  });
+});
+
+describe("documentMatchesStage —— 一份材料算不算某个环节的", () => {
+  const doc = (over: Record<string, unknown>) =>
+    ({ id: "d1", name: "起诉状.pdf", category: "PLEADING", tags: [], stageId: null, ...over }) as never;
+
+  it("已明确归属某环节的材料，按外键判定，**不再**按名字模式串到别的环节", () => {
+    // 这是 v0.48 的规则：外键归属优先，避免同一份材料出现在多个环节
+    const target = { id: "s1", name: "立案" };
+    const other = { id: "s2", name: "开庭审理" };
+    const d = doc({ stageId: "s1", name: "庭审笔录.pdf" }); // 名字像开庭，但归属是立案
+    expect(documentMatchesStage(d, target)).toBe(true);
+    expect(documentMatchesStage(d, other)).toBe(false);
+  });
+
+  it("没有外键归属时，靠「阶段:环节名」标签命中", () => {
+    const d = doc({ tags: [stageMaterialTag("开庭审理")] });
+    expect(documentMatchesStage(d, { id: null, name: "开庭审理" })).toBe(true);
+    expect(documentMatchesStage(d, { id: null, name: "立案" })).toBe(false);
+  });
+
+  it("既无外键也无标签时，按指引的文件名模式匹配", () => {
+    // 「开庭审理」这一档的 materialPattern 含「开庭|庭审|传票|…」
+    expect(documentMatchesStage(doc({ name: "开庭传票.pdf", category: "OTHER" }), { id: null, name: "开庭审理" })).toBe(true);
+    // 同一份材料不该被算进「立案」环节
+    expect(documentMatchesStage(doc({ name: "开庭传票.pdf", category: "OTHER" }), { id: null, name: "立案" })).toBe(false);
+  });
+
+  it("环节名匹配不到任何指引时退回 DEFAULT_STAGE_GUIDE，不会因此把所有材料都算进来", () => {
+    // DEFAULT 的 pattern 是 /阶段|说明|记录|底稿|工作/，普通文书不命中
+    expect(documentMatchesStage(doc({ name: "答辩状.docx", category: "PLEADING" }), { id: null, name: "某个自定义环节" })).toBe(false);
+    // 但命中「说明」的材料仍归它
+    expect(documentMatchesStage(doc({ name: "情况说明.docx", category: "OTHER" }), { id: null, name: "某个自定义环节" })).toBe(true);
+  });
+});
+
+describe("noteStage —— 从 tags 里取「环节:xxx」", () => {
+  it("有标签时取冒号后的环节名", () => {
+    expect(noteStage({ tags: ["环节:开庭审理"] } as never)).toBe("开庭审理");
+  });
+  it("没有该标签时返回 null（渲染层再退回按时间推断）", () => {
+    expect(noteStage({ tags: ["研判笔记"] } as never)).toBeNull();
+    expect(noteStage({ tags: [] } as never)).toBeNull();
+  });
+});
