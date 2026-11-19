@@ -165,6 +165,43 @@ if ! docker exec lawlink-app npx prisma migrate deploy 2>&1 | tail -3; then
   echo "    ❌ 数据库迁移失败，终止部署" >&2
   exit 1
 fi
+
+# 数据不变量体检（2026-11-22）
+#
+# `scripts/verify-db-invariants.ts` 早就有（Round 137），Round 151 又加了
+# 两条跨表一致性（结案案件无未办结事项、归档记录与案件状态同步）。
+# 但**它此前只是我手动跑的脚本** —— 验证手段不进流程，等于不存在。
+#
+# 跑在**宿主机**而不是容器里：生产镜像的 tsx 属构建副产物，不该成为运维依赖。
+# 宿主机必然有 node_modules（本脚本刚在上面跑过 tsc 与测试）。
+#
+# 判定：
+#   退出 0 = 全部通过（审计链的历史遗留断点记 ⚠️，不算违反，不阻塞）
+#   退出 1 = 有真实数据违反 → 终止部署，但留 SKIP_INVARIANTS=1 逃生门
+#   退出 2 = 脚本自身没跑成（不是数据问题），单独提示，同样终止
+if [ "${SKIP_INVARIANTS:-}" = "1" ]; then
+  echo "    （SKIP_INVARIANTS=1，已跳过数据不变量检查）"
+else
+  echo "    数据不变量体检..."
+  INV_URL="${DATABASE_URL:-postgresql://${POSTGRES_USER:-lawlink}:${POSTGRES_PASSWORD:-}@localhost:${POSTGRES_PORT:-55432}/${POSTGRES_DB:-lawlink}?schema=public}"
+  INV_LOG=/tmp/lawlink-invariants.log
+  INV_RC=0
+  DATABASE_URL="$INV_URL" npx tsx scripts/verify-db-invariants.ts > "$INV_LOG" 2>&1 || INV_RC=$?
+  if [ "$INV_RC" -eq 0 ]; then
+    grep -cE "^  ✅" "$INV_LOG" | xargs -I{} echo "    不变量 {} 项全过"
+    grep -E "^  ⚠️" "$INV_LOG" | sed 's/^/  /' || true
+  elif [ "$INV_RC" -eq 2 ]; then
+    echo "    ❌ 不变量脚本自身没跑成（不是数据问题），终止。日志：${INV_LOG}" >&2
+    tail -5 "$INV_LOG" >&2
+    exit 1
+  else
+    echo "    ❌ 数据库存在不变量违反，终止部署：" >&2
+    grep -E "^  ❌" "$INV_LOG" | head -10 | sed 's/^/  /' >&2
+    echo "       排查后可临时跳过：SKIP_INVARIANTS=1 ./scripts/deploy.sh ..." >&2
+    echo "       日志：${INV_LOG}" >&2
+    exit 1
+  fi
+fi
 if [ "${USER_COUNT}" = "0" ]; then
   echo "" >&2
   echo "    ❌ 数据库里没有任何用户 —— 应用虽然起来了，但没有人能登录。" >&2
