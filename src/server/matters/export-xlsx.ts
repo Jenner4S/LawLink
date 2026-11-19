@@ -1,17 +1,6 @@
 import type { RoleGrant } from "@/lib/roles/catalog";
-import { shDayKey, shTime } from "@/lib/ui/sh-time";
 import ExcelJS from "exceljs";
-import {
-  MatterCategory,
-  Prisma,
-  type LitigationStanding,
-  type MatterMemberRole,
-  type PartyRole,
-  type PartyType,
-  type ProcedureEngagement,
-  type ProcedureOutcome,
-  type ProcedureStatus
-} from "@prisma/client";
+import { MatterCategory, Prisma, type MatterMemberRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decryptIdNumber } from "@/lib/clients/id-number-crypto";
 import { intakeVisibilityFilter, matterAssociationFilter, teamMatterFilter, teamIntakeFilter, isManager } from "@/lib/permissions";
@@ -24,9 +13,22 @@ import {
   matterCategoryLabel,
   matterCategoryKind,
   matterStatusLabel,
-  partyTypeLabel,
   procedureTypeLabel
 } from "@/lib/enums";
+
+// 纯格式化函数已拆分至 export-format.ts；此处 import 供本文件使用，re-export 保持既有引用不变。
+import {
+  buildFilename, cleanDateText, cleanText, decimalNumber, formatContacts, formatDate, formatDateTime,
+  formatDocuments, formatJson, formatParties, formatParty, formatProcedureSummary, formatRelatedMatters,
+  label, polishSheet, procedureEngagementLabel, procedureOutcomeLabel, procedureStatusLabel,
+  resolveDateBoundary, sheetName, yesNo
+} from "./export-format";
+
+export {
+  buildFilename, cleanDateText, cleanText, decimalNumber, formatContacts, formatDate, formatDateTime,
+  formatDocuments, formatJson, formatParties, formatParty, formatProcedureSummary, formatRelatedMatters,
+  label, polishSheet, resolveDateBoundary, sheetName, yesNo
+} from "./export-format";
 
 export type MattersExportTab = "intake" | "active" | "archived" | "revision" | "all";
 type MatterSortBy = "hearing" | "intakeDate" | "claimAmount" | "archivedAt";
@@ -72,14 +74,6 @@ const TAB_LABEL: Record<MattersExportTab, string> = {
   active: "进行中",
   revision: "待补正",
   archived: "已归档"
-};
-
-const TAB_FILE_KEY: Record<MattersExportTab, string> = {
-  all: "all",
-  intake: "intake",
-  active: "active",
-  revision: "revision",
-  archived: "archived"
 };
 
 const MATTER_CATEGORIES = Object.values(MatterCategory) as MatterCategory[];
@@ -187,45 +181,12 @@ const matterInclude = Prisma.validator<Prisma.MatterInclude>()({
 });
 
 type IntakeExportRow = Prisma.IntakeGetPayload<{ include: typeof intakeInclude }>;
-type MatterExportRow = Prisma.MatterGetPayload<{ include: typeof matterInclude }>;
-
-const partyRoleLabel: Record<PartyRole, string> = {
-  CLIENT_PARTY: "委托方",
-  OPPOSING_PARTY: "对方",
-  THIRD_PARTY: "第三人",
-  CO_LITIGANT: "共同当事人",
-  AGENT: "代理人",
-  WITNESS: "证人",
-  OTHER: "其他"
-};
+export type MatterExportRow = Prisma.MatterGetPayload<{ include: typeof matterInclude }>;
 
 const memberRoleLabel: Record<MatterMemberRole, string> = {
   LEAD: "主办",
   CO_LEAD: "协办",
   ASSISTANT: "助理"
-};
-
-const procedureStatusLabel: Record<ProcedureStatus, string> = {
-  PENDING: "未开始",
-  IN_PROGRESS: "进行中",
-  CONCLUDED: "已结束"
-};
-
-const procedureEngagementLabel: Record<ProcedureEngagement, string> = {
-  ENGAGED: "承办",
-  INFORMATIONAL: "仅登记"
-};
-
-const procedureOutcomeLabel: Record<ProcedureOutcome, string> = {
-  WON: "胜诉",
-  PARTIAL_WON: "部分胜诉",
-  LOST: "败诉",
-  MEDIATED: "调解",
-  WITHDRAWN: "撤诉",
-  DISMISSED: "驳回",
-  COMPLETED: "完成",
-  TRANSFERRED: "移送",
-  OTHER: "其他"
 };
 
 export function resolveMattersExportParams(searchParams: URLSearchParams): MattersExportParams {
@@ -902,168 +863,4 @@ function buildProcedureCells(
       .map((row) => `${label(litigationStandingLabel, row.standing)}：${formatParty(row.party)}`)
       .join("；")
   };
-}
-
-function formatProcedureSummary(procedures: MatterExportRow["procedures"]) {
-  return procedures
-    .map((procedure) =>
-      [
-        label(procedureTypeLabel, procedure.type),
-        procedure.customLabel,
-        procedure.caseNumber,
-        procedure.handlingAgency,
-        procedure.status ? procedureStatusLabel[procedure.status] : "",
-        procedure.acceptedAt ? `受理:${formatDate(procedure.acceptedAt)}` : "",
-        procedure.concludedAt ? `结案:${formatDate(procedure.concludedAt)}` : "",
-        procedure.outcome ? `结果:${procedureOutcomeLabel[procedure.outcome]}` : ""
-      ].filter(Boolean).join(" / ")
-    )
-    .join("；");
-}
-
-function formatParties(parties: { role: PartyRole; standing: LitigationStanding | null; partyType: PartyType; name: string; idNumber: string | null; enterpriseSocialCode: string | null; phone: string | null; address: string | null; legalRep: string | null; contactName: string | null; notes: string | null }[]) {
-  return parties
-    .map((party) => `${partyRoleLabel[party.role]}：${formatParty(party)}`)
-    .join("；");
-}
-
-function formatParty(party: {
-  standing?: LitigationStanding | null;
-  partyType: PartyType;
-  name: string;
-  idNumber?: string | null;
-  enterpriseSocialCode?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  legalRep?: string | null;
-  contactName?: string | null;
-  notes?: string | null;
-}) {
-  const detail = [
-    label(litigationStandingLabel, party.standing),
-    partyTypeLabel[party.partyType],
-    party.idNumber ? `证件:${party.idNumber}` : "",
-    party.enterpriseSocialCode ? `代码:${party.enterpriseSocialCode}` : "",
-    party.phone ? `电话:${party.phone}` : "",
-    party.legalRep ? `法定代表人:${party.legalRep}` : "",
-    party.contactName ? `联系人:${party.contactName}` : "",
-    party.address ? `地址:${party.address}` : "",
-    party.notes ? `备注:${party.notes}` : ""
-  ].filter(Boolean);
-  return detail.length > 0 ? `${party.name}（${detail.join("，")}）` : party.name;
-}
-
-function formatContacts(
-  contacts: { name: string; title: string | null; phone: string | null; email: string | null; isPrimary: boolean }[]
-) {
-  return contacts
-    .map((contact) =>
-      [
-        contact.isPrimary ? "主" : "",
-        contact.name,
-        contact.title,
-        contact.phone,
-        contact.email
-      ].filter(Boolean).join(" / ")
-    )
-    .join("；");
-}
-
-function formatDocuments(documents: { name: string; category: string; createdAt: Date }[]) {
-  return documents
-    .map((doc) => `${doc.name}（${doc.category}，${formatDate(doc.createdAt)}）`)
-    .join("；");
-}
-
-function formatRelatedMatters(matter: MatterExportRow) {
-  const from = matter.linksFrom.map((link) => link.relatedMatter);
-  const to = matter.linksTo.map((link) => link.matter);
-  return [...from, ...to]
-    .map((row) => `${row.firmCaseNo ?? row.internalCode} ${row.title}`)
-    .join("；");
-}
-
-function polishSheet(sheet: ExcelJS.Worksheet, moneyColumnKeys: string[]) {
-  sheet.views = [{ state: "frozen", ySplit: 1 }];
-  sheet.getRow(1).font = { bold: true };
-  sheet.getRow(1).alignment = { vertical: "middle" };
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: sheet.columnCount }
-  };
-  sheet.eachRow((row, rowNumber) => {
-    if (rowNumber > 1) {
-      row.alignment = { vertical: "top", wrapText: true };
-    }
-  });
-  const columnKeys = new Set(sheet.columns.map((column) => column.key).filter(Boolean));
-  for (const key of moneyColumnKeys) {
-    if (columnKeys.has(key)) {
-      sheet.getColumn(key).numFmt = "#,##0.00";
-    }
-  }
-}
-
-function buildFilename(tab: MattersExportTab) {
-  return `lawlink-matters-${TAB_FILE_KEY[tab]}-${formatDate(new Date())}.xlsx`;
-}
-
-function sheetName(name: string) {
-  return name.replace(/[\\/:*?\[\]]/g, "").slice(0, 31) || "Sheet";
-}
-
-function cleanText(input: string | null) {
-  const value = input?.trim();
-  return value || undefined;
-}
-
-function cleanDateText(input: string | null) {
-  const value = cleanText(input);
-  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
-}
-
-function resolveDateBoundary(input: string | undefined, endOfDay: boolean) {
-  if (!input) return undefined;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
-  if (!match) return undefined;
-  // 2026-09-20 第五轮审计时区修复：导出过滤边界按上海日界（此前服务器本地构造，
-  // UTC 容器用户选 2026-09-20 实际筛上海 09-20 08:00 起，漏当日 0-8 点）
-  return endOfDay
-    ? new Date(`${input}T23:59:59.999+08:00`)
-    : new Date(`${input}T00:00:00+08:00`);
-}
-
-function formatDate(date: Date | null | undefined) {
-  if (!date) return "";
-  return shDayKey(date);
-}
-
-function formatDateTime(date: Date | null | undefined) {
-  if (!date) return "";
-  return `${shDayKey(date)} ${shTime(date)}`;
-}
-
-function decimalNumber(value: Prisma.Decimal | number | null | undefined) {
-  if (value === null || value === undefined) return "";
-  return Number(value);
-}
-
-function yesNo(value: boolean | null | undefined) {
-  return value ? "是" : "否";
-}
-
-function label<T extends string>(
-  labels: Partial<Record<T, string>>,
-  value: T | null | undefined
-) {
-  return value ? labels[value] ?? value : "";
-}
-
-function formatJson(value: Prisma.JsonValue) {
-  if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return value.length > 0 ? JSON.stringify(value) : "";
-  if (typeof value === "object") {
-    return Object.keys(value).length > 0 ? JSON.stringify(value) : "";
-  }
-  return String(value);
 }
