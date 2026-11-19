@@ -7,7 +7,12 @@ const { db, ai, ocr } = vi.hoisted(() => ({
   db: {
     smsInboundFile: { findUnique: vi.fn(), update: vi.fn() },
     smsSuggestion: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn() },
-    matterProcedure: { findFirst: vi.fn(), findMany: vi.fn() }
+    matterProcedure: { findFirst: vi.fn(), findMany: vi.fn() },
+    // 2026-11-21：建议的「查重 + 插入」改为事务 + 短信行锁
+    // （SmsSuggestion 没有唯一约束，同一文件并发分析会落两批一样的建议）。
+    // 这里让 $transaction 直接跑回调、$queryRaw 当无操作 —— 本组测的是落建议的内容。
+    $transaction: vi.fn(async (fn: any) => fn(db)),
+    $queryRaw: vi.fn(async () => [{ locked: 1 }])
   },
   ai: { aiChat: vi.fn() },
   ocr: { recognizeText: vi.fn() }

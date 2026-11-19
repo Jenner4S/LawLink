@@ -237,24 +237,37 @@ async function persistSuggestions(
   }
 
   // 去重：REJECTED 的建议不重复弹回，除非建议值变化（v3 §5.2）
+  //
+  // 2026-11-21 修复（P2，多智能体审计「并发安全」维度）：
+  // 原来是「findFirst 查重 → create」，两步之间既没有锁，`SmsSuggestion` 也没有
+  // 任何唯一约束（实测该表只有主键）。分析跑在队列里：同一个文件被重复入队
+  // （超时重试时首轮其实还在跑、或律师手动重跑）就会**并发落两批一样的建议**。
+  // 律师在「整理建议」里看到同一个开庭建议出现两次，确认时容易重复处理。
+  //
+  // 修法：只把「去重 + 插入」这一段放进事务并锁住该短信行 ——
+  // 上一大段 AI 分析与档案比对耗时很长，**不能**圈进锁里。
+  // 锁的粒度是 smsId，正好等于去重键的前缀，语义最贴。
   let created = 0;
-  for (const row of rows) {
-    const dup = await prisma.smsSuggestion.findFirst({
-      where: { smsId, fileId, kind: row.kind, fieldKey: row.fieldKey ?? null, suggestedValue: row.suggestedValue ?? "" },
-      select: { id: true, status: true }
-    });
-    if (dup) continue;
-    await prisma.smsSuggestion.create({
-      data: {
-        smsId: row.smsId, fileId: row.fileId, kind: row.kind,
-        targetType: row.targetType ?? null, targetId: row.targetId ?? null,
-        fieldKey: row.fieldKey ?? null, currentValue: row.currentValue ?? null,
-        suggestedValue: row.suggestedValue ?? null,
-        sourcePage: row.sourcePage ?? null, sourceExcerpt: row.sourceExcerpt ?? null,
-        payload: (row.payload ?? {}) as object, createdById
-      }
-    });
-    created++;
-  }
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 AS locked FROM "SmsMessage" WHERE id = ${smsId} FOR UPDATE`;
+    for (const row of rows) {
+      const dup = await tx.smsSuggestion.findFirst({
+        where: { smsId, fileId, kind: row.kind, fieldKey: row.fieldKey ?? null, suggestedValue: row.suggestedValue ?? "" },
+        select: { id: true, status: true }
+      });
+      if (dup) continue;
+      await tx.smsSuggestion.create({
+        data: {
+          smsId: row.smsId, fileId: row.fileId, kind: row.kind,
+          targetType: row.targetType ?? null, targetId: row.targetId ?? null,
+          fieldKey: row.fieldKey ?? null, currentValue: row.currentValue ?? null,
+          suggestedValue: row.suggestedValue ?? null,
+          sourcePage: row.sourcePage ?? null, sourceExcerpt: row.sourceExcerpt ?? null,
+          payload: (row.payload ?? {}) as object, createdById
+        }
+      });
+      created++;
+    }
+  });
   return created;
 }
