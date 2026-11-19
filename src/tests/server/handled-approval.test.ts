@@ -110,7 +110,7 @@ async function seedAudit(args: {
  * 顺带说明：这也意味着**审计日志一旦写入就无法在测试里回滚**，
  * 临时库 DROP 是唯一清理方式（afterAll 已做）。
  */
-const noCleanupNeeded = "用例间用唯一 id 隔离，不依赖清库";
+
 
 describe("hasHandledApproval · JSON 附件关联（真库）", () => {
   it("处理过该用印单且附件含该材料 → true", async () => {
