@@ -8,7 +8,7 @@ import type {
   ProcedureStatus,
   Prisma
 } from "@prisma/client";
-import { shDayKey, shTime } from "@/lib/ui/sh-time";
+import { parseShDayEnd, parseShDayStart, shDayKey, shTime } from "@/lib/ui/sh-time";
 import { litigationStandingLabel, partyTypeLabel, procedureTypeLabel } from "@/lib/enums";
 import type { MatterExportRow, MattersExportTab } from "./export-query";
 
@@ -185,16 +185,11 @@ export function resolveDateBoundary(input: string | undefined, endOfDay: boolean
   if (!match) return undefined;
   // 2026-09-20 第五轮审计时区修复：导出过滤边界按上海日界（此前服务器本地构造，
   // UTC 容器用户选 2026-09-20 实际筛上海 09-20 08:00 起，漏当日 0-8 点）
-  const at = endOfDay ? `${input}T23:59:59.999+08:00` : `${input}T00:00:00+08:00`;
-  const parsed = new Date(at);
-  // 2026-11-20：格式合规但**日期不存在**的输入会被 V8 静默滚动，必须回验。
-  // 实测 `2026-02-30` → 上海 3 月 2 日、`2026-02-29`（非闰年）→ 3 月 1 日、
-  // `2026-04-31` → 5 月 1 日。界面用的是 <input type="date">，浏览器会拦住，
-  // 但直接调接口（脚本、导入、桌面端）不经过那一层 —— 于是用户以为筛的是
-  // 2 月 30 日，实际拿到别的日期区间，且没有任何提示。
-  // 回验方式：把解析结果按上海日取回 key，必须与输入逐字相同。
-  if (Number.isNaN(parsed.getTime()) || shDayKey(parsed) !== input) return undefined;
-  return parsed;
+  // 2026-11-20：日期回验统一走 lib/ui/sh-time 的 parseShDayStart / parseShDayEnd。
+  // 此前这里手写过一份回验（`shDayKey(parsed) !== input`），而同样的校验在
+  // emails / ethical-walls / sms 三处也各有一份 —— 四份实现里两份漏了月日，
+  // 导致 `2026-02-30` 被静默滚成 3 月 2 日。收成一处就不再有「哪份没跟上」。
+  return endOfDay ? parseShDayEnd(input) ?? undefined : parseShDayStart(input) ?? undefined;
 }
 
 export function formatDate(date: Date | null | undefined) {

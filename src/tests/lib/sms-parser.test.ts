@@ -89,3 +89,33 @@ describe("toDate 拒绝不存在的日期", () => {
     expect(toDate("2026年9月20日 10:00")?.toISOString()).toBe("2026-09-20T02:00:00.000Z");
   });
 });
+
+// ============================================================
+// sh-time 统一日期解析（2026-11-20 抽取）
+// ============================================================
+import { parseShDayStart, parseShDayEnd, parseShDateTime } from "@/lib/ui/sh-time";
+
+describe("sh-time 统一日期解析", () => {
+  it("按上海墙钟构造，且日期不存在时返回 null", () => {
+    expect(parseShDayStart("2026-09-20")?.toISOString()).toBe("2026-09-19T16:00:00.000Z");
+    expect(parseShDayEnd("2026-09-20")?.toISOString()).toBe("2026-09-20T15:59:59.999Z");
+    // 越界日期必须拒绝（4 处调用点原先各写一份，两份漏了月日）
+    for (const bad of ["2026-02-30", "2026-02-29", "2026-04-31", "2026-13-01"]) {
+      expect(parseShDayStart(bad), bad).toBeNull();
+      expect(parseShDayEnd(bad), bad).toBeNull();
+    }
+    // 闰年真实存在
+    expect(parseShDayStart("2028-02-29")?.toISOString()).toBe("2028-02-28T16:00:00.000Z");
+  });
+
+  it("日期 + 时刻：两者都验，越界一律 null", () => {
+    expect(parseShDateTime("2026-09-20", "10:00")?.toISOString()).toBe("2026-09-20T02:00:00.000Z");
+    expect(parseShDateTime("2026-09-20", "15:30")?.toISOString()).toBe("2026-09-20T07:30:00.000Z");
+    expect(parseShDateTime("2026-02-30", "10:00")).toBeNull();
+    expect(parseShDateTime("2026-09-20", "24:00")).toBeNull();
+    expect(parseShDateTime("2026-09-20", "09:60")).toBeNull();
+    expect(parseShDateTime("2026-09-20", "9:00")).toBeNull();  // 需两位小时
+    expect(parseShDayStart("")).toBeNull();
+    expect(parseShDayStart(null)).toBeNull();
+  });
+});

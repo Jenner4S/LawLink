@@ -8,7 +8,7 @@ import { isSystemAdmin } from "@/lib/auth/system-role";
 import { parseInput } from "@/lib/parse-input";
 import { assertCanReadMatter, isManager, matterReadVisibilityFilter } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { shDayKey, shTime } from "@/lib/ui/sh-time";
+import { parseShDateTime } from "@/lib/ui/sh-time";
 import { auditTx } from "@/server/audit";
 import { revalidateMatter } from "@/server/matters/route";
 
@@ -143,9 +143,9 @@ function parseShanghaiSentAt(value: string): Date {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value.trim());
   if (!match) throw new ActionError("发送时间格式应为 YYYY-MM-DDTHH:mm");
   const [, y, m, d, hh, mm] = match;
-  const date = new Date(`${y}-${m}-${d}T${hh}:${mm}:00+08:00`);
-  // 回读校验：2026-02-30 这类不存在的日期会被 Date 顺延，必须拒绝
-  if (Number.isNaN(date.getTime()) || shDayKey(date) !== `${y}-${m}-${d}` || shTime(date) !== `${hh}:${mm}`) {
+  // 2026-11-20：回验统一走 sh-time 的 parseShDateTime（原为手写回验）。
+  const date = parseShDateTime(`${y}-${m}-${d}`, `${hh}:${mm}`);
+  if (!date) {
     throw new ActionError("发送时间不存在，请重新选择");
   }
   return date;

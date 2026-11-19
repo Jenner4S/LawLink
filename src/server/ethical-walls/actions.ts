@@ -9,7 +9,7 @@ import { isSystemAdmin } from "@/lib/auth/system-role";
 import { userRoleLabel } from "@/lib/enums";
 import { isManager, matterReadVisibilityFilter } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { shDayKey } from "@/lib/ui/sh-time";
+import { parseShDayEnd } from "@/lib/ui/sh-time";
 import { auditTx } from "@/server/audit";
 import { revalidateMatter } from "@/server/matters/route";
 
@@ -103,8 +103,9 @@ function parseOrThrow<T>(result: { success: true; data: T } | { success: false; 
 function resolveExpiresAt(key: string | null | undefined): Date | null {
   const text = (key ?? "").trim();
   if (!text) return null;
-  const at = new Date(`${text}T23:59:59.999+08:00`);
-  if (Number.isNaN(at.getTime()) || shDayKey(at) !== text) {
+  // 2026-11-20：日期回验统一走 sh-time 的 parseShDayEnd（原为手写回验）。
+  const at = parseShDayEnd(text);
+  if (!at) {
     throw new ActionError("失效日期不存在，请重新选择");
   }
   if (at.getTime() <= Date.now()) {

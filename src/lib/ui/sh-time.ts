@@ -80,3 +80,54 @@ export function civilKey(d: Date): string {
 export function shDaysFromToday(value: Date | string | number): number {
   return Math.round((civilFromKey(shDayKey(value)).getTime() - shTodayCivil().getTime()) / 86_400_000);
 }
+
+/**
+ * 上海墙钟字符串 → Date，日期不存在时返回 null。
+ *
+ * 2026-11-20 新增。起因：全仓有 4 处各自手写「解析后回验」的逻辑——
+ * emails/actions.ts、ethical-walls/actions.ts、matters/export-format.ts、
+ * sms/confirm-actions.ts。前两处写对了，第三、四处漏了，导致
+ * `2026-02-30` 被 V8 静默滚成 3 月 2 日，错误的日期直接进了案件数据。
+ *
+ * 同一个校验写四遍，就一定会有一遍漏 —— 所以收进这里，让「写对」成为默认。
+ *
+ * 为什么必须回验：`new Date("2026-02-30T00:00:00+08:00")` 不会报错，
+ * V8 会顺延到 3 月 2 日；`2026-13-45 99:99` 更会滚到下一年。
+ * 外层若不比对「取回来的年月日时分是否等于输入」，错误就静默通过。
+ *
+ * 返回 null 而不是抛错：调用方有的是表单校验（该抛 ActionError）、
+ * 有的是过滤参数（该退化成「不筛」）。语义由调用方定，这里只回答「存不存在」。
+ */
+function buildShInstant(text: string, tail: string, expectTime: string | null): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text.trim());
+  if (!m) return null;
+  const at = new Date(`${text.trim()}T${tail}+08:00`);
+  if (Number.isNaN(at.getTime())) return null;
+  if (shDayKey(at) !== text.trim()) return null;
+  if (expectTime !== null && shTime(at) !== expectTime) return null;
+  return at;
+}
+
+/** `YYYY-MM-DD` → 当日上海 00:00 的瞬时；日期不存在返回 null */
+export function parseShDayStart(text: string | null | undefined): Date | null {
+  if (!text) return null;
+  return buildShInstant(text, "00:00:00.000", null);
+}
+
+/** `YYYY-MM-DD` → 当日上海 23:59:59.999 的瞬时；日期不存在返回 null */
+export function parseShDayEnd(text: string | null | undefined): Date | null {
+  if (!text) return null;
+  return buildShInstant(text, "23:59:59.999", null);
+}
+
+/**
+ * `YYYY-MM-DD` + `HH:mm` → 瞬时；日期或时刻不存在返回 null。
+ * 时分由调用方先校验格式，这里只负责「这个时刻在上海墙钟里真实存在吗」。
+ */
+export function parseShDateTime(day: string, hhmm: string): Date | null {
+  const t = /^(\d{2}):(\d{2})$/.exec(hhmm.trim());
+  if (!t) return null;
+  const hh = Number(t[1]), mm = Number(t[2]);
+  if (hh > 23 || mm > 59) return null;
+  return buildShInstant(day, `${t[1]}:${t[2]}:00.000`, `${t[1]}:${t[2]}`);
+}
