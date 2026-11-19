@@ -8,7 +8,7 @@ import {
   intakeReadVisibilityFilter,
   clientVisibilityFilter,
 } from "@/lib/permissions";
-import { canReadDocument } from "@/lib/approvals/documents";
+import { canReadDocument, prefetchDocumentReadContext } from "@/lib/approvals/documents";
 import { blindIdNumber } from "@/lib/clients/id-number-crypto";
 import { normalizeIdNumber } from "@/lib/clients/identity";
 import { matterHref } from "@/lib/matters/route";
@@ -119,28 +119,15 @@ async function searchDocumentsAuthorized(
   });
 
   // 2026-11-21 性能（多智能体审计 P1-2）：候选最多 200 份，原先逐条调
-  // canReadDocument，而它每次都重查 user 与 sealRequest —— 200 份 = 400+ 次往返，
-  // 其中对同一用户 / 同一批文档的重复查询毫无信息量。
-  // 这里批量预取这两项（各 1 次），语义严格等价：预取的数据就是那些查询会返回的。
-  // canReadDocument 的分支逻辑原样保留（不传 ctx 的 27 个调用点行为不变）。
-  const [searchUser, sealRows] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { role: true, active: true } }),
-    candidates.length
-      ? prisma.sealRequest.findMany({
-          where: { OR: [{ draftDocId: { in: candidates.map((d) => d.id) } }, { stampedDocId: { in: candidates.map((d) => d.id) } }] },
-          select: { id: true, draftDocId: true, stampedDocId: true, requestedById: true, approvedById: true, stampedById: true, status: true }
-        })
-      : Promise.resolve([])
-  ]);
-  // findFirst 的语义是「取一条」，一张材料理论上可能同时是某单的 draft 和另一单的 stamped；
-  // 用 Map 保留先到的一条，与逐条 findFirst 的返回一致（同一 docId 只留一次）。
-  const sealsByDocId = new Map<string, (typeof sealRows)[number] | null>();
-  for (const row of sealRows) {
-    for (const docId of new Set([row.draftDocId, row.stampedDocId])) {
-      if (docId && !sealsByDocId.has(docId)) sealsByDocId.set(docId, row);
-    }
-  }
-  const readCtx = { user: searchUser, sealsByDocId };
+  // canReadDocument，而它每份都重查五项与「是哪一份」无关的数据：
+  //   user / resolveRoleUser / sealRequest / 隔离墙 / 案件归属
+  // 200 份 = 数百次往返，其中绝大多数是同一批数据的重复查询。
+  //
+  // 预取逻辑集中在 prefetchDocumentReadContext（不散放在这里），
+  // 因为它已经到五项，散着拼容易漏一项 —— 漏了会静默退回逐条查，
+  // 结果仍然正确，性能问题不会被任何测试发现。
+  // 不传 ctx 的 27 个既有调用点行为完全不变。
+  const readCtx = await prefetchDocumentReadContext(userId, candidates);
 
   const results: SearchResultItem[] = [];
   for (const doc of candidates) {

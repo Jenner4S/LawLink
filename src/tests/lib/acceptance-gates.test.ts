@@ -43,7 +43,13 @@ vi.mock("@/server/audit", () => ({ audit: vi.fn(), auditTx: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/server/finance/ledger-storage", () => ({ financeLedgerReady: vi.fn(async () => false) }));
 vi.mock("@/lib/archive/guard", () => ({ assertMatterWritable: vi.fn(async () => {}) }));
-vi.mock("@/lib/approvals/documents", () => ({ canReadDocument: canRead }));
+// 2026-11-21：搜索改用 prefetchDocumentReadContext 批量预取（会查 user/access/墙/归属）。
+// 本组测的是「逐条授权过滤」这一层，预取不是被测对象 —— 一并 mock 成空上下文，
+// 否则搜索会真的去查这几张表，而这些用例的 prisma mock 里没有它们。
+vi.mock("@/lib/approvals/documents", () => ({
+  canReadDocument: canRead,
+  prefetchDocumentReadContext: async () => ({})
+}));
 
 import { allocatePayment } from "@/server/finance/allocation";
 import { globalSearch } from "@/server/search/actions";

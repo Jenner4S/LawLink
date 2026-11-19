@@ -20,6 +20,97 @@ export type DocumentReadContext = {
   user?: { role: string; active: boolean } | null;
   /** 预取的 sealRequest（按 docId 索引）；undefined = 没预取 */
   sealsByDocId?: Map<string, { id: string; requestedById: string | null; approvedById: string | null; stampedById: string | null; status: string } | null>;
+  /** 预取的 resolveRoleUser 结果；undefined = 没预取 */
+  access?: Awaited<ReturnType<typeof resolveRoleUser>>;
+  /** 预取的「被隔离墙挡住」的 matterId 集合；undefined = 没预取 */
+  walledMatterIds?: Set<string>;
+  /** 预取的「该用户是 owner 或 member 且案件未软删」的 matterId 集合；undefined = 没预取 */
+  accessibleMatterIds?: Set<string>;
+};
+
+/**
+ * 一次性预取 `canReadDocument` 会用到的全部共享数据（2026-11-21，性能 P1-2 第二步）。
+ *
+ * 为什么做成一个函数而不是让调用方自己拼：`canReadDocument` 的预取项已经到五项
+ * （user / access / seals / 墙 / 归属），散着拼很容易漏一项 —— 漏了就静默退回逐条查，
+ * 而结果仍然正确，于是性能问题不会被任何测试发现。集中在这里，漏项是编译期的事。
+ *
+ * 语义严格等价：预取的就是那些查询会返回的数据，不做任何放宽或收紧。
+ * 调用方只有在「同一批文档 + 同一用户」时才该用它；单次调用不必预取。
+ */
+export async function prefetchDocumentReadContext(
+  userId: string,
+  docs: { id: string; matterId: string | null }[]
+): Promise<DocumentReadContext> {
+  const docIds = docs.map((d) => d.id);
+  const matterIds = [...new Set(docs.map((d) => d.matterId).filter((x): x is string => !!x))];
+
+  const [user, seals] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { role: true, active: true } }),
+    docIds.length
+      ? prisma.sealRequest.findMany({
+          where: { OR: [{ draftDocId: { in: docIds } }, { stampedDocId: { in: docIds } }] },
+          select: { id: true, draftDocId: true, stampedDocId: true, requestedById: true, approvedById: true, stampedById: true, status: true }
+        })
+      : Promise.resolve([] as { id: string; draftDocId: string | null; stampedDocId: string | null; requestedById: string | null; approvedById: string | null; stampedById: string | null; status: string }[])
+  ]);
+
+  const sealsByDocId = new Map<string, (typeof seals)[number] | null>();
+  for (const row of seals) {
+    // findFirst 的语义是「取一条」：同一材料可能既是某单 draft 又是另一单 stamped，
+    // 逐条 findFirst 只会返回其中一条，所以这里也「先到先留」。
+    for (const id of new Set([row.draftDocId, row.stampedDocId])) {
+      if (id && !sealsByDocId.has(id)) sealsByDocId.set(id, row);
+    }
+  }
+
+  // user 不存在或已停用：后续分支都会早退，不必再查 access / 墙 / 归属。
+  if (!user || !user.active) {
+    return { user, sealsByDocId, access: undefined, walledMatterIds: new Set(), accessibleMatterIds: new Set() };
+  }
+
+  const access = await resolveRoleUser(userId, user.role);
+
+  // 墙：一次查出「该用户被点名的墙」对应的 matterId。
+  // 与 isMatterWalledFor 条件一致（USER / TEAM / ROLE + 时效），只是从「逐案 findFirst」
+  // 换成「一次 findMany 再取 matterId」。
+  let walledMatterIds = new Set<string>();
+  if (matterIds.length) {
+    const walls = await prisma.ethicalWall.findMany({
+      where: {
+        matterId: { in: matterIds },
+        AND: [
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+          {
+            denials: {
+              some: {
+                OR: [
+                  { denyType: "USER", userId },
+                  { denyType: "TEAM", team: { members: { some: { userId, active: true } } } },
+                  ...(user.role ? [{ denyType: "ROLE" as const, role: user.role as never }] : [])
+                ]
+              }
+            }
+          }
+        ]
+      },
+      select: { matterId: true }
+    });
+    walledMatterIds = new Set(walls.map((w) => w.matterId));
+  }
+
+  // 归属：一次查出「该用户是 owner 或 member 且未软删」的 matterId。
+  // 对应 :76 那条 matter.count。
+  let accessibleMatterIds = new Set<string>();
+  if (matterIds.length) {
+    const rows = await prisma.matter.findMany({
+      where: { id: { in: matterIds }, deletedAt: null, OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+      select: { id: true }
+    });
+    accessibleMatterIds = new Set(rows.map((r) => r.id));
+  }
+
+  return { user, sealsByDocId, access, walledMatterIds, accessibleMatterIds };
 };
 
 export async function canReadDocument(
@@ -31,7 +122,7 @@ export async function canReadDocument(
     ? ctx.user
     : await prisma.user.findUnique({ where: { id: userId }, select: { role: true, active: true } });
   if (!user?.active || doc.deletedAt) return false;
-  const access = await resolveRoleUser(userId, user.role);
+  const access = ctx?.access !== undefined ? ctx.access : await resolveRoleUser(userId, user.role);
   if (!access.enabled) return false;
 
   // 隔离墙（2026-11-20 补）：这是**下载/预览**的统一判定，22 处调用点覆盖
@@ -41,8 +132,12 @@ export async function canReadDocument(
   // 读取侧注释明写「隔离墙对全所生效（含合伙人/管理员）……执业合规要求」。
   // 墙检查放在一切放行分支之前，顺序与 canReviewDocument 一致。
   if (doc.matterId) {
-    const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
-    if (await isMatterWalledFor(prisma, { matterId: doc.matterId, userId, role: user.role })) return false;
+    if (ctx?.walledMatterIds !== undefined) {
+      if (ctx.walledMatterIds.has(doc.matterId)) return false;
+    } else {
+      const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
+      if (await isMatterWalledFor(prisma, { matterId: doc.matterId, userId, role: user.role })) return false;
+    }
   }
   if(scopeFor(access,'finance.correct')==='ALL'&&await financeLedgerReady(prisma)){
     const [basis]=await prisma.$queryRaw<{n:bigint}[]>`SELECT COUNT(*) AS n FROM "BillingAttachment" a JOIN "Billing" b ON b.id=a."billingId" WHERE a."documentId"=${doc.id} AND b.status IN ('DRAFT','ACTIVE')`;
@@ -73,7 +168,12 @@ export async function canReadDocument(
   //
   // 软删可恢复：案件恢复（deletedAt 置回 null）后，材料自动重新可下载，
   // 与「删除不销毁数据」的既有语义不冲突。
-  if (canReadBusiness && doc.matterId && await prisma.matter.count({ where: { id: doc.matterId, deletedAt: null, OR: [{ ownerId: userId }, { members: { some: { userId } } }] } })) return true;
+  if (canReadBusiness && doc.matterId) {
+    const isMine = ctx?.accessibleMatterIds !== undefined
+      ? ctx.accessibleMatterIds.has(doc.matterId)
+      : (await prisma.matter.count({ where: { id: doc.matterId, deletedAt: null, OR: [{ ownerId: userId }, { members: { some: { userId } } }] } })) > 0;
+    if (isMine) return true;
+  }
   if (doc.intakeId) {
     const intake = await prisma.intake.findUnique({ where: { id: doc.intakeId }, select: { createdById: true, ownerUserId: true, coUserIds: true, status: true } });
     if (intake?.createdById === userId) return true;
