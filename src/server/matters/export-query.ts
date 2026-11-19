@@ -1,3 +1,4 @@
+import { ethicalWallExclusion } from "@/lib/permissions/ethical-wall";
 import { MatterCategory, Prisma } from "@prisma/client";
 import type { RoleGrant } from "@/lib/roles/catalog";
 import { prisma } from "@/lib/prisma";
@@ -230,6 +231,13 @@ export function buildMatterWhere(params: MattersExportParams, user: ExportUser):
     // 只认合伙人岗位（字符串形式），不传 user 对象——见 ExportUser.managerAuthorized 注释
     (isManager(user.role) ? {} : matterAssociationFilter(user.id)),
     { deletedAt: null },
+    // 隔离墙（2026-11-20 补）：上面那行的 isManager 分支是 {}，合伙人因此可导出全所；
+    // 而这里此前从不查墙 —— 于是被隔离在墙内的案件，其当事人证件号、联系方式、
+    // 标的额会随工作簿一起被带出系统。工作簿是本系统敏感度最高的一个出口：
+    // 注释自己都写了「含当事人证件与联系方式，不得整所导出」。
+    // 用纯函数拼 where（不需要 db 访问），且必须放在 isManager 短路之后单独叠加，
+    // 与 matterReadVisibilityFilter 的处理方式一致：墙对全所生效，含合伙人。
+    ethicalWallExclusion(user.id, user.role),
     matterStatusWhere(params)
   ];
   if (params.scope === "mine") parts.push(matterAssociationFilter(user.id));

@@ -30,6 +30,16 @@ export async function GET(
     select: { id: true, status: true, internalCode: true }
   });
   if (!matter) return NextResponse.json({ error: "案件不存在" }, { status: 404 });
+  // 隔离墙（2026-11-20 补）：本路由打包的是**完整卷宗**（材料 + 记录 + 财务摘要），
+  // 是本系统数据密度最高的出口。上面的权限检查齐全，但从不查墙，
+  // 且 isManager 会跳过成员校验 —— 于是被隔离在墙内的案件，合伙人可整包导出。
+  // 返回 404 而非 403：与「案件不存在」同文案，不泄露该案件是否存在。
+  {
+    const { isMatterWalledFor } = await import("@/lib/permissions/ethical-wall");
+    if (await isMatterWalledFor(prisma, { matterId: matter.id, userId: session.user.id, role: session.user.role })) {
+      return NextResponse.json({ error: "案件不存在" }, { status: 404 });
+    }
+  }
   if (matter.status !== "ARCHIVED") {
     return NextResponse.json({ error: "案件尚未归档" }, { status: 400 });
   }
