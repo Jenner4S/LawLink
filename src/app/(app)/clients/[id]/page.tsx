@@ -18,6 +18,7 @@ import { FieldGrid, FieldItem, InitialAvatar, EmptyState } from "@/components/pa
 import { TopbarLinkAction } from "@/components/layout/topbar-link-action";
 import { ClientEditButton } from "./_components/client-edit-button";
 import { DeleteContactButton, DeleteClientButton } from "./_components/client-delete-buttons";
+import { PortalInviteButton } from "./_components/portal-invite-button";
 import { AddContactButton, MergeBanner } from "./_components/client-detail-parts";
 import { ContractConfirmationPanel } from "./_components/contract-confirmation-panel";
 
@@ -112,6 +113,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           {canWrite && (isManager(session.user) || session.user.role === "CUSTOM") ? (
             <DeleteClientButton clientId={client.id} clientName={client.name} />
           ) : null}
+          {/* 2026-11-20 门户 S1：员工侧邀请入口。权限与服务端一致（clients.write）。 */}
+          {canWrite ? <PortalInviteButton clientId={client.id} clientName={client.name} /> : null}
           <Link href={`/conflicts?name=${encodeURIComponent(client.name)}`} className="btn btn-secondary btn-sm">冲突预检</Link>
           {canMerge && insights.suspects.length === 0 ? <MergeBanner keepId={client.id} keepName={client.name} suspects={[]} canMerge={canMerge} /> : null}
           <div style={{ flex: 1 }} />
