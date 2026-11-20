@@ -108,6 +108,7 @@ const unreachable = [...defs.keys()].filter((n) => !uiCount.has(n)).sort();
 const BASELINE = new Set([
   "activateMatterService",
   "allocatePayment",
+  "mergeClients",
   "batchApproveArchiveRecords",
   "batchRejectArchiveRecords",
   "bindPartyToEnterprise",
@@ -129,7 +130,6 @@ const BASELINE = new Set([
   "getDashboardKpis",
   "getEnterpriseSummaryByParty",
   "getExpress",
-  "getFirmFileVersionHistory",
   "getMatterAllocationSummary",
   "getSealApprovalCapabilities",
   "getSealRequest",
@@ -151,7 +151,6 @@ const BASELINE = new Set([
   "listSealRequests",
   "listSmsSuggestions",
   "listTemplates",
-  "mergeClients",
   "moveDocumentToFolder",
   "parseDateString",
   "recordFinanceCorrection",
@@ -162,7 +161,6 @@ const BASELINE = new Set([
   "softDeleteMatter",
   "triggerAuditCleanupNow",
   "unbindPartyEnterprise",
-  "updateFirmFile",
   "updatePreservationCase",
   "updateProperty",
   "updateTarget",
@@ -183,6 +181,10 @@ const VERDICT = {
 
   // ── 有意：建案动线是「收案 → 转正式案件」 ──
   createMatter: ["intentional", "建案统一走 convertIntakeToMatter；直接建案入口不开放"],
+  // 2026-11-20 核实：mergeClients 是**内部函数**，不是缺入口。
+  // dedup.ts:85 由可达的 mergeClientsByCode 在同一事务内调用（注释即写明「页面入口用」），
+  // 客户详情页已有「按客户编号合并」入口。之前挂在待定是因为只看了它自身零 UI 引用。
+  mergeClients: ["intentional", "由可达的 mergeClientsByCode 内部调用（dedup.ts:85），页面入口已存在"],
 
   // ── 死代码：确认无任何引用，且无产品依据要求保留 ──
   hasActiveBorrowGrant: ["dead", "借阅资格的内部判定，未被任何调用方使用"],
@@ -235,7 +237,8 @@ const VERDICT = {
   //   · updateNote / deleteNote —— **2026-11-22 已补入口**（经办记录行的「改/删除」，
   //       只对作者本人显示；见 note-edit-dialog.tsx）。
   //       已从 BASELINE 移除，将来 UI 被删会重新报警。
-  //   · updateFirmFile / getFirmFileVersionHistory —— 律所文书只能新增与删除，不能更新、看不到版本历史
+  //   · updateFirmFile / getFirmFileVersionHistory —— **2026-11-20 已补入口**（律所资料行加「历史」与「编辑」，
+  //       见 firm-file-history-dialog.tsx / firm-file-edit-dialog.tsx）。已从 BASELINE 移除。
   //   · bindPartyToEnterprise / unbindPartyEnterprise / getEnterpriseSummaryByParty —— 工商绑定只写在服务层
   //   · updatePreservationCase / updateTarget / deleteTarget / updateProperty / deleteProperty
   //       / listExpiringProperties —— 保全只能新建、续封、解除，改与删无入口
@@ -244,7 +247,8 @@ const VERDICT = {
   //   · draftDocument（AI 起草）—— 其余 AI 动作均可达
   //   · allocatePayment / recordFinanceCorrection / setCommissionPlan —— 与可达的
   //       allocateLedger / submitCorrection+decideCorrection / settleCommission 是否同义待确认
-  //   · mergeClients —— 与可达的 mergeClientsByCode 是否同义待确认
+  //   · mergeClients —— **已核实为内部函数**：由可达的 mergeClientsByCode 在同一事务内调用
+  //       （dedup.ts:85，注释写明「页面入口用」）。页面入口本就存在，不是缺口。
   //   · deleteContact —— 联系人只能加不能删
   //   · deleteHoliday —— 放假安排只能批量保存（可能已含删除）
   //   · getWebhookSettingsAction / getWorkflowTogglesAction —— 只有保存可达，读取走服务端直读

@@ -2,12 +2,14 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
-import { FolderArchive, Search, Download, Trash2, History, X, Tag, Loader2 } from "lucide-react";
+import { FolderArchive, Search, Download, Trash2, History, X, Tag, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import type { FirmFileCategory } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deleteFirmFile } from "@/server/firm-files/actions";
+import { FirmFileHistoryDialog } from "./firm-file-history-dialog";
+import { FirmFileEditDialog, type EditableFirmFile } from "./firm-file-edit-dialog";
 import { cn, formatDate } from "@/lib/utils";
 import { UploadDialog } from "./upload-dialog";
 import { PreviewDialog } from "./preview-dialog";
@@ -90,6 +92,9 @@ export function FirmFilesView({
   const [uploadOpen, setUploadOpen] = useState(false);
   useTopbarAction(canUpload ? { label: "上传资料", onClick: () => setUploadOpen(true) } : null, [canUpload]);
   const [previewFile, setPreviewFile] = useState<FileEntry | null>(null);
+  // 2026-11-20：版本历史与编辑此前无入口（getFirmFileVersionHistory / updateFirmFile 零引用）
+  const [historyFile, setHistoryFile] = useState<FileEntry | null>(null);
+  const [editFile, setEditFile] = useState<EditableFirmFile | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -321,6 +326,32 @@ export function FirmFilesView({
                     >
                       <Download className="h-3.5 w-3.5" />
                     </a>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryFile(f)}
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-popover hover:text-primary"
+                      title="版本历史"
+                    >
+                      <History className="h-3.5 w-3.5" />
+                    </button>
+                    {canUpload && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditFile({
+                            id: f.id,
+                            name: f.name,
+                            description: f.description,
+                            tags: f.tags,
+                            category: f.category
+                          })
+                        }
+                        className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-popover hover:text-primary group-hover:opacity-100"
+                        title="编辑信息"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     {canUpload && (
                       <button
                         type="button"
@@ -358,6 +389,19 @@ export function FirmFilesView({
         onOpenChange={(o) => {
           if (!o) setPreviewFile(null);
         }}
+      />
+
+      {/* 2026-11-20：版本历史与编辑此前只有后端无入口 */}
+      <FirmFileHistoryDialog
+        open={historyFile !== null}
+        onOpenChange={(o) => { if (!o) setHistoryFile(null); }}
+        fileId={historyFile?.id ?? null}
+        fileName={historyFile?.name}
+      />
+      <FirmFileEditDialog
+        open={editFile !== null}
+        onOpenChange={(o) => { if (!o) setEditFile(null); }}
+        file={editFile}
       />
     </div>
   );
