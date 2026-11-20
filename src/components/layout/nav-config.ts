@@ -5,6 +5,7 @@ import {
   SquareCheck,
   CalendarDays,
   Users,
+  UserPlus,
   CreditCard,
   ChartColumn,
   Calculator,
@@ -34,6 +35,10 @@ export const primaryNav: NavItem[] = [
   { label: "审批", href: "/approvals", icon: SquareCheck, countKey: "approvals" },
   { label: "日程", href: "/schedule", icon: CalendarDays },
   { label: "客户", href: "/clients", icon: Users, countKey: "clients" },
+  // 2026-11-21 获客链路（业主新增目标：获客→邀约→到店谈案→签约回款）。
+  // 放在「客户」之后：线索是客户的前身，动线自然——先有线索，再成为客户。
+  // 权限沿用 clients.read（线索就是尚未成为客户的人，同一权限域）。
+  { label: "获客", href: "/leads", icon: UserPlus },
   { label: "财务", href: "/finance", icon: CreditCard },
   { label: "报表", href: "/reports", icon: ChartColumn }
 ];

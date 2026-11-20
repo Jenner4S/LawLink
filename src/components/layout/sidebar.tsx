@@ -36,6 +36,7 @@ const PERMISSION_BY_HREF: Record<string, PermissionKey> = {
   "/matters": "matters.read",
   "/intakes": "matters.read",
   "/clients": "clients.read",
+  "/leads": "clients.read",
   "/finance": "finance.read",
   "/archive": "archive.read",
   "/reports": "reports.read",

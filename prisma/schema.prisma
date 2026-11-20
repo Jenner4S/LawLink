@@ -500,6 +500,8 @@ model User {
 
   ownedMatters              Matter[]                      @relation("MatterOwner")
   registeredMatters         Matter[]                      @relation("MatterRegistrar")
+  ownedLeads                Lead[]                        @relation("LeadOwner")
+  leadActivities            LeadActivity[]                @relation("LeadActivityAuthor")
   createdIntakes            Intake[]                      @relation("IntakeCreator")
   ledTeams                  Team[]                        @relation("TeamLeader")
   teamMemberships           TeamMember[]
@@ -706,6 +708,7 @@ model CauseOfAction {
 
 model Intake {
   handovers        IntakeHandover[]
+  lead             Lead?
   urgentItems      IntakeUrgentItem[]
   workflowRevision Int                @default(0)
   revisions        IntakeRevision[]
@@ -3610,4 +3613,108 @@ model PortalSatisfaction {
   @@unique([clientId, matterId])
   @@index([clientId, createdAt])
   @@index([matterId])
+}
+
+// ============================================================
+// 获客 → 邀约 → 到店谈案（2026-11-21，全链路数字化 阶段 1）
+//
+// 为什么单独建模而不复用 Intake：
+//   Intake 是**已经决定接这个案子**之后的登记（要走冲突检索与审批）。
+//   线索阶段大量是「问一句就走」「还没决定要不要委托」，把它塞进 Intake 会让
+//   收案列表被噪声污染，也无法统计转化率——而转化率正是获客要回答的唯一问题。
+//
+// 状态机（单向推进，可标记流失）：
+//   LEAD（线索）→ INVITED（已邀约）→ VISITED（已到店）→ CONSULTED（已谈案）
+//   → CONVERTED（已转收案）｜LOST（流失，必填原因）
+//
+// 一条铁律：**转化只发生在 CONSULTED → 转收案**。
+// 从 LEAD 直接转收案的入口不提供——否则「到店谈案」这一段会被系统默认跳过，
+// 数据上永远看不到真实转化漏斗（客户没来就签约，要么是线上成交，要么是数据造假）。
+// ============================================================
+
+enum LeadStage {
+  LEAD // 线索：只有联系方式与来源
+  INVITED // 已邀约：约了时间
+  VISITED // 已到店
+  CONSULTED // 已谈案：面谈或线上深谈完成，形成报价
+  CONVERTED // 已转正式收案
+  LOST // 流失
+}
+
+enum LeadSource {
+  REFERRAL // 老客户转介绍
+  ONLINE // 网络/搜索/公众号
+  OFFLINE // 地推/活动
+  PARTNER // 合作机构
+  AD // 广告投放
+  OTHER // 其他
+}
+
+/// 跟进动作类型——「获客 → 邀约 → 到店 → 谈案」四段各记一笔
+enum LeadActivityType {
+  CONTACT // 联系（电话/微信沟通）
+  INVITE // 邀约（约定到店时间）
+  VISIT // 到店
+  CONSULT // 谈案（面谈纪要、报价）
+  NOTE // 备注
+}
+
+model Lead {
+  id                String         @id @default(cuid())
+  /// 线索人姓名（不是客户名——此时还不是客户）
+  name              String
+  phone             String?
+  wechat            String?
+  /// 单位/公司（若为企业线索）
+  organization      String?
+  source            LeadSource     @default(OTHER)
+  /// 来源细节（谁介绍的、哪个平台、哪场活动）
+  sourceDetail      String?
+  stage             LeadStage      @default(LEAD)
+  /// 意向业务类别，与 MatterCategory 同枚举，便于按类别算转化率
+  category          MatterCategory @default(CIVIL_COMMERCIAL)
+  /// 预计标的/预计收费（获客看板用它算预期收入，不影响财务）
+  expectedAmount    Decimal?       @db.Decimal(14, 2)
+  /// 负责人（跟进人）
+  ownerId           String
+  owner             User           @relation("LeadOwner", fields: [ownerId], references: [id])
+  /// 邀约时间（约定到店/线上谈的时间）
+  invitedAt         DateTime?
+  /// 实际到店时间
+  visitedAt         DateTime?
+  /// 谈案完成时间
+  consultedAt       DateTime?
+  lostReason        String?
+  lostAt            DateTime?
+  /// 转化后的收案（唯一）。转收案时回填，用于算转化率与回看
+  convertedIntakeId String?        @unique
+  convertedIntake   Intake?        @relation(fields: [convertedIntakeId], references: [id])
+  convertedAt       DateTime?
+  notes             String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  activities LeadActivity[]
+
+  @@index([stage, createdAt])
+  @@index([ownerId, stage])
+  @@index([source])
+}
+
+model LeadActivity {
+  id          String           @id @default(cuid())
+  leadId      String
+  lead        Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type        LeadActivityType
+  /// 动作发生的时刻（上海口径由调用方给出）
+  happenedAt  DateTime         @default(now())
+  /// 渠道/方式（电话、微信、面谈……自由文本，不枚举——枚举只会逼人乱选）
+  channel     String?
+  note        String?
+  /// 记录人
+  createdById String
+  createdBy   User             @relation("LeadActivityAuthor", fields: [createdById], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([leadId, happenedAt])
 }
