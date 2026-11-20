@@ -33,6 +33,7 @@ import { ActionError } from "@/lib/action-error";
 import { requireSession } from "@/lib/auth/session";
 import { hasCustomPermission } from "@/lib/roles/catalog";
 import { audit } from "@/server/audit";
+import { retireLeadReminders } from "./reminders";
 import { revalidatePath } from "next/cache";
 import type { LeadSource, LeadStage, LeadActivityType, MatterCategory } from "@prisma/client";
 
@@ -189,6 +190,12 @@ export async function addLeadActivity(input: z.input<typeof activitySchema>) {
     });
   });
 
+  // 到店/谈案即作废未发出的邀约提醒——客户已经到了，第二天还收「约了没来」
+  // 一次就足以让人不再相信这个提醒（见 reminders.ts 文件头）。
+  if (data.type === "VISIT" || data.type === "CONSULT") {
+    await retireLeadReminders([lead.id], "CANCELLED", `LEAD_${data.type}`);
+  }
+
   await audit({
     userId: session.user.id,
     action: "LEAD_ACTIVITY",
@@ -219,6 +226,7 @@ export async function markLeadLost(input: z.input<typeof loseSchema>) {
     where: { id: lead.id },
     data: { stage: "LOST", lostReason: data.reason, lostAt: new Date() }
   });
+  await retireLeadReminders([lead.id], "CANCELLED", "LEAD_LOST");
   await audit({
     userId: session.user.id,
     action: "LEAD_LOST",
@@ -278,6 +286,7 @@ export async function convertLeadToIntake(input: { leadId: string; title?: strin
     return intake.id;
   });
 
+  await retireLeadReminders([lead.id], "CANCELLED", "LEAD_CONVERTED");
   await audit({
     userId: session.user.id,
     action: "LEAD_CONVERT",

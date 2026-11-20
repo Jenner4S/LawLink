@@ -33,6 +33,7 @@ import { audit } from "@/server/audit";
 import { processDueJobs } from "./worker";
 import { scanScheduleReminders } from "@/server/reminders/schedule";
 import { deliverPendingReminders } from "@/server/reminders/delivery";
+import { scanLeadInviteReminders } from "@/server/leads/reminders";
 import { shParts } from "@/lib/ui/sh-time";
 import { recoverStaleLeases } from "./queue";
 
@@ -199,6 +200,11 @@ export function registerCronJobs() {
           // 2026-11-21 吞吐：首参是**单批**上限（内存/事务边界），投递器内部会在
           // 20s 时间预算内连续领取下一批，直到排空。此前每次 cron 只发一批
           // （20 条/2 分钟 = 600 条/小时），09:00 全量补扫后容易积压。
+          // 2026-11-21 获客 阶段五：先扫「已邀约未到店」登记提醒，再投递——
+          // 登记后由同一轮的投递器发出，不必等下一轮（等一轮就晚 2 分钟）。
+          await runWithFailureAudit("邀约提醒扫描", "LEAD_INVITE_REMINDER_FAILED_CRON", () =>
+            scanLeadInviteReminders(now)
+          );
           await runWithFailureAudit("提醒台账投递", "REMINDER_LEDGER_DELIVERY_FAILED_CRON", () =>
             deliverPendingReminders(20)
           );

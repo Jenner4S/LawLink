@@ -210,6 +210,9 @@ async function sweepOnce(limit: number): Promise<DeliverySweepResult> {
         outcome = await deliverArchiveBorrowRow(row, now);
       } else if (row.objectType === "PORTAL_REQUEST") {
         outcome = await deliverPortalRequestRow(row, now);
+      } else if (row.objectType === "LEAD") {
+        // 2026-11-21 获客全链路 阶段五：约了到店时间没来 → 提醒跟进人
+        outcome = await deliverLeadRow(row, now);
       } else {
         // 未接入的对象类型（如 DIGEST 行不经投递器）——防御性跳过
         await finalize(row, "SKIPPED", { reason: "UNSUPPORTED" });
@@ -577,6 +580,51 @@ async function deliverPortalRequestRow(row: SweepRow, now: Date): Promise<RowOut
       href: "/clients",  // 客户详情需 id；这里给可点入口而不是死链
       refType,
       refId: req.id
+    });
+  }
+  await finalize(row, "SENT", { notifiedAt: now.toISOString(), dup: Boolean(dup) });
+  return "sent";
+}
+
+/**
+ * 邀约提醒投递（获客 阶段五）
+ *
+ * 发之前**复核现值**（沿用 B3「发送前核实当前状态」原则）：
+ * 线索已被删、已到店、已谈案、已转化、已流失——任何一种都让这条提醒失去意义，
+ * 直接作废。发一条「约了没来」给刚谈完案的律师，比不发更糟。
+ */
+async function deliverLeadRow(row: SweepRow, now: Date): Promise<RowOutcome> {
+  const lead = await prisma.lead.findUnique({
+    where: { id: row.objectId },
+    select: { id: true, name: true, stage: true, invitedAt: true, ownerId: true }
+  });
+  if (!lead) {
+    await finalize(row, "CANCELLED", { reason: "OBJECT_GONE" });
+    return "voided";
+  }
+  if (lead.stage !== "INVITED") {
+    await finalize(row, "CANCELLED", { reason: `LEAD_${lead.stage}` });
+    return "voided";
+  }
+
+  const refType = "LeadInviteOverdue";
+  const dup = await prisma.notification.findFirst({
+    where: { refType, refId: lead.id, userId: row.userId, createdAt: { gte: shDayStart(now) } },
+    select: { id: true }
+  });
+  if (!dup) {
+    const days = lead.invitedAt
+      ? Math.max(1, Math.round((now.getTime() - lead.invitedAt.getTime()) / 86_400_000))
+      : 1;
+    await createNotification({
+      userId: row.userId,
+      type: "SYSTEM",
+      priority: "HIGH",
+      title: "邀约客户未到店",
+      content: `${lead.name} 约了 ${days} 天前的到店时间但未到店。请跟进确认是否改期——停在「已邀约」的线索不会自己变红。`,
+      href: "/leads",
+      refType,
+      refId: lead.id
     });
   }
   await finalize(row, "SENT", { notifiedAt: now.toISOString(), dup: Boolean(dup) });
