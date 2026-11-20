@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/auth/session";
-import { listLeads } from "@/server/leads/actions";
+import { listLeadOwners, listLeads } from "@/server/leads/actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
 import { LeadsView } from "./_components/leads-view";
 
@@ -12,10 +12,11 @@ import { LeadsView } from "./_components/leads-view";
  */
 export default async function LeadsPage() {
   await requireSession("clients.read");
-  const [leads, funnel] = await Promise.all([
+  const [leads, funnel, owners] = await Promise.all([
     listLeads({ stage: "ALL" }),
+    getLeadFunnel(),
+    listLeadOwners()
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
-    getLeadFunnel()
   ]);
-  return <LeadsView leads={leads} funnel={funnel} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} />;
 }

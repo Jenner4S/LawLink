@@ -46,7 +46,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/server/audit", () => ({ audit: vi.fn(async () => {}), auditTx: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
-const { createLead, listLeads, addLeadActivity, markLeadLost, convertLeadToIntake, listLeadTimeline } =
+const { createLead, listLeads, addLeadActivity, markLeadLost, convertLeadToIntake, listLeadTimeline, listLeadOwners } =
   await import("@/server/leads/actions");
 
 let seq = 0;
@@ -230,5 +230,54 @@ describe("跟进时间线", () => {
     const tlA = await listLeadTimeline(a.id);
     expect(tlA.activities).toHaveLength(1);
     expect(tlA.activities[0].note).toBe("甲的记录");
+  });
+});
+
+describe("负责人筛选", () => {
+  it("listLeads(ownerId) 只返回该负责人的线索", async () => {
+    const other = await prisma.user.create({
+      data: { email: `${uid("e")}@t.local`, name: "李律师", role: "LAWYER", passwordHash: "x", active: true }
+    });
+    const mine = await createLead({ name: uid("我的线索"), phone: "13900000030" });
+
+    // 造一条属于别人的线索（直接写库，模拟他人登记）
+    const theirs = await prisma.lead.create({
+      data: { name: uid("他人线索"), phone: "13900000031", ownerId: other.id }
+    });
+
+    const myRows = await listLeads({ stage: "ALL", ownerId: STAFF.id });
+    expect(myRows.some((r) => r.id === mine.id)).toBe(true);
+    expect(myRows.some((r) => r.id === theirs.id)).toBe(false);
+
+    const theirRows = await listLeads({ stage: "ALL", ownerId: other.id });
+    expect(theirRows.some((r) => r.id === theirs.id)).toBe(true);
+    expect(theirRows.some((r) => r.id === mine.id)).toBe(false);
+  });
+
+  it("listLeadOwners 只统计在途线索（与列表默认口径一致）", async () => {
+    const other = await prisma.user.create({
+      data: { email: `${uid("e")}@t.local`, name: "王律师", role: "LAWYER", passwordHash: "x", active: true }
+    });
+    // 在途 1 条 + 流失 1 条
+    await prisma.lead.create({ data: { name: uid("在途"), phone: "13900000032", ownerId: other.id, stage: "LEAD" } });
+    await prisma.lead.create({
+      data: { name: uid("流失"), phone: "13900000033", ownerId: other.id, stage: "LOST", lostReason: "比价" }
+    });
+
+    const owners = await listLeadOwners();
+    const row = owners.find((o) => o.ownerId === other.id);
+    // 若把流失也算进来会得到 2 —— 那会让人看到「名下 2 条、点进去只剩 1 条」
+    expect(row?.count).toBe(1);
+  });
+
+  it("停用账号的线索仍显示负责人名字（不变成空字符串）", async () => {
+    const disabled = await prisma.user.create({
+      data: { email: `${uid("e")}@t.local`, name: "离职律师", role: "LAWYER", passwordHash: "x", active: false }
+    });
+    await prisma.lead.create({ data: { name: uid("遗留线索"), phone: "13900000034", ownerId: disabled.id } });
+
+    const owners = await listLeadOwners();
+    const row = owners.find((o) => o.ownerId === disabled.id);
+    expect(row?.ownerName).toBe("离职律师");
   });
 });

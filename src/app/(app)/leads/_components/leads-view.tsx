@@ -30,10 +30,20 @@ const SOURCE_CN: Record<string, string> = {
 
 type Filter = "OPEN" | "CONVERTED" | "LOST" | "ALL";
 
-export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFunnel }) {
+export function LeadsView({
+  leads,
+  funnel,
+  owners
+}: {
+  leads: LeadRow[];
+  funnel: LeadFunnel;
+  /** 在途线索的负责人（含人数），用于按人筛选；口径与列表默认一致 */
+  owners: { ownerId: string; ownerName: string; count: number }[];
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<Filter>("OPEN");
+  const [ownerFilter, setOwnerFilter] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -42,10 +52,14 @@ export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFun
   useTopbarAction({ label: "新建线索", onClick: () => setCreating(true) }, []);
 
   const rows = useMemo(() => {
-    if (filter === "ALL") return leads;
-    if (filter === "OPEN") return leads.filter((l) => ["LEAD", "INVITED", "VISITED", "CONSULTED"].includes(l.stage));
-    return leads.filter((l) => l.stage === filter);
-  }, [leads, filter]);
+    const byStage = filter === "ALL"
+      ? leads
+      : filter === "OPEN"
+        ? leads.filter((l) => ["LEAD", "INVITED", "VISITED", "CONSULTED"].includes(l.stage))
+        : leads.filter((l) => l.stage === filter);
+    // 负责人筛选在客户端做：列表最多 200 条已全量取回，再发一次请求只会多一次往返
+    return ownerFilter ? byStage.filter((l) => l.ownerId === ownerFilter) : byStage;
+  }, [leads, filter, ownerFilter]);
 
   const counts = useMemo(() => ({
     OPEN: leads.filter((l) => ["LEAD", "INVITED", "VISITED", "CONSULTED"].includes(l.stage)).length,
@@ -205,7 +219,20 @@ export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFun
             {label} {counts[k]}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-[var(--t-muted)]">
+        <div className="ml-auto flex items-center gap-2">
+          <label className="text-[11px] text-[var(--t-muted)]">负责人</label>
+          <select
+            className="input h-7 text-[11px]"
+            value={ownerFilter}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+          >
+            <option value="">全部（{owners.reduce((n, o) => n + o.count, 0)}）</option>
+            {owners.map((o) => (
+              <option key={o.ownerId} value={o.ownerId}>{o.ownerName}（{o.count}）</option>
+            ))}
+          </select>
+        </div>
+        <span className="w-full text-[11px] text-[var(--t-muted)] lg:w-auto">
           转化只能从「已谈案」发起——否则漏斗里看不到真实的到店与谈案
         </span>
       </div>

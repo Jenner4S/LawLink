@@ -93,6 +93,41 @@ export async function createLead(input: z.input<typeof createSchema>) {
   return { ok: true as const, id: created.id };
 }
 
+/**
+ * 线索负责人清单（2026-11-21）
+ *
+ * 列表此前不能按人筛：负责人只出现在看板统计里。而这恰恰是律所最常见的问法——
+ * 「我手上还有几个没跟的」。
+ *
+ * 只统计**在途**线索（与列表默认口径一致），否则一个人会看到自己名下有
+ * 30 条、点进去只剩 3 条，差额全是已流失的历史。
+ */
+export async function listLeadOwners(): Promise<{ ownerId: string; ownerName: string; count: number }[]> {
+  await requireSession("clients.read");
+
+  const rows = await prisma.lead.groupBy({
+    by: ["ownerId"],
+    where: { stage: { in: ["LEAD", "INVITED", "VISITED", "CONSULTED"] } },
+    _count: { _all: true }
+  });
+  if (rows.length === 0) return [];
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: rows.map((r) => r.ownerId) } },
+    select: { id: true, name: true, active: true }
+  });
+  const nameOf = new Map(users.map((u) => [u.id, u]));
+
+  return rows
+    .map((r) => ({
+      ownerId: r.ownerId,
+      // 停用账号也要显示名字，否则历史线索的负责人会变成一个空字符串
+      ownerName: nameOf.get(r.ownerId)?.name ?? "（已删除账号）",
+      count: r._count._all
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
 /** 列表（按阶段筛选；默认不显示已流失与已转化，避免噪声） */
 export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: string } = {}) {
   const session = await requireSession("clients.read");
