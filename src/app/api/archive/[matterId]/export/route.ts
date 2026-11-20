@@ -40,6 +40,16 @@ export async function GET(
       return NextResponse.json({ error: "案件不存在" }, { status: 404 });
     }
   }
+  // 访问校验必须早于「归档状态」判定（2026-11-20 安全探针发现）：
+  // 原先成员校验在归档状态之后，导致非成员得到「尚未归档」而他人案件得到「案件不存在」，
+  // 两者可区分 → 泄露「这个案件存在、且未归档」。现在统一返回同一句「案件不存在」。
+  if (!isManager(session.user)) {
+    const member = await prisma.matterMember.findUnique({
+      where: { matterId_userId: { matterId: matter.id, userId: session.user.id } }
+    });
+    if (!member) return NextResponse.json({ error: "案件不存在" }, { status: 404 });
+  }
+
   if (matter.status !== "ARCHIVED") {
     return NextResponse.json({ error: "案件尚未归档" }, { status: 400 });
   }
@@ -55,15 +65,6 @@ export async function GET(
     select: { id: true, archiveNo: true }
   });
   if (!archive) return NextResponse.json({ error: "指定归档记录不存在或尚未批准" }, { status: 404 });
-
-  if (!isManager(session.user)) {
-    const member = await prisma.matterMember.findUnique({
-      where: { matterId_userId: { matterId: matter.id, userId: session.user.id } }
-    });
-    if (!member) {
-      return NextResponse.json({ error: "无权访问" }, { status: 403 });
-    }
-  }
 
   let result;
   try {

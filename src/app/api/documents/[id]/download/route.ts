@@ -25,8 +25,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   });
   if (!doc) return NextResponse.json({ error: "材料不存在" }, { status: 404 });
 
+  // 与「材料不存在」同文案同状态（2026-11-20 安全探针发现）：
+  // 原先无权返回 403「无权访问」、不存在返回 404「材料不存在」，两者可区分
+  // → 可用来枚举「这个材料 id 是否存在」。改为统一 404 同一句文案。
   if (!await canReadDocument(session.user.id, doc)) {
-    return NextResponse.json({ error: "无权访问" }, { status: 403 });
+    return NextResponse.json({ error: "材料不存在" }, { status: 404 });
   }
 
   let buf: Buffer;
