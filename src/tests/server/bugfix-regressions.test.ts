@@ -199,7 +199,8 @@ describe("提醒与审计保留", () => {
       .map((r, i) => ({ id: `row${i}`, objectType: r.objectType, objectId: r.objectId, kind: r.kind, offset: r.offset, channel: r.channel, dayKey: r.dayKey, userId: r.userId, attempts: 0 })));
     await scanDueReminders();
     const { deliverPendingReminders } = await import("@/server/reminders/delivery");
-    // 2026-11-21 租约：投递前要先原子领取成功（count>0）
+    // 2026-11-21 租约：投递前要先原子领取成功（count>0）。
+    // 排空循环在「本批不足 limit」时停下，mock 行数很少，只跑一批。
     db.reminderDelivery.updateMany.mockResolvedValue({ count: 1 });
     await deliverPendingReminders(100);
     const notifications = db.notification.createMany.mock.calls.flatMap(([args]) => args.data);

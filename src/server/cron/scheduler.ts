@@ -196,6 +196,9 @@ export function registerCronJobs() {
             scanPreservationReminders({ criticalOnly: shParts(now).hh < 9 })
           );
           // F-1 阶段一：台账投递器——sweep PENDING 登记行，复核对象现值后送达。
+          // 2026-11-21 吞吐：首参是**单批**上限（内存/事务边界），投递器内部会在
+          // 20s 时间预算内连续领取下一批，直到排空。此前每次 cron 只发一批
+          // （20 条/2 分钟 = 600 条/小时），09:00 全量补扫后容易积压。
           await runWithFailureAudit("提醒台账投递", "REMINDER_LEDGER_DELIVERY_FAILED_CRON", () =>
             deliverPendingReminders(20)
           );

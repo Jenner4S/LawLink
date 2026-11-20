@@ -104,13 +104,44 @@ const BACKOFF_CAP_MS = 30 * 60 * 1000;
 /** 本进程的租约所有者标识（多实例时各副本不同） */
 const LEASE_OWNER = `pid:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
 
-export async function deliverPendingReminders(limit = 20): Promise<DeliverySweepResult> {
+export async function deliverPendingReminders(
+  limit = 20,
+  opts: { timeBudgetMs?: number; maxBatches?: number } = {}
+): Promise<DeliverySweepResult> {
   if (sweepInFlight) {
     return { processed: 0, sent: 0, voided: 0, skipped: 0, failed: 0, reentrantSkipped: true };
   }
   sweepInFlight = true;
   try {
-    return await sweepOnce(limit);
+    // 吞吐（2026-11-21）：原先每次 cron 只发一批（20 条 / 2 分钟 = 600 条/小时）。
+    // 09:00 全量补扫会把当日全部档位一次性登记进来，机构一多就积压，
+    // 「今天到期」的提醒会被排到几小时后——这正是第七轮审计要求同批调整的吞吐项。
+    //
+    // 改为**排空循环**：单批仍限 limit（内存与事务边界不变），
+    // 但在时间预算内连续领取下一批，直到没有可领行或预算用尽。
+    // 预算 20s < cron 间隔 120s，留足余量；上限 10 批兜住极端情况。
+    const timeBudgetMs = opts.timeBudgetMs ?? 20_000;
+    const maxBatches = opts.maxBatches ?? 10;
+    const startedAt = Date.now();
+
+    const total: DeliverySweepResult = { processed: 0, sent: 0, voided: 0, skipped: 0, failed: 0 };
+    for (let batch = 0; batch < maxBatches; batch += 1) {
+      const one = await sweepOnce(limit);
+      total.processed += one.processed;
+      total.sent += one.sent;
+      total.voided += one.voided;
+      total.skipped += one.skipped;
+      total.failed += one.failed;
+      // 保留「候选存在但全被别人领走」这个观测信号：排空循环里它是首批的典型状态，
+      // 丢了的话运维看不出「有积压但抢不到」
+      if (one.leaseMissed) total.leaseMissed = true;
+      // 本批处理数不足单批上限 → 队列已排空（剩余行为退避中或被别的实例领走）。
+      // 这个条件比「本批为 0」更准确：宁可多跑一次也不漏批，
+      // 而不足 limit 说明后面确实没得领了。
+      if (one.processed < limit) break;
+      if (Date.now() - startedAt >= timeBudgetMs) break;
+    }
+    return total;
   } finally {
     sweepInFlight = false;
   }

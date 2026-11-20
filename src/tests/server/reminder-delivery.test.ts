@@ -87,7 +87,8 @@ beforeEach(() => {
     updates.push(args);
     return {};
   });
-  // 2026-11-21 租约：sweep 先用 updateMany 原子领取，count 必须 >0 才会继续处理
+  // 2026-11-21 租约：领取要 count>0 才会处理。
+  // 排空循环的停止条件是「本批不足 limit」，mock 给少量行时天然只跑一批。
   db.reminderDelivery.updateMany.mockResolvedValue({ count: 1 });
 });
 

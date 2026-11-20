@@ -55,7 +55,8 @@ beforeEach(() => {
   scheduleRegister.registerReminderDelivery.mockResolvedValue("REGISTERED");
   scheduleRegister.voidPendingDeliveries.mockResolvedValue(0);
   db.archiveBorrowRequest.updateMany.mockResolvedValue({ count: 1 });
-  // 2026-11-21 租约：sweep 先用 updateMany 原子领取，需要返回 { count }
+  // 2026-11-21 租约：sweep 先用 updateMany 原子领取，需要返回 { count }。
+  // 排空循环的停止条件是「本批不足 limit」，所以 mock 给少量行时天然只跑一批。
   db.reminderDelivery.updateMany.mockResolvedValue({ count: 1 });
   db.archiveBorrowRequest.update.mockResolvedValue({});
   notify.mockResolvedValue({});

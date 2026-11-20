@@ -202,3 +202,41 @@ describe("失败退避（正常行不被失败行挤掉）", () => {
     expect(after.nextAttemptAt!.getTime() - Date.now()).toBeGreaterThan(60_000);
   });
 });
+
+describe("吞吐：排空循环（第七轮审计要求同批调整）", () => {
+  /**
+   * 这条钉住的是「一次 cron 能发多少」。
+   * 原先 20 条/2 分钟 = 600 条/小时；09:00 全量补扫把当日档位一次性登记后，
+   * 机构一多就积压，「今天到期」的提醒被排到几小时后。
+   *
+   * 排空循环让单次调用在时间预算内连续领取下一批，而**单批仍限 limit**
+   * （内存与事务边界不变）。
+   */
+  it("候选多于单批上限时，一次调用就把它们全部处理完（不再只发 20 条）", async () => {
+    const N = 45;
+    for (let i = 0; i < N; i += 1) await seedRow();
+
+    const r = await deliverPendingReminders(20, { timeBudgetMs: 60_000, maxBatches: 10 });
+
+    // 每行对象都不存在 → OBJECT_GONE → CANCELLED（voided），因此 processed 可直接对 N
+    expect(r.processed).toBe(N);
+    expect(r.voided).toBe(N);
+
+    const stillPending = await prisma.reminderDelivery.count({ where: { status: "PENDING" } });
+    expect(stillPending).toBe(0);
+  });
+
+  it("排空后再次调用不会空转（候选为空立即返回）", async () => {
+    await seedRow();
+    await deliverPendingReminders(20, { timeBudgetMs: 60_000 });
+    const again = await deliverPendingReminders(20, { timeBudgetMs: 60_000 });
+    expect(again.processed).toBe(0);
+  });
+
+  it("maxBatches 限制生效：批数用尽即停（防止单次调用无限跑）", async () => {
+    for (let i = 0; i < 45; i += 1) await seedRow();
+    const r = await deliverPendingReminders(20, { timeBudgetMs: 60_000, maxBatches: 2 });
+    expect(r.processed).toBe(40); // 2 批 × 20
+    expect(await prisma.reminderDelivery.count({ where: { status: "PENDING" } })).toBe(5);
+  });
+});
