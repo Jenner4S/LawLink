@@ -23,7 +23,9 @@ const RELATION_OPTIONS = [
   { value: "REMAND", label: "发回重审" },
   { value: "DERIVED_ENFORCEMENT", label: "衍生执行" },
   { value: "RELATED_CONTRACT", label: "关联合同" },
-  { value: "REFERENCE_ONLY", label: "仅供参考" }
+  { value: "REFERENCE_ONLY", label: "仅供参考" },
+  // 2026-11-22 P2：续案/二次委托——客户宽表的「父记录字段」在 LawLink 的等价物
+  { value: "RENEWAL", label: "续案 / 二次委托" }
 ] as const;
 const RELATION_LABEL: Record<string, string> = Object.fromEntries(
   RELATION_OPTIONS.map(o => [o.value, o.label])

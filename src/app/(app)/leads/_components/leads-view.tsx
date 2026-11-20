@@ -41,7 +41,8 @@ export function LeadsView({
   funnel,
   owners,
   channels,
-  lawyers
+  lawyers,
+  assigneeView = "ALL"
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -51,6 +52,8 @@ export function LeadsView({
   channels: ChannelNode[];
   /** 可派单的律师（2026-11-22 P1-2） */
   lawyers: { id: string; name: string }[];
+  /** 当前派单视图（2026-11-22）：ALL / PENDING_ASSIGN / PENDING_ACCEPT */
+  assigneeView?: "ALL" | "PENDING_ASSIGN" | "PENDING_ACCEPT";
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -283,6 +286,30 @@ export function LeadsView({
         <span className="w-full text-[11px] text-[var(--t-muted)] lg:w-auto">
           转化只能从「已谈案」发起——否则漏斗里看不到真实的到店与谈案
         </span>
+      </div>
+
+      {/* 2026-11-22 P1-2：派单视图。回答「今天该我动的还有几件」——
+          没有它，200 条里找待接单只能靠眼睛扫。 */}
+      <div className="mb-2 flex flex-wrap items-center gap-1">
+        <span className="text-[11px] text-[var(--t-muted)]">派单</span>
+        {([
+          ["ALL", "全部"],
+          ["PENDING_ASSIGN", "待派单"],
+          ["PENDING_ACCEPT", "待接单"]
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => router.push(key === "ALL" ? "/leads" : `/leads?assignee=${key}`)}
+            className={`rounded px-1.5 py-0.5 text-[10.5px] ${
+              assigneeView === key
+                ? "bg-[var(--primary)] text-white"
+                : "bg-[var(--surface-2,rgba(100,116,139,.10))] text-[var(--t-muted)]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="mb-2">

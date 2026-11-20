@@ -725,7 +725,7 @@ export async function searchMattersForLink(matterId: string, q: string) {
 export async function addMatterLink(
   matterId: string,
   relatedMatterId: string,
-  relation?: "RELATED_CASE" | "REMAND" | "DERIVED_ENFORCEMENT" | "RELATED_CONTRACT" | "REFERENCE_ONLY"
+  relation?: "RELATED_CASE" | "REMAND" | "DERIVED_ENFORCEMENT" | "RELATED_CONTRACT" | "REFERENCE_ONLY" | "RENEWAL"
 ) {
   const session = await requireSession("matters.write");
   await assertCanAssociateMatter(session.user.id, matterId);

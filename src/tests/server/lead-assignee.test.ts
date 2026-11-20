@@ -175,3 +175,47 @@ describe("二次对接人", () => {
     await expect(setLeadSecondOwner({ leadId: lead.id, secondOwnerId: disabled.id })).rejects.toThrow("不存在或已停用");
   });
 });
+
+describe("派单视图筛选（P1-2）", () => {
+  /**
+   * 这两个视图回答「今天该我动的还有几件」。
+   * 没有它们，200 条线索里找待接单只能靠眼睛扫 ——
+   * 而人的眼睛不会每天扫 200 行，所以线索会静默过期。
+   */
+  it("待派单只含在途且未派；待接单只含已派未回应", async () => {
+    const { listLeads } = await import("@/server/leads/actions");
+    currentUser = { id: OWNER.id, role: "LAWYER", rolePermissions: undefined };
+
+    const unassigned = await seedLead();
+    const assigned = await seedLead();
+    await assignLeadLawyer({ leadId: assigned.id, lawyerId: LAWYER.id });
+
+    const pendingAssign = await listLeads({ stage: "ALL", assignee: "PENDING_ASSIGN" });
+    const pendingAccept = await listLeads({ stage: "ALL", assignee: "PENDING_ACCEPT" });
+
+    expect(pendingAssign.some((r) => r.id === unassigned.id)).toBe(true);
+    expect(pendingAssign.some((r) => r.id === assigned.id)).toBe(false);
+    expect(pendingAccept.some((r) => r.id === assigned.id)).toBe(true);
+    expect(pendingAccept.some((r) => r.id === unassigned.id)).toBe(false);
+  });
+
+  it("接单之后不再出现在待接单里", async () => {
+    const { listLeads } = await import("@/server/leads/actions");
+    currentUser = { id: OWNER.id, role: "LAWYER", rolePermissions: undefined };
+    const lead = await seedLead();
+    await assignLeadLawyer({ leadId: lead.id, lawyerId: LAWYER.id });
+
+    currentUser = { id: LAWYER.id, role: "LAWYER", rolePermissions: undefined };
+    await respondLeadAssignment({ leadId: lead.id, decision: "ACCEPTED" });
+
+    const pendingAccept = await listLeads({ stage: "ALL", assignee: "PENDING_ACCEPT" });
+    expect(pendingAccept.some((r) => r.id === lead.id)).toBe(false);
+  });
+
+  it("已转化/已流失的线索不会出现在待派单里（默认在途口径）", async () => {
+    const { listLeads } = await import("@/server/leads/actions");
+    const converted = await seedLead("CONVERTED");
+    const pendingAssignOpen = await listLeads({ assignee: "PENDING_ASSIGN" });
+    expect(pendingAssignOpen.some((r) => r.id === converted.id)).toBe(false);
+  });
+});

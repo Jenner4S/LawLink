@@ -172,7 +172,19 @@ export async function listLeadOwners(): Promise<{ ownerId: string; ownerName: st
 }
 
 /** 列表（按阶段筛选；默认不显示已流失与已转化，避免噪声） */
-export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: string } = {}) {
+export async function listLeads(
+  filter: {
+    stage?: LeadStage | "ALL";
+    ownerId?: string;
+    /**
+     * 派单视图（2026-11-22 P1-2）：
+     * · PENDING_ASSIGN 待派单：在途且还没派律师
+     * · PENDING_ACCEPT 待接单：已派但律师还没回应
+     * 回答的是「今天该我动的还有几件」——没有它，200 条里找待接单只能靠眼睛扫。
+     */
+    assignee?: "ALL" | "PENDING_ASSIGN" | "PENDING_ACCEPT";
+  } = {}
+) {
   const session = await requireSession("clients.read");
   void session;
 
@@ -185,7 +197,16 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
         : { stage };
 
   const rows = await prisma.lead.findMany({
-    where: { ...where, ...(filter.ownerId ? { ownerId: filter.ownerId } : {}) },
+    where: {
+      ...where,
+      ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
+      // 派单视图（2026-11-22 P1-2）：只按在途派单状态收窄，不影响既有 stage/负责人口径
+      ...(filter.assignee === "PENDING_ASSIGN"
+        ? { assigneeStatus: "UNASSIGNED" as const }
+        : filter.assignee === "PENDING_ACCEPT"
+          ? { assigneeStatus: "ASSIGNED" as const }
+          : {})
+    },
     orderBy: [{ updatedAt: "desc" }],
     take: 200,
     select: {
