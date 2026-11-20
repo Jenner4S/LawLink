@@ -51,6 +51,11 @@ const GUARD = /assertMatterWritable\(|assertDocumentWritable\(|status\s*===\s*["
  */
 const KNOWN_EXEMPT = {
   // ── 审批类：审批对象本就是已提交的申请；归档审批更必须在归档案件上做 ──
+  // ── 门户披露（2026-11-20 S2）──
+  // 撤销**绝不能**加 assertMatterWritable：归档冻结的是「新增披露」，不是「收回披露」。
+  // 若这里拦归档案件，案件一旦归档，里面误发给客户的材料就再也收不回来了——
+  // 那正好把这条守卫变成风险放大器。新增侧（shareDocumentToPortal）仍走 assertMatterWritable。
+  "portal/share.ts  revokePortalShare": "撤销披露必须始终可用，含已归档案件——归档冻结的是新增披露而非收回",
   "archive/actions.ts  approveArchiveRecord": "审批归档申请：对象就是归档案件本身",
   "archive/actions.ts  rejectArchiveRecord": "驳回归档申请：同上",
   "documents/actions.ts  approveDocument": "审批材料：审批人不是经办人，且审批不改案件正文",

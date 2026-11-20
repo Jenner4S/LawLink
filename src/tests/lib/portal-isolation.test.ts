@@ -80,12 +80,17 @@ describe("门户 ↔ 员工 结构性隔离", () => {
     }
   });
 
-  it("员工侧中间件把 /portal 排除，门户不被员工登录拦截", () => {
+  it("员工侧中间件把 /portal 与 /api/portal 都排除", () => {
     const proxy = read("src/proxy.ts");
     const matcherLine = proxy.split("\n").find((l) => l.includes("(?!") && l.includes("_next"));
     expect(matcherLine, "未找到 matcher").toBeTruthy();
     expect(matcherLine!).toContain("portal");
     expect(matcherLine!).toContain("confirm"); // 同类公开页也应仍在排除列表里
+
+    // /api/portal 必须**单独**出现在排除列表里。
+    // 2026-11-20 金线走查实测：只排 /portal 时页面能开、下载却 307 到员工登录页，
+    // 症状是「客户说点下载没反应」。这类漏排不会让任何单测变红，只能靠这条断言守。
+    expect(matcherLine!, "缺少 api/portal 排除——门户下载接口会被员工中间件拦走").toContain("api/portal");
   });
 
   it("门户页面不使用员工侧的权限断言与 AppShell", () => {

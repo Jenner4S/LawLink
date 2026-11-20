@@ -614,6 +614,7 @@ model Client {
   // 客户门户账号（2026-11-20 门户 S1）。独立表，不复用 User——
   // 客户与员工的身份、权限、会话必须结构性隔离，不能靠角色字段区分。
   portalUsers       ClientPortalUser[]
+  portalShares      PortalShare[]
   id                String                  @id @default(cuid())
   name              String
   type              ClientType
@@ -3458,4 +3459,51 @@ model PortalInvite {
   createdAt    DateTime         @default(now())
 
   @@index([portalUserId])
+}
+
+// ============================================================
+// 客户门户 S2：披露（2026-11-20）
+//
+// 铁律（方案 §二 决策 2）：**门户里不存在任何「自动可见」的路径。**
+// 没有 PortalShare 里的行，客户什么都看不到；
+// 要看，就必须有人点过「分享」，而这个动作留在审计里。
+//
+// 为什么这条不能妥协：律所最贵的风险不是效率，是不该给客户看的东西给了客户。
+// 一份带内部评估意见的案情分析发出去，可能直接输掉一个案子。
+// ============================================================
+
+enum PortalShareType {
+  DOCUMENT // 单份材料
+  MATTER_SUMMARY // 案件进度摘要（仅白名单字段）
+  INVOICE // 单张发票
+  BILLING // 结算单/账目摘要
+}
+
+/// 披露记录：门户可见性的**唯一**来源
+model PortalShare {
+  id          String          @id @default(cuid())
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  shareType   PortalShareType
+  /// 按 shareType 只有一个非空：
+  ///   DOCUMENT       → documentId
+  ///   MATTER_SUMMARY → matterId
+  ///   INVOICE        → invoiceId
+  ///   BILLING        → matterId（账单属于案件）
+  documentId  String?
+  matterId    String?
+  invoiceId   String?
+  /// 发起分享的员工 User.id（不建外键：员工离职不应删除历史披露记录——那是留痕）
+  sharedById  String
+  sharedAt    DateTime        @default(now())
+  /// 撤销即软删：行保留，客户立即看不到，且能回答「什么时候撤的、谁撤的」
+  revokedAt   DateTime?
+  revokedById String?
+  note        String?
+  createdAt   DateTime        @default(now())
+
+  @@index([clientId, shareType])
+  @@index([clientId, revokedAt])
+  @@index([documentId])
+  @@index([matterId])
 }

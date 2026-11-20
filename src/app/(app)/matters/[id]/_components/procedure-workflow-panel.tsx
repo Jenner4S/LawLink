@@ -59,6 +59,7 @@ import { createTask, toggleTaskCompleted } from "@/server/tasks/actions";
 import { TaskEditDialog, type EditableTask } from "./task-edit-dialog";
 import { NoteEditDialog, type EditableNote } from "./note-edit-dialog";
 import { DocFolderMoveDialog } from "./doc-folder-move-dialog";
+import { shareDocumentToPortal } from "@/server/portal/share";
 import { deleteNote } from "@/server/notes/actions";
 import { createProcedureStage, deleteProcedureMemo, ensureProcedureStage, removeProcedureStage, toggleDeadlineCompleted, toggleProcedureMemo } from "@/server/procedures/actions";
 import { deleteExpress } from "@/server/express/actions";
@@ -1578,6 +1579,7 @@ function MaterialsSection({
 
 function DocRow({ doc, compact = false }: { doc: WorkflowDocument; compact?: boolean }) {
   const { onReview, evidenceByDoc, onAddEvidence, matterId } = useDocActions();
+  const router = useRouter();
   const [folderOpen, setFolderOpen] = useState(false);
   const [evOpen, setEvOpen] = useState(false);
   const pUrl = documentPreviewUrl(doc);
@@ -1638,6 +1640,34 @@ function DocRow({ doc, compact = false }: { doc: WorkflowDocument; compact?: boo
             {matterId ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFolderOpen(true)} title="归入卷宗文件夹">
                 归档目录
+              </button>
+            ) : null}
+            {matterId ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={async () => {
+                  // 分享=把材料披露给客户，不可撤回"没发生过"（撤销会留痕），所以先确认
+                  const ok = await confirmDialog({
+                    title: `把「${doc.name}」分享给客户？`,
+                    description:
+                      "分享后，该案件的委托客户可以在客户门户里看到并下载这份材料。\n\n" +
+                      "请先确认这份材料不含内部批注、策略备忘或不宜对外披露的内容——" +
+                      "门户里没有「撤回未被看到」这回事。分享与撤销都会留审计。",
+                    confirmText: "分享给客户"
+                  });
+                  if (!ok) return;
+                  try {
+                    await shareDocumentToPortal({ documentId: doc.id });
+                    toast.success("已分享给客户");
+                    router.refresh();
+                  } catch (err) {
+                    toast.error("分享失败", { description: actionErrorMessage(err) });
+                  }
+                }}
+                title="把这份材料分享到客户门户"
+              >
+                分享给客户
               </button>
             ) : null}
             {onReview && doc.ocrStatus !== "FAILED" ? (

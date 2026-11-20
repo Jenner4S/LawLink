@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LogOut } from "lucide-react";
+import { LogOut, FileText } from "lucide-react";
 import { requirePortalViewer } from "@/lib/portal/session";
 import { portalLogoutAction } from "@/server/portal/page-actions";
 
@@ -29,10 +29,17 @@ export default async function PortalHomePage() {
         </form>
       </div>
 
+      <div className="mt-6">
+        <Link href="/portal/materials" className="btn btn-secondary btn-sm gap-1">
+          <FileText className="h-3.5 w-3.5" />
+          我的材料
+        </Link>
+      </div>
+
       <div className="mt-8 rounded-lg border border-[var(--line)] p-5">
         <h2 className="text-sm font-medium">目前可以做什么</h2>
         <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--t-muted)]">
-          你的账号已开通。案件进度、已分享的材料与账单视图会在后续版本开放；
+          你的账号已开通。案件进度与账单视图会在后续版本开放（「我的材料」已可用）；
           在此之前，如需材料或进展，请直接联系你的经办律师。
         </p>
         <p className="mt-3 text-[11px] text-[var(--t-muted)]">

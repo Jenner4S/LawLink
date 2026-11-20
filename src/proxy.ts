@@ -25,9 +25,14 @@ export const config = {
      *                     独立的门户 cookie 承载，员工侧 NextAuth 根本不认。
      *                     漏排的后果与 /confirm 同类但更严重：客户一律被弹到员工登录页，
      *                     门户整体不可用。门户自己的守卫在 (portal) layout 里，不靠中间件。
+     *   /api/portal/*     门户材料下载等接口（2026-11-20 S2）：**必须一起排**。
+     *                     只排 /portal 页面而漏掉 /api/portal 时，页面能打开、
+     *                     下载却 307 到员工登录页——症状是「客户说点下载没反应」，
+     *                     2026-11-20 金线走查实测到 307（应为 401）才发现。
+     *                     接口自己的鉴权在 route handler 里（读门户 cookie），不靠中间件。
      *   /_next/*          Next 内部资源（含 HMR websocket）
      *   静态文件（.png .ico .svg 等）
      */
-    "/((?!login|confirm|portal|api/auth|api/health|api/calendar|api/version|_next|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)).*)"
+    "/((?!login|confirm|portal|api/portal|api/auth|api/health|api/calendar|api/version|_next|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)).*)"
   ]
 };
