@@ -118,9 +118,20 @@ fi
 # ---------------------------------------------------------------
 echo
 echo "[M2] 把文档里的数字删掉，--fix 应补回"
+# 2026-11-20 修：原先直接沿用 M1 从文档读到的 ORIG 作期望值。
+# 但 --fix 会**跑一遍测试**写回真实值 —— 只要本轮新增过测试，
+# 文档里的旧值（1544）与真实值（1547）不同，M2 必然红。
+# 这不是探针在抓问题，是探针的期望值本身过期了（曾被误记为「瞬时失败」）。
+# 正确做法：先把文档同步到真实值，再读期望值。
+node scripts/check-doc-numbers.mjs --fix >/dev/null 2>&1
+M2_ORIG=$(node -e '
+const fs=require("fs");
+const m=fs.readFileSync("docs/交付状态-20261120.md","utf8").match(/(\d+) passed/);
+console.log(m?m[1]:"");
+')
 backup "$DOC"
-sed -i.bak "s|/ ${ORIG} passed|/  passed|g" "$DOC" 2>/dev/null || \
-  perl -0pi -e "s|/ ${ORIG} passed|/  passed|g" "$DOC"
+sed -i.bak "s|/ ${M2_ORIG} passed|/  passed|g" "$DOC" 2>/dev/null || \
+  perl -0pi -e "s|/ ${M2_ORIG} passed|/  passed|g" "$DOC"
 rm -f "${DOC}.bak"
 BEFORE=$(node -e '
 const fs=require("fs");
@@ -135,7 +146,7 @@ const fs=require("fs");
 const m=fs.readFileSync("docs/交付状态-20261120.md","utf8").match(/(\d+) passed/);
 console.log(m?m[1]:"");
 ')
-  report "数字被删后 --fix 补回" "$ORIG" "$AFTER"
+  report "数字被删后 --fix 补回" "$M2_ORIG" "$AFTER"
   restore_all
 fi
 
