@@ -522,6 +522,34 @@ async function checkFlow(ctx) {
       );
       await sleep(1800);
       record("flow", `页签「${tab}」`, !(await hasError(ctx)));
+
+      // 2026-11-20 补：页签只验证「点得开」是不够的——办案进程里的材料区按钮
+      // 才是多轮补入口的落点（目录 / AI 起草 / 从模板生成）。点进去还得看得到。
+      if (tab === "办案进程") {
+        // 材料区要先选中一个环节才渲染（材料属于环节），先点第一个环节
+        const clicked = await ctx.evaluate(
+          `(function(){var b=document.querySelector('.dos-proc-main');if(!b)return false;b.click();return true;})()`
+        );
+        if (clicked) await sleep(1200);
+        record("flow", "环节可选中（材料区的前置条件）", clicked, clicked ? "" : "未找到 .dos-proc-main");
+        const mats = await ctx.evaluate(
+          `(function(){
+             var t=document.body.innerText||"";
+             var has = function(s){return t.indexOf(s)>=0;};
+             return {material: has("材料"), upload: has("上传"), dir: has("目录"), ai: has("AI 起草"), tpl: has("从模板生成")};
+           })()`
+        );
+        record("flow", "材料区可见", mats.material, "");
+        // 判据：canManage 闸门同时控制「上传」。若上传也不在，说明是权限闸门
+        //（当前账号不是本案成员），不是我的按钮没接上——两种情况必须能区分开。
+        if (!mats.upload) {
+          skip("flow", "材料区管理按钮（需案件成员）", `当前账号不是本案主办/成员，闸门关闭，跳过 3 项`);
+        } else {
+        record("flow", "材料区有「目录」按钮", mats.dir, "");
+        record("flow", "材料区有「AI 起草」按钮", mats.ai, "");
+        record("flow", "材料区有「从模板生成」按钮", mats.tpl, "");
+        }
+      }
     }
   }
 }

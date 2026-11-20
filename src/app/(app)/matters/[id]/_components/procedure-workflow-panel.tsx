@@ -29,8 +29,7 @@ import {
   StickyNote,
   Truck,
   Sparkles,
-  Upload
-} from "lucide-react";
+  Upload, FolderCog } from "lucide-react";
 import type {
   DocumentCategory,
   DocumentSourceOrigin,
@@ -93,6 +92,7 @@ import {
 } from "@/app/(app)/preservation/_components/preservation-types";
 import { TemplatePickerDialog } from "./template-picker-dialog";
 import { AiDraftDialog } from "./ai-draft-dialog";
+import { FolderManageDialog } from "./folder-manage-dialog";
 import { AdjustDeadlineDialog } from "./procedure-content";
 import { confirmDeadline } from "@/server/deadlines/confirm";
 import { DocIcon, EmptyState, SourceChip } from "@/components/patterns/moan";
@@ -1974,6 +1974,7 @@ function StageMaterialsPanel({
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<File | null>(null);
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
+  const [folderMgrOpen, setFolderMgrOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [sourceParty, setSourceParty] = useState("");
   const [sourceOrigin, setSourceOrigin] = useState<DocumentSourceOrigin | "">("");
@@ -2089,6 +2090,14 @@ function StageMaterialsPanel({
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAiDraftOpen(true)} title="填空后由 AI 生成文书草稿（需管理员配置模型）">
               <Sparkles />
               AI 起草
+            </button>
+          ) : null}
+          {/* 2026-11-20：renameFolder / deleteFolder 此前零引用，而删目录的报错写着
+              「默认卷宗不可删除，只能改名」——改名却没有入口。 */}
+          {canManage ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFolderMgrOpen(true)} title="卷宗目录：改名 / 删除非默认目录">
+              <FolderCog />
+              目录
             </button>
           ) : null}
           {canManage ? (
@@ -2232,6 +2241,13 @@ function StageMaterialsPanel({
         <AiDraftDialog
           open={aiDraftOpen}
           onOpenChange={setAiDraftOpen}
+        />
+      ) : null}
+      {folderMgrOpen ? (
+        <FolderManageDialog
+          open={folderMgrOpen}
+          onOpenChange={setFolderMgrOpen}
+          matterId={matterId}
         />
       ) : null}
 

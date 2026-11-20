@@ -117,7 +117,6 @@ const BASELINE = new Set([
   "deleteBilling",
   "deleteDocument",
   "deleteFeeEntry",
-  "deleteFolder",
   "deleteTask",
   "getCauseById",
   "getDashboardKpis",
@@ -140,7 +139,6 @@ const BASELINE = new Set([
   "listTemplates",
   "parseDateString",
   "recordFinanceCorrection",
-  "renameFolder",
   "reorderFolders",
   "softDeleteMatter",
   "triggerAuditCleanupNow",
@@ -212,9 +210,12 @@ const VERDICT = {
   hasActiveBorrowGrant: ["dead", "借阅资格判定已内联进 borrow.ts 的读取路径"],
   parseDateString: ["dead", "短信日期解析改走结构化管线，旧工具函数无调用方"],
   triggerAuditCleanupNow: ["intentional", "刻意不开放手动入口：审计清理只由 cron 调度，手动触发入口仅对归档扫描与周报开放"],
-  createFolder: ["intentional", "卷宗文件夹由 default-folders 自动创建（结案/归档等），不开放手动建"],
-  renameFolder: ["intentional", "同上：默认卷宗不允许改名"],
-  deleteFolder: ["intentional", "同上：默认卷宗不允许删除"],
+  createFolder: ["intentional", "卷宗文件夹由 default-folders 自动创建（结案/归档等），与国内律所卷宗目录惯例一致，不开放手动建"],
+  // 2026-11-20 更正：原判定写「默认卷宗不允许改名 / 不允许删除」，**两句都不准确**。
+  //   · renameFolder 实现里**没有** isDefault 限制，任何目录都可改名（已补入口）。
+  //   · deleteFolder 明确只拒绝 isDefault，非默认可删，卷内材料移到散件不丢（已补入口）。
+  //   · 反倒是 deleteFolder 的报错写着「默认卷宗不可删除，只能改名」——而改名当时没有入口，
+  //     用户按提示去找会找不到。这是「判定表写错 + 缺入口」叠加，已一并修掉。
   createMatter: ["intentional", "建案统一走 convertIntakeToMatter"],
   softDeleteMatter: ["intentional", "案件删除未对外开放，终态走归档；动作保留供运维与测试"],
   deleteDocument: ["intentional", "材料删除未开放，避免破坏已归档卷宗与版本链"],
