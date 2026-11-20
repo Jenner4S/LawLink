@@ -269,9 +269,11 @@ export function MatterDetailTabs({
       ...(capabilities.aiReview && allowed("documents.write") ? { onReview: (id: string) => setReviewDocId(id) } : {}),
       evidenceByDoc,
       unlinkedEvidence: evidenceItems.filter((it) => !it.sourceDocumentId),
-      ...(canAddEvidence ? { onAddEvidence: (docId: string | null) => setEvidenceDocId(docId) } : {})
+      ...(canAddEvidence ? { onAddEvidence: (docId: string | null) => setEvidenceDocId(docId) } : {}),
+      // 材料归入文件夹（moveDocumentToFolder / listFoldersByMatter 此前零引用）
+      ...(allowed("documents.write") ? { matterId: matter.id } : {})
     }),
-    [capabilities.aiReview, currentUserRole, rolePermissions, evidenceByDoc, evidenceItems, canAddEvidence] // eslint-disable-line react-hooks/exhaustive-deps
+    [capabilities.aiReview, currentUserRole, rolePermissions, evidenceByDoc, evidenceItems, canAddEvidence, matter.id] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [progress, setProgress] = useState<{ mode: "record" | "judgment"; stage?: string; stageNames: string[] } | null>(null);
   const [deadlineOpen, setDeadlineOpen] = useState(false);

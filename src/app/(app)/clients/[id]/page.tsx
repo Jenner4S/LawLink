@@ -17,6 +17,7 @@ import { avatarTone, matterSpineTone, matterStatusTone } from "@/lib/ui/moan-ton
 import { FieldGrid, FieldItem, InitialAvatar, EmptyState } from "@/components/patterns/moan";
 import { TopbarLinkAction } from "@/components/layout/topbar-link-action";
 import { ClientEditButton } from "./_components/client-edit-button";
+import { DeleteContactButton, DeleteClientButton } from "./_components/client-delete-buttons";
 import { AddContactButton, MergeBanner } from "./_components/client-detail-parts";
 import { ContractConfirmationPanel } from "./_components/contract-confirmation-panel";
 
@@ -107,6 +108,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               注意：updateClient 对「未传 idNumber」的语义是清空（actions.ts:289），
               所以编辑时必须能拿到原值，不能简单留空。 */}
           {canWrite ? <ClientEditButton client={{ ...client, idNumber: null }} /> : null}
+          {/* 2026-11-20：softDeleteClient 此前零引用——重复建档的客户无法停用 */}
+          {canWrite && (isManager(session.user) || session.user.role === "CUSTOM") ? (
+            <DeleteClientButton clientId={client.id} clientName={client.name} />
+          ) : null}
           <Link href={`/conflicts?name=${encodeURIComponent(client.name)}`} className="btn btn-secondary btn-sm">冲突预检</Link>
           {canMerge && insights.suspects.length === 0 ? <MergeBanner keepId={client.id} keepName={client.name} suspects={[]} canMerge={canMerge} /> : null}
           <div style={{ flex: 1 }} />
@@ -188,6 +193,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                       {c.email ? <span>· {c.email}</span> : null}
                     </div>
                   </div>
+                  {/* 2026-11-20：deleteContact 此前零引用 */}
+                  {canWrite && (isManager(session.user) || session.user.role === "CUSTOM") ? (
+                    <DeleteContactButton contactId={c.id} contactName={c.name} />
+                  ) : null}
                 </div>
               ))
             )}

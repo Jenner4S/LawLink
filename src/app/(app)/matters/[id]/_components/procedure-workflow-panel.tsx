@@ -59,6 +59,7 @@ import { uploadDocument } from "@/server/documents/actions";
 import { createTask, toggleTaskCompleted } from "@/server/tasks/actions";
 import { TaskEditDialog, type EditableTask } from "./task-edit-dialog";
 import { NoteEditDialog, type EditableNote } from "./note-edit-dialog";
+import { DocFolderMoveDialog } from "./doc-folder-move-dialog";
 import { deleteNote } from "@/server/notes/actions";
 import { createProcedureStage, deleteProcedureMemo, ensureProcedureStage, removeProcedureStage, toggleDeadlineCompleted, toggleProcedureMemo } from "@/server/procedures/actions";
 import { deleteExpress } from "@/server/express/actions";
@@ -1575,7 +1576,8 @@ function MaterialsSection({
 }
 
 function DocRow({ doc, compact = false }: { doc: WorkflowDocument; compact?: boolean }) {
-  const { onReview, evidenceByDoc, onAddEvidence } = useDocActions();
+  const { onReview, evidenceByDoc, onAddEvidence, matterId } = useDocActions();
+  const [folderOpen, setFolderOpen] = useState(false);
   const [evOpen, setEvOpen] = useState(false);
   const pUrl = documentPreviewUrl(doc);
   const chip = doc.sourceOrigin ? documentSourceChip[doc.sourceOrigin] : null;
@@ -1632,6 +1634,11 @@ function DocRow({ doc, compact = false }: { doc: WorkflowDocument; compact?: boo
             <a href={`/api/documents/${doc.id}/download`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
               下载
             </a>
+            {matterId ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFolderOpen(true)} title="归入卷宗文件夹">
+                归档目录
+              </button>
+            ) : null}
             {onReview && doc.ocrStatus !== "FAILED" ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => onReview(doc.id)} title="AI 审查缺失要素、法律风险与条款问题">
                 AI 审查
@@ -1644,6 +1651,15 @@ function DocRow({ doc, compact = false }: { doc: WorkflowDocument; compact?: boo
         <div className="dos-doc-evbox">
           <EvidencePoints items={evidence} />
         </div>
+      ) : null}
+      {matterId ? (
+        <DocFolderMoveDialog
+          open={folderOpen}
+          onOpenChange={setFolderOpen}
+          documentId={doc.id}
+          documentName={doc.name}
+          matterId={matterId}
+        />
       ) : null}
     </div>
   );

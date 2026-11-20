@@ -15,6 +15,8 @@ export type DocActions = {
   onAddEvidence?: (documentId: string | null) => void;
   /** 未挂材料的证据要点（全部环节范围下展示） */
   unlinkedEvidence?: EvidenceItemRow[];
+  /** 2026-11-20：材料归入文件夹需要案件 id（同时作为「是否显示归入按钮」的开关） */
+  matterId?: string;
 };
 
 export const DocActionsContext = createContext<DocActions>({});
