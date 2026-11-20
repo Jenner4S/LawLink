@@ -110,7 +110,6 @@ const BASELINE = new Set([
   "allocatePayment",
   "mergeClients",
   "batchApproveArchiveRecords",
-  "batchRejectArchiveRecords",
   "checkLoginRequiresTotp",
   "completeMatterService",
   "createFolder",

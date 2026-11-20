@@ -6,6 +6,7 @@ import type { ApprovalAction } from "@prisma/client";
 import { toast } from "sonner";
 import { AlertTriangle, BookOpenCheck, ChevronRight, Clock3, FileCheck2, FileText, Paperclip, History, Search, ShieldCheck } from "lucide-react";
 import { ACTION_LABELS } from "@/lib/approvals/rules";
+import { promptDialog } from "@/components/patterns/confirm-dialog";
 import { actionErrorMessage } from "@/lib/action-error";
 
 /* 墨案 07：审批列表案卷脊——执行环节 teal、待审批琥珀、已批准绿、驳回红、归档金线 */
@@ -21,7 +22,7 @@ import { APPROVAL_STATUS_LABELS, WORKSPACE_TABS, type WorkspaceTab } from "@/lib
 import { getApprovalDetail, type listApprovalWorkspace } from "@/server/approval-permissions/inbox";
 import { convertIntakeToMatter, declineIntake, markIntakeNeedsRevision, resubmitIntake } from "@/server/intakes/actions";
 import { approveDocument, rejectDocument, submitDocumentForReview } from "@/server/documents/actions";
-import { approveArchiveRecord, rejectArchiveRecord } from "@/server/archive/actions";
+import { approveArchiveRecord, rejectArchiveRecord, batchRejectArchiveRecords } from "@/server/archive/actions";
 import { approveInvoiceRequest, rejectInvoiceRequest } from "@/server/invoices/actions";
 import { approveSealRequest, rejectSealRequest, stampSealRequest, cancelSealRequest } from "@/server/seals/actions";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,10 @@ export function ApprovalInbox({ data, initialSelection }: { data: Data; initialS
   const [file, setFile] = useState<File | null>(null);
   const [invoiceNo, setInvoiceNo] = useState("");
   const [verified, setVerified] = useState<Set<string>>(new Set());
+  // 2026-11-20：batchRejectArchiveRecords 零引用——一批归档常因同一原因不合格
+  // （结案报告未传、材料未扫描），逐条驳回并重复输入同样原因是纯浪费。
+  // 批量**通过**被服务端禁用（通过＝认证完整，必须逐件核对），批量**驳回**只是退回，风险不同。
+  const [batchSel, setBatchSel] = useState<Set<string>>(new Set());
   const [exceptionApproved, setExceptionApproved] = useState(false);
   const [pending, start] = useTransition();
   const opened = useRef<string | null>(null);
@@ -178,11 +183,80 @@ export function ApprovalInbox({ data, initialSelection }: { data: Data; initialS
       ) : null}
     </form>
 
+    {batchSel.size > 0 ? (
+      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[var(--bd-hair)] bg-[var(--surface-sunken,rgba(0,0,0,.02))] px-3 py-2">
+        <span className="text-xs">已选 {batchSel.size} 件归档申请</span>
+        <span className="text-[11px] text-[var(--t-muted)]">
+          批量驳回会把同一个原因写进每一件；需要逐件说明不同原因时请单条处理。
+        </span>
+        <div className="ml-auto flex gap-2">
+          <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => setBatchSel(new Set())}>
+            清空
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={pending}
+            onClick={async () => {
+              const reason = await promptDialog({
+                title: `驳回 ${batchSel.size} 件归档申请`,
+                description: "这批申请会被一并退回给申请人，原因写进每一件的驳回记录，并在审计中留一条批量驳回记录。",
+                label: "驳回原因（会写入每一件）",
+                placeholder: "如：结案报告未上传，请补齐后重新提交",
+                confirmText: "批量驳回",
+                danger: true,
+                required: true
+              });
+              if (!reason) return;
+              const ids = [...batchSel];
+              start(async () => {
+                try {
+                  const res = await batchRejectArchiveRecords({ archiveIds: ids, note: reason });
+                  if (res.failed.length) {
+                    toast.warning(`已驳回 ${res.succeeded.length} 件，${res.failed.length} 件未处理`, {
+                      description: res.failed.slice(0, 2).map((f) => f.error).join("；")
+                    });
+                  } else {
+                    toast.success(`已驳回 ${res.succeeded.length} 件`);
+                  }
+                  setBatchSel(new Set());
+                  router.refresh();
+                } catch (e) {
+                  toast.error(e instanceof Error ? actionErrorMessage(e) : "批量驳回失败");
+                }
+              });
+            }}
+          >
+            批量驳回
+          </button>
+        </div>
+      </div>
+    ) : null}
+
     <div className="card overflow-hidden">
       {data.rows.map(r => {
         const st = rowStatus(r);
         const actionText = ACTION_LABELS[r.action].replace("审批", "").replace("申请", "");
+        const selectable = r.action === "ARCHIVE_APPROVE" && r.status === "PENDING" && r.task === "approve";
         return <div key={r.action + r.id} role="presentation" onClick={() => !pending && open(r)} className="mo-list-row mo-spine cursor-pointer" data-spine={st.spine}>
+          {selectable ? (
+            <input
+              type="checkbox"
+              aria-label={`选择 ${r.title}`}
+              className="shrink-0"
+              checked={batchSel.has(r.id)}
+              disabled={pending}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                setBatchSel((prev) => {
+                  const next = new Set(prev);
+                  if (e.target.checked) next.add(r.id); else next.delete(r.id);
+                  return next;
+                });
+              }}
+            />
+          ) : <span className="shrink-0" style={{ width: 13 }} />}
           <span className={`badge b-${ACTION_TONE[r.action] ?? "slate"} shrink-0 justify-center`} style={{ width: 52 }}>{actionText}</span>
           <div className="min-w-0 flex-1">
             <div className="rt truncate">{r.title}</div>
