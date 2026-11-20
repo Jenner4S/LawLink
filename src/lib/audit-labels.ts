@@ -115,7 +115,7 @@ const words: Record<string, string> = {
   // REMINDER / RECIPIENT 已在通用词表里，这里只补缺的 DISABLED
   DISABLED: "已停用", RETIRE: "作废", DUPLICATE: "重复", WARNED: "已提示",
   // 到店结果（2026-11-22 P0-3）
-  SHOW: "到店", CHANNEL: "渠道", CONTINGENCY: "风险代理",
+  SHOW: "到店", CHANNEL: "渠道", CONTINGENCY: "风险代理", ASSIGN: "派单", SECOND: "二次", OWNER: "对接人",
   // 坏账（2026-11-22 P0-5）：APPROVE/REJECT 已在通用词表，只需补 OFF
   OFF: "坏账", WRITE: "登记",
 };

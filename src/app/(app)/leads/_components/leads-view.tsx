@@ -12,10 +12,14 @@ import { LeadTimelineDialog } from "./lead-timeline-dialog";
 import { promptDialog } from "@/components/patterns/confirm-dialog";
 import { formatDateTime } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
-import { addLeadActivity, convertLeadToIntake, createLead, markLeadLost, type LeadRow } from "@/server/leads/actions";
+import { addLeadActivity, assignLeadLawyer, convertLeadToIntake, createLead, markLeadLost, respondLeadAssignment, setLeadSecondOwner, type LeadRow } from "@/server/leads/actions";
 import { createLeadChannel, toggleLeadChannel } from "@/server/leads/channels-actions";
 import type { LeadFunnel } from "@/server/leads/analytics";
 import type { ChannelNode } from "@/server/leads/channels";
+
+const ASSIGN_CN: Record<string, string> = {
+  ASSIGNED: "待接单", ACCEPTED: "已接", DECLINED: "拒接", BUSY: "暂忙", UNASSIGNED: "未派"
+};
 
 const STAGE_CN: Record<string, string> = {
   LEAD: "线索", INVITED: "已邀约", VISITED: "已到店",
@@ -36,7 +40,8 @@ export function LeadsView({
   leads,
   funnel,
   owners,
-  channels
+  channels,
+  lawyers
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -44,6 +49,8 @@ export function LeadsView({
   owners: { ownerId: string; ownerName: string; count: number }[];
   /** 两级渠道树（2026-11-22 P0-1） */
   channels: ChannelNode[];
+  /** 可派单的律师（2026-11-22 P1-2） */
+  lawyers: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -480,6 +487,93 @@ export function LeadsView({
                       {l.stage === "VISITED" ? (
                         <Button size="sm" variant="ghost" disabled={isPending || busyId === l.id} onClick={() => record(l, "CONSULT")}>谈案完成</Button>
                       ) : null}
+                      {/* 2026-11-22 P1-2/P1-3：派单给律师 + 二次对接人。
+                          派单状态由律师本人确认——系统替律师答应下来，等于把"拒接"这一真实情况藏起来。 */}
+                      <select
+                        className="input h-6 max-w-[110px] text-[10.5px]"
+                        value={l.assigneeLawyerId ?? ""}
+                        disabled={isPending || busyId === l.id || l.stage === "CONVERTED" || l.stage === "LOST"}
+                        onChange={(e) => startTransition(async () => {
+                          const lawyerId = e.target.value;
+                          if (!lawyerId) return;
+                          try {
+                            await assignLeadLawyer({ leadId: l.id, lawyerId });
+                            toast.success("已派单，待律师确认");
+                            router.refresh();
+                          } catch (err) {
+                            toast.error("派单失败", { description: actionErrorMessage(err) });
+                          }
+                        })}
+                        title="对接律师"
+                      >
+                        <option value="">派给律师…</option>
+                        {lawyers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                      {l.assigneeStatus !== "UNASSIGNED" ? (
+                        <span
+                          className={`rounded px-1 text-[9.5px] ${
+                            l.assigneeStatus === "ACCEPTED"
+                              ? "bg-[var(--green-bg,rgba(21,128,61,.12))] text-[var(--green,#15803d)]"
+                              : l.assigneeStatus === "ASSIGNED"
+                                ? "bg-[var(--slate-bg,rgba(100,116,139,.14))] text-[var(--t-muted)]"
+                                : "bg-[var(--red-bg,rgba(185,28,28,.12))] text-[var(--red,#b91c1c)]"
+                          }`}
+                          title={l.assigneeNote ?? undefined}
+                        >
+                          {ASSIGN_CN[l.assigneeStatus] ?? l.assigneeStatus}
+                        </span>
+                      ) : null}
+                      {l.assigneeLawyer ? <span className="text-[10.5px] text-[var(--t-muted)]">{l.assigneeLawyer.name}</span> : null}
+                      {l.secondOwner ? <span className="text-[10.5px] text-[var(--t-muted)]">二次：{l.secondOwner.name}</span> : null}
+                      {l.assigneeLawyerId && l.assigneeStatus === "ASSIGNED" ? (
+                        <>
+                          <Button size="sm" variant="ghost" disabled={isPending || busyId === l.id}
+                            onClick={() => startTransition(async () => {
+                              try {
+                                await respondLeadAssignment({ leadId: l.id, decision: "ACCEPTED" });
+                                toast.success("已接单");
+                                router.refresh();
+                              } catch (err) {
+                                toast.error("操作失败", { description: actionErrorMessage(err) });
+                              }
+                            })}>接单</Button>
+                          <Button size="sm" variant="ghost" disabled={isPending || busyId === l.id}
+                            onClick={() => startTransition(async () => {
+                              const reason = await promptDialog({
+                                title: "拒接线索", description: "拒接理由会记入跟进时间线与审计。",
+                                placeholder: "如：专业方向不符 / 当前排期已满", required: true, maxLength: 200
+                              });
+                              if (!reason) return;
+                              try {
+                                await respondLeadAssignment({ leadId: l.id, decision: "DECLINED", reason });
+                                toast.success("已拒接，需重新派单");
+                                router.refresh();
+                              } catch (err) {
+                                toast.error("操作失败", { description: actionErrorMessage(err) });
+                              }
+                            })}>拒接</Button>
+                        </>
+                      ) : null}
+                      {/* 二次对接人（P1-3）：首次接待与后续跟进常是两个人，
+                          换负责人会丢掉"谁最先接触"，故单独一人字段。 */}
+                      <select
+                        className="input h-6 max-w-[104px] text-[10.5px]"
+                        value={l.secondOwnerId ?? ""}
+                        disabled={isPending || busyId === l.id}
+                        onChange={(e) => startTransition(async () => {
+                          try {
+                            await setLeadSecondOwner({ leadId: l.id, secondOwnerId: e.target.value });
+                            toast.success(e.target.value ? "已设二次对接人" : "已清除二次对接人");
+                            router.refresh();
+                          } catch (err) {
+                            toast.error("操作失败", { description: actionErrorMessage(err) });
+                          }
+                        })}
+                        title="二次对接人"
+                      >
+                        <option value="">二次对接人…</option>
+                        {lawyers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
                       {/* 2026-11-22 P0-3：约了没来要能单独记——「没约」和「约了没来」是两个问题 */}
                       {l.stage === "INVITED" && l.visitOutcome !== "ARRIVED" ? (
                         <Button size="sm" variant="ghost" disabled={isPending || busyId === l.id} onClick={() => record(l, "NO_SHOW")}>未到店</Button>

@@ -501,6 +501,8 @@ model User {
   ownedMatters              Matter[]                      @relation("MatterOwner")
   registeredMatters         Matter[]                      @relation("MatterRegistrar")
   ownedLeads                Lead[]                        @relation("LeadOwner")
+  assignedLeads             Lead[]                        @relation("LeadAssigneeLawyer")
+  secondOwnedLeads          Lead[]                        @relation("LeadSecondOwner")
   writeOffsRequested        ReceivableWriteOff[]          @relation("WriteOffRequester")
   writeOffsDecided          ReceivableWriteOff[]          @relation("WriteOffDecider")
   leadActivities            LeadActivity[]                @relation("LeadActivityAuthor")
@@ -3740,6 +3742,19 @@ enum LeadVisitOutcome {
   NO_SHOW // 约了没来（爽约）
 }
 
+/// 对接律师的接单状态（2026-11-22 P1-2）
+///
+/// 客户现行系统有一列「对接律师状态」。它回答的是**派单之后律师接不接**：
+/// 律所把线索派给某位律师，律师可能拒接（专业不对口/确实忙）——
+/// 不记录这个，"派了但没人跟"的线索就沉在库里没人发现。
+enum LeadAssigneeStatus {
+  UNASSIGNED // 未指派律师
+  ASSIGNED // 已指派，待律师确认
+  ACCEPTED // 律师已接
+  DECLINED // 律师拒接（须写理由）
+  BUSY // 暂时忙，稍后再派
+}
+
 enum LeadActivityType {
   CONTACT // 联系（电话/微信沟通）
   INVITE // 邀约（约定到店时间）
@@ -3750,47 +3765,59 @@ enum LeadActivityType {
 }
 
 model Lead {
-  id                String           @id @default(cuid())
+  id                String             @id @default(cuid())
   /// 线索人姓名（不是客户名——此时还不是客户）
   name              String
   phone             String?
   wechat            String?
   /// 单位/公司（若为企业线索）
   organization      String?
-  source            LeadSource       @default(OTHER)
+  source            LeadSource         @default(OTHER)
   /// 来源细节（谁介绍的、哪个平台、哪场活动）
   sourceDetail      String?
   /// 具体渠道（2026-11-22 P0-1）：优先于 source 用于投放 ROI 聚合
   channelId         String?
-  channel           LeadChannel?     @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  channel           LeadChannel?       @relation(fields: [channelId], references: [id], onDelete: SetNull)
   /// 团购/券金额（2026-11-22 P0-1）：客户在平台买的咨询/面谈券金额。
   /// 口径待业主确认（收入侧 or 成本侧），当前只存不参与计算。
-  voucherAmount     Decimal?         @db.Decimal(14, 2)
-  stage             LeadStage        @default(LEAD)
+  voucherAmount     Decimal?           @db.Decimal(14, 2)
+  stage             LeadStage          @default(LEAD)
   /// 意向业务类别，与 MatterCategory 同枚举，便于按类别算转化率
-  category          MatterCategory   @default(CIVIL_COMMERCIAL)
+  category          MatterCategory     @default(CIVIL_COMMERCIAL)
   /// 预计标的/预计收费（获客看板用它算预期收入，不影响财务）
-  expectedAmount    Decimal?         @db.Decimal(14, 2)
+  expectedAmount    Decimal?           @db.Decimal(14, 2)
   /// 负责人（跟进人）
   ownerId           String
-  owner             User             @relation("LeadOwner", fields: [ownerId], references: [id])
+  owner             User               @relation("LeadOwner", fields: [ownerId], references: [id])
+  /// 对接律师（2026-11-22 P1-2）：派给谁谈
+  assigneeLawyerId  String?
+  assigneeLawyer    User?              @relation("LeadAssigneeLawyer", fields: [assigneeLawyerId], references: [id], onDelete: SetNull)
+  /// 接单状态：ASSIGNED 之后由律师本人确认
+  assigneeStatus    LeadAssigneeStatus @default(UNASSIGNED)
+  /// 拒接/暂忙理由（与 lostReason 分开：那是客户流失，这是内部派单结果）
+  assigneeNote      String?
+  /// 二次对接人（2026-11-22 P1-3）：首次接待之后接力的人
+  secondOwnerId     String?
+  secondOwner       User?              @relation("LeadSecondOwner", fields: [secondOwnerId], references: [id], onDelete: SetNull)
+  /// 交接到二次对接人的时间
+  handoverAt        DateTime?
   /// 邀约时间（约定到店/线上谈的时间）
   invitedAt         DateTime?
   /// 实际到店时间
   visitedAt         DateTime?
   /// 到店结果（2026-11-22 P0-3）：区分「没约」「约了没来」「到了」
-  visitOutcome      LeadVisitOutcome @default(PENDING)
+  visitOutcome      LeadVisitOutcome   @default(PENDING)
   /// 谈案完成时间
   consultedAt       DateTime?
   lostReason        String?
   lostAt            DateTime?
   /// 转化后的收案（唯一）。转收案时回填，用于算转化率与回看
-  convertedIntakeId String?          @unique
-  convertedIntake   Intake?          @relation(fields: [convertedIntakeId], references: [id])
+  convertedIntakeId String?            @unique
+  convertedIntake   Intake?            @relation(fields: [convertedIntakeId], references: [id])
   convertedAt       DateTime?
   notes             String?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   activities LeadActivity[]
 

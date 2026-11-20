@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { listLeadOwners, listLeads } from "@/server/leads/actions";
 import { listLeadChannels } from "@/server/leads/channels";
+import { listLawyerOptions } from "@/server/leads/owners";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
 import { LeadsView } from "./_components/leads-view";
@@ -16,13 +17,15 @@ export default async function LeadsPage() {
   await requireSession("clients.read");
   // 首次进入自动预置常用渠道（幂等）：空表意味着没人建，等于没这个功能
   await ensureDefaultChannels().catch(() => ({ created: 0 }));
-  const [leads, funnel, owners, channels] = await Promise.all([
+  const [leads, funnel, owners, channels, lawyers] = await Promise.all([
     listLeads({ stage: "ALL" }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
     listLeadOwners(),
     // 2026-11-22 P0-1：两级渠道树
-    listLeadChannels()
+    listLeadChannels(),
+    // 2026-11-22 P1-2：可派单的律师清单
+    listLawyerOptions()
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} />;
 }

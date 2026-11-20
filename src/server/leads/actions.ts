@@ -194,7 +194,11 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
       expectedAmount: true, invitedAt: true, visitedAt: true, consultedAt: true,
       lostReason: true, convertedIntakeId: true, convertedAt: true, notes: true, visitOutcome: true,
       ownerId: true, owner: { select: { name: true } }, updatedAt: true,
-      channelId: true, voucherAmount: true, channel: { select: { id: true, name: true, parent: { select: { name: true } } } },
+      channelId: true, voucherAmount: true,
+      assigneeLawyerId: true, assigneeStatus: true, assigneeNote: true,
+      secondOwnerId: true, handoverAt: true,
+      assigneeLawyer: { select: { id: true, name: true } },
+      secondOwner: { select: { id: true, name: true } }, channel: { select: { id: true, name: true, parent: { select: { name: true } } } },
       _count: { select: { activities: true } }
     }
   });
@@ -445,3 +449,173 @@ export async function listLeadTimeline(leadId: string) {
 export type LeadTimeline = Awaited<ReturnType<typeof listLeadTimeline>>;
 
 export type LeadRow = Awaited<ReturnType<typeof listLeads>>[number];
+
+// ============================================================
+// 对接律师 / 接单状态 / 二次对接人（2026-11-22，P1-2 + P1-3）
+// ============================================================
+
+const assignSchema = z.object({
+  leadId: z.string().trim().min(1),
+  lawyerId: z.string().trim().min(1, "请选择对接律师")
+});
+
+/**
+ * 把线索派给某位律师谈。
+ *
+ * 为什么派单后状态一定是 ASSIGNED（而不是直接 ACCEPTED）：
+ * **接不接是律师自己的事**。系统替律师答应下来，就等于把"拒接"这一真实情况藏起来。
+ */
+export async function assignLeadLawyer(input: z.input<typeof assignSchema>) {
+  const session = await requireSession("clients.write");
+  const data = parseInput(assignSchema, input);
+
+  const lead = await prisma.lead.findUnique({
+    where: { id: data.leadId },
+    select: { id: true, name: true, stage: true, assigneeLawyerId: true, assigneeStatus: true }
+  });
+  if (!lead) throw new ActionError("线索不存在");
+  if (lead.stage === "CONVERTED" || lead.stage === "LOST") {
+    throw new ActionError("已转化/已流失的线索不再派单");
+  }
+
+  const lawyer = await prisma.user.findFirst({
+    where: { id: data.lawyerId, active: true },
+    select: { id: true, name: true }
+  });
+  if (!lawyer) throw new ActionError("对接律师不存在或已停用");
+
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      assigneeLawyerId: lawyer.id,
+      assigneeStatus: "ASSIGNED",
+      // 重新派单时清掉上一次的拒接理由，否则新旧理由混在一起没人看得懂
+      assigneeNote: null
+    }
+  });
+  await audit({
+    userId: session.user.id,
+    action: "LEAD_ASSIGN",
+    targetType: "Lead",
+    targetId: lead.id,
+    detail: { leadName: lead.name, lawyerName: lawyer.name, before: lead.assigneeLawyerId }
+  });
+  revalidatePath("/leads");
+  return { ok: true as const };
+}
+
+const respondSchema = z.object({
+  leadId: z.string().trim().min(1),
+  decision: z.enum(["ACCEPTED", "DECLINED", "BUSY"]),
+  reason: z.string().trim().max(200).optional().or(z.literal(""))
+});
+
+/**
+ * 律师回应派单（接 / 拒 / 暂忙）。
+ *
+ * 三条口径：
+ * ① **只能回应派给自己的单**（防止代答）；
+ * ② **拒接与暂忙必须写理由**——没有理由的拒接等于让线索静默消失；
+ * ③ 拒接后状态停在 DECLINED，**不自动转派**：转派给谁需要人判断（专业方向/利益冲突）。
+ */
+export async function respondLeadAssignment(input: z.input<typeof respondSchema>) {
+  const session = await requireSession("clients.read");
+  const data = parseInput(respondSchema, input);
+
+  const lead = await prisma.lead.findUnique({
+    where: { id: data.leadId },
+    select: { id: true, name: true, stage: true, assigneeLawyerId: true, assigneeStatus: true }
+  });
+  if (!lead) throw new ActionError("线索不存在");
+  if (!lead.assigneeLawyerId) throw new ActionError("该线索尚未指派律师");
+  if (lead.assigneeLawyerId !== session.user.id) {
+    throw new ActionError("只能回应派给自己的线索");
+  }
+  if (lead.assigneeStatus === "ACCEPTED" && data.decision === "ACCEPTED") {
+    return { ok: true as const };
+  }
+
+  const reason = data.reason?.trim() ?? "";
+  if (data.decision !== "ACCEPTED" && !reason) {
+    throw new ActionError(data.decision === "DECLINED" ? "拒接须填写理由" : "暂忙须填写说明");
+  }
+
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      assigneeStatus: data.decision,
+      assigneeNote: data.decision === "ACCEPTED" ? null : reason
+    }
+  });
+  // 接单/拒接是跟进事件，进时间线才看得到"什么时候派的、谁接的"
+  await prisma.leadActivity.create({
+    data: {
+      leadId: lead.id,
+      type: "NOTE",
+      note:
+        data.decision === "ACCEPTED"
+          ? "对接律师已接单"
+          : `${data.decision === "DECLINED" ? "对接律师拒接" : "对接律师暂忙"}：${reason}`,
+      createdById: session.user.id
+    }
+  });
+  await audit({
+    userId: session.user.id,
+    action: data.decision === "ACCEPTED" ? "LEAD_ASSIGN_ACCEPT" : "LEAD_ASSIGN_DECLINE",
+    targetType: "Lead",
+    targetId: lead.id,
+    detail: { leadName: lead.name, decision: data.decision, reason: data.decision === "ACCEPTED" ? undefined : reason }
+  });
+  revalidatePath("/leads");
+  return { ok: true as const };
+}
+
+const secondOwnerSchema = z.object({
+  leadId: z.string().trim().min(1),
+  secondOwnerId: z.string().trim().optional().or(z.literal(""))
+});
+
+/**
+ * 设置/清除二次对接人（P1-3）。
+ *
+ * 为什么要单独一个人字段而不是换负责人：
+ * 首次接待与后续跟进常常是两个人，**换负责人会丢掉"谁最先接触"这个事实**，
+ * 而它决定了后续的分账与责任追溯。
+ */
+export async function setLeadSecondOwner(input: z.input<typeof secondOwnerSchema>) {
+  const session = await requireSession("clients.write");
+  const data = parseInput(secondOwnerSchema, input);
+
+  const lead = await prisma.lead.findUnique({
+    where: { id: data.leadId },
+    select: { id: true, name: true, ownerId: true, secondOwnerId: true }
+  });
+  if (!lead) throw new ActionError("线索不存在");
+
+  const nextId = data.secondOwnerId?.trim() || null;
+  if (nextId && nextId === lead.ownerId) {
+    throw new ActionError("二次对接人不能与负责人相同");
+  }
+  if (nextId) {
+    const user = await prisma.user.findFirst({ where: { id: nextId, active: true }, select: { id: true, name: true } });
+    if (!user) throw new ActionError("该人员不存在或已停用");
+  }
+
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      secondOwnerId: nextId,
+      // 移交时间只在"新设"时写；清除时保留历史，避免抹掉"曾经由谁接手"
+      handoverAt: nextId ? new Date() : lead.secondOwnerId ? undefined : null
+    }
+  });
+  await audit({
+    userId: session.user.id,
+    action: "LEAD_SECOND_OWNER",
+    targetType: "Lead",
+    targetId: lead.id,
+    detail: { leadName: lead.name, before: lead.secondOwnerId, after: nextId }
+  });
+  revalidatePath("/leads");
+  return { ok: true as const };
+}
