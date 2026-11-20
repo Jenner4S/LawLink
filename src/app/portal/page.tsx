@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LogOut, FileText, Scale, Receipt } from "lucide-react";
+import { LogOut, FileText, Scale, Receipt, MessageSquare } from "lucide-react";
 import { requirePortalViewer } from "@/lib/portal/session";
 import { portalLogoutAction } from "@/server/portal/page-actions";
 
@@ -41,6 +41,10 @@ export default async function PortalHomePage() {
         <Link href="/portal/bills" className="btn btn-ghost btn-sm gap-1">
           <Receipt className="h-3.5 w-3.5" />
           账单
+        </Link>
+        <Link href="/portal/requests" className="btn btn-ghost btn-sm gap-1">
+          <MessageSquare className="h-3.5 w-3.5" />
+          我的提问
         </Link>
       </div>
 

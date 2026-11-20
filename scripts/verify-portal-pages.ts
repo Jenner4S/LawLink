@@ -95,7 +95,7 @@ async function main() {
     console.log(`  客户：${client.name} · 案件：${matter.internalCode}\n`);
 
     const pages: { path: string; mustHave: string[]; mustNotHave?: string[] }[] = [
-      { path: "/portal", mustHave: ["案件进度", "我的材料", "账单", "退出"] },
+      { path: "/portal", mustHave: ["案件进度", "我的材料", "账单", "我的提问", "退出"] },
       {
         path: "/portal/cases",
         mustHave: ["案件进度", matter.internalCode, "当前阶段", "主办律师"],
@@ -108,7 +108,11 @@ async function main() {
         // Q2：不显示工时明细；也不该出现内部口径（成本/分成）
         mustNotHave: ["工时明细", "分成", "成本"]
       },
-      { path: "/portal/materials", mustHave: ["我的材料"] }
+      { path: "/portal/materials", mustHave: ["我的材料"] },
+      {
+        path: "/portal/requests",
+        mustHave: ["我的提问", "提一个新问题", "标题", "提交"]
+      }
     ];
 
     for (const p of pages) {

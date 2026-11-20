@@ -3427,26 +3427,35 @@ model ContractConfirmation {
 
 /// 门户用户：客户方的自然人账号，与员工 User 结构性隔离
 model ClientPortalUser {
-  id             String    @id @default(cuid())
+  id             String                       @id @default(cuid())
   clientId       String
-  client         Client    @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  email          String    @unique
+  client         Client                       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  email          String                       @unique
   name           String
   passwordHash   String
-  active         Boolean   @default(true)
+  active         Boolean                      @default(true)
   /// 是否主账号（方案 §七 Q3：一客户一主账号，其余为协作者）
   ///
   /// 只影响**这张清单怎么展示**与「谁是这家客户的对接人」，
   /// 不影响可见性：协作者默认可见该客户全部已分享内容（Q3 默认档）。
   /// 「仅自己提交的」档要等工单（S3）落地才有作用对象，现在引入就是假开关。
-  isPrimary      Boolean   @default(true)
+  isPrimary      Boolean                      @default(true)
+  /// 协作者可见性（方案 §七 Q3 第二档）
+  ///
+  /// 主账号永远是 ALL（不受此列约束）。
+  /// 协作者默认 ALL（同客户内部本就互通）；怕内部政治的大客户可切 OWN_SUBMISSIONS。
+  /// 注意：本档**只影响工单**（PortalRequest）——
+  /// 已分享材料对协作者一律可见，那是客户级披露，不是"谁提交的"。
+  visibility     PortalCollaboratorVisibility @default(ALL)
   /// 与员工侧同机制：递增即让该客户所有旧会话失效
-  sessionVersion Int       @default(0)
+  sessionVersion Int                          @default(0)
   lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
 
-  invites PortalInvite[]
+  invites  PortalInvite[]
+  requests PortalRequest[]
+  ratings  PortalSatisfaction[]
 
   @@index([clientId])
 }
@@ -3511,5 +3520,72 @@ model PortalShare {
   @@index([clientId, shareType])
   @@index([clientId, revokedAt])
   @@index([documentId])
+  @@index([matterId])
+}
+
+// ============================================================
+// 客户门户 S3：工单与满意度（2026-11-21）
+//
+// 这是客户**唯一能主动发起**的通道。设计要点：
+//   · 工单归属于「门户账号」而不只是客户——同一客户的协作者之间可以各自提交；
+//     能否看到彼此的工单由 ClientPortalUser.visibility 决定（Q3 第二档）。
+//   · 员工侧回答落 answerBody + answeredById + answeredAt：留痕，不覆盖原内容。
+//   · 满意度一案件一次、可选匿名（匿名时只存评分不存账号，避免"给差评会被认出来"）。
+// ============================================================
+
+enum PortalCollaboratorVisibility {
+  /// 可见该客户全部工单（默认）
+  ALL
+  /// 仅见自己提交的工单
+  OWN_SUBMISSIONS
+}
+
+enum PortalRequestStatus {
+  OPEN // 客户已提交，待律所处理
+  ANSWERED // 律所已回复
+  CLOSED // 已关闭
+}
+
+/// 客户工单
+model PortalRequest {
+  id           String              @id @default(cuid())
+  portalUserId String
+  portalUser   ClientPortalUser    @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  /// 冗余客户 id：查询按客户过滤时不必再 join 账号表，也让「客户删除」这类检查更直接
+  clientId     String
+  subject      String
+  body         String
+  status       PortalRequestStatus @default(OPEN)
+  /// 员工侧承诺的回复时限（默认 2 个工作日，由服务端按提交时刻计算）
+  dueAt        DateTime?
+  answeredById String?
+  answeredAt   DateTime?
+  answerBody   String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([status, dueAt])
+  @@index([clientId, createdAt])
+  @@index([portalUserId, createdAt])
+}
+
+/// 满意度评价：一个案件一次
+model PortalSatisfaction {
+  id           String            @id @default(cuid())
+  portalUserId String?
+  portalUser   ClientPortalUser? @relation(fields: [portalUserId], references: [id], onDelete: SetNull)
+  clientId     String
+  matterId     String
+  /// 1..5
+  score        Int
+  /// 0..10（NPS），可选
+  npsScore     Int?
+  comment      String?
+  /// 匿名提交：portalUserId 置空，只保留客户级归属（律所仍需知道是哪家客户）
+  anonymous    Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+
+  @@unique([clientId, matterId])
+  @@index([clientId, createdAt])
   @@index([matterId])
 }

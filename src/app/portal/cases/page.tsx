@@ -2,6 +2,8 @@ import Link from "next/link";
 import { ArrowLeft, Scale, FileText } from "lucide-react";
 import { requirePortalViewer } from "@/lib/portal/session";
 import { listPortalMatterSummaries } from "@/server/portal/portal-reads";
+import { prisma } from "@/lib/prisma";
+import { SatisfactionForm } from "./_components/satisfaction-form";
 import { formatDate } from "@/lib/utils";
 
 /**
@@ -12,8 +14,14 @@ import { formatDate } from "@/lib/utils";
  * （案件进度不是工作量，是法院排期；解释不了的数字就是自己埋的争议）。
  */
 export default async function PortalCasesPage() {
-  await requirePortalViewer("/portal/cases");
+  const viewer = await requirePortalViewer("/portal/cases");
   const cases = await listPortalMatterSummaries();
+  // 一案件一次：已评价过的案件不再显示评分入口（服务端 @@unique 也会拒绝重复）
+  const rated = await prisma.portalSatisfaction.findMany({
+    where: { clientId: viewer.clientId },
+    select: { matterId: true }
+  });
+  const ratedMatterIds = new Set(rated.map((r) => r.matterId));
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -73,10 +81,17 @@ export default async function PortalCasesPage() {
                 </div>
               </dl>
 
-              <Link href="/portal/materials" className="mt-2.5 inline-flex items-center gap-1 text-[11.5px] underline">
-                <FileText className="h-3 w-3" />
-                查看我的材料
-              </Link>
+              <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                <Link href="/portal/materials" className="inline-flex items-center gap-1 text-[11.5px] underline">
+                  <FileText className="h-3 w-3" />
+                  查看我的材料
+                </Link>
+                {ratedMatterIds.has(c.matterId) ? (
+                  <span className="text-[11px] text-[var(--t-muted)]">已评价</span>
+                ) : (
+                  <SatisfactionForm matterId={c.matterId} />
+                )}
+              </div>
             </li>
           ))}
         </ul>

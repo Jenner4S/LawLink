@@ -51,6 +51,14 @@ const GUARD = /assertMatterWritable\(|assertDocumentWritable\(|status\s*===\s*["
  */
 const KNOWN_EXEMPT = {
   // ── 审批类：审批对象本就是已提交的申请；归档审批更必须在归档案件上做 ──
+  // ── 门户 S3 工单与满意度（2026-11-21）──
+  // 回复客户提问：写的是工单而不是案件，已用 assertCanHandleMatter 收口。
+  // **不能**加 assertMatterWritable：案件归档后客户照样会提问，
+  // 若因归档而拒答，客户就永远等不到回复——归档冻结的是案件内容，不是沟通。
+  "portal/requests.ts  answerPortalRequest": "写工单不写案件；归档案件仍须可回复客户，否则客户永远等不到答复",
+  // 客户提交评价：这是**客户侧**动作，assertMatterWritable 是员工守卫，对客户无意义。
+  // 真正的守卫是「该案件已分享给该客户」+ clientId 匹配（见 submitPortalSatisfaction）。
+  "portal/requests.ts  submitPortalSatisfaction": "客户侧动作，员工守卫不适用；守卫是 PortalShare 已分享 + clientId 匹配",
   // ── 门户披露（2026-11-20 S2）──
   // 撤销**绝不能**加 assertMatterWritable：归档冻结的是「新增披露」，不是「收回披露」。
   // 若这里拦归档案件，案件一旦归档，里面误发给客户的材料就再也收不回来了——

@@ -13,6 +13,7 @@ const targetLabels: Record<string, string> = {
   Engagement: "委托", EvidenceItem: "证据项",
   // 门户 S1（2026-11-20）：客户侧账号与邀请，审计页须能一眼看出是「客户门户」而非员工账号
   ClientPortalUser: "客户门户账号", PortalInvite: "门户邀请", PortalShare: "门户披露",
+  PortalRequest: "客户提问", PortalSatisfaction: "客户评价",
   // 第七轮体检：补齐缺失对象标签（缺失时审计页显示「其他对象」）
   ArchiveBorrowRequest: "案卷借阅申请", CommissionSettlement: "分成结算", DeadlineRule: "期限规则",
   FeeEntryList: "收付记录列表", FinanceCorrection: "财务更正", Holiday: "放假安排",
@@ -102,6 +103,10 @@ const words: Record<string, string> = {
   // LOGIN 已在上面「登录/退出登录」组里定义，此处不重复（重复键在 TS 里是错误）
   // SHARE 用于 PORTAL_SHARE_CREATE / PORTAL_SHARE_REVOKE（门户 S2 披露动作）
   PORTAL: "客户门户", INVITE: "邀请", ACCEPT: "接受", BLOCKED: "被拦截", SHARE: "披露",
+  // S3：PORTAL_REQUEST_CREATE / PORTAL_REQUEST_ANSWER / PORTAL_SATISFACTION_CREATE
+  // 用 INQUIRY 而不是 REQUEST：REQUEST 已有词条（"申请"，用于其他动作），
+  // 复用它会让「客户提问」显示成「门户申请创建」——语义不对。
+  INQUIRY: "提问", ANSWER: "回复", SATISFACTION: "评价",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

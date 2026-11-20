@@ -21,6 +21,7 @@ import { DeleteContactButton, DeleteClientButton } from "./_components/client-de
 import { PortalInviteButton } from "./_components/portal-invite-button";
 import { AddContactButton, MergeBanner } from "./_components/client-detail-parts";
 import { ContractConfirmationPanel } from "./_components/contract-confirmation-panel";
+import { PortalRequestsPanel } from "./_components/portal-requests-panel";
 
 const COOP_BADGE: Record<string, string> = { POTENTIAL: "b-slate", NEGOTIATING: "b-amber", SIGNED: "b-teal", TERMINATED: "b-bronze" };
 const ACTIVE = new Set(["PENDING_ACCEPTANCE", "IN_PROGRESS", "ON_HOLD"]);
@@ -204,6 +205,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               ))
             )}
           </div>
+
+          <PortalRequestsPanel clientId={client.id} />
 
           <ContractConfirmationPanel clientId={client.id} canManage={canWrite} />
 
