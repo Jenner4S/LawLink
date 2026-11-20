@@ -209,6 +209,88 @@ A 类（缓存混淆）2 次、E 类（替换/变异失手）1 次——**只说
 
 ---
 
+### 本仓库「同一意图多种写法」清单（2026-11-22 增，写扫描器前必查）
+
+上面 A–G 讲的是**我怎么误判**。这一节讲**代码长什么样** —— 同一个意图在本仓库
+有多种写法，扫描器只认一种就会把「已经做对的」报成缺口。2026-11-22 一天之内，
+我因为看不见下列形态**误报 8 次**（真缺陷 3 个，误报率 8:3）。
+
+**做任何「有没有 X」的扫描之前，先在这里确认 X 有几种写法。**
+
+#### 1. 写审计：5 种（全部等价）
+
+| 写法 | 说明 | 代表位置 |
+|---|---|---|
+| `audit({...})` | 通用审计，内部处理失败日志 | `src/server/audit.ts:20` |
+| `auditTx(tx, {...})` | 事务内审计（与业务同事务提交） | `src/server/audit.ts:68` |
+| `auditStrict({...})` | 审计失败即抛（用于必须留痕的动作） | `src/server/audit.ts:45` |
+| `approvalAudit(db, userId, action, targetId, detail)` | 审批域审计 | `src/lib/approvals/service.ts:91` |
+| `db.auditLog.create({...})` | 直接写表，不经封装 | `src/server/roles/actions.ts` 等 4 个文件 |
+
+**不算审计**：`runWithFailureAudit`（`src/server/cron/scheduler.ts:42`）**只在失败时**写，
+成功路径不留痕。
+
+**陷阱**：正则写 `auditTx?` 是「`auditT` + 可选 `x`」，**匹配不到 `audit(`** —— 要用 `audit(?:Tx)?`。
+
+#### 2. 案件可写守卫：4 种 + 1 个陷阱
+
+| 写法 | 覆盖 | 代表位置 |
+|---|---|---|
+| `assertMatterWritable(id)` | 查 deletedAt + 拒绝 ARCHIVED + 关联/角色 | `src/lib/archive/guard.ts:58` |
+| `assertDocumentWritable(matterId, {kind})` | 材料域 | `src/server/documents/*` |
+| 内联 `if (matter.status === "ARCHIVED")` | 等价但分散 | `yuandian/save-case.ts` 等 |
+| `assertArchiveNotLocked(...)` | 归档锁定 | `archive/*` |
+
+**陷阱**：`assertCanAssociateMatter` / `assertCanHandleMatter` **只查角色与可见性，不查案件状态**
+（21 个文件用 `assertMatterWritable`，12 个用 `assertCanHandleMatter`——**两者不能互相替代**）。
+2026-11-21 的「已归档案件仍可增删关联」「仍可新增证据项」两个缺口都是这个混淆造成的。
+
+#### 3. 软删除过滤：2 种
+
+| 写法 | 说明 |
+|---|---|
+| 字面量 `deletedAt: null` | 直接写在 where 里 |
+| 经断言**间接**过滤 | `assertMatterWritable` / `assertCanLeadMatter` / `assertCanOwnMatter` / `assertCanAssociateMatter` / `assertCanAccessMatter` 内部都带 `deletedAt: null` |
+
+**陷阱**：只看字面量会把「已由断言保护的」报成缺口。
+
+#### 4. 并发串行化：3 种
+
+| 写法 | 用途 | 出现 |
+|---|---|---|
+| `pg_advisory_xact_lock(k)` | 跨表共同锁（按固定 key 序，避免死锁） | 10 个文件 |
+| `SELECT ... FOR UPDATE` | 行锁 | 15 个文件 |
+| `isolationLevel: "Serializable"` | 事务隔离 | 11 个文件 |
+
+**陷阱**：三种都有效，只查一种会漏。判断「有没有防并发」时要三种一起查
+（`$transaction` 出现在 35 个文件里，但**光有事务不等于串行化**）。
+
+#### 5. 权限入口：4 种
+
+| 写法 | 粒度 |
+|---|---|
+| `requireSession("<key>")` | 常规权限键（80 个文件） |
+| `requireSystemAdmin()` | 系统管理身份（19 个文件） |
+| `assertCan*` 系列（133 处调用） | 对象级断言（案件/客户/材料…） |
+| `roleMutation(user, key, write)` / `checkRoleMutation(tx, ...)` | 自定义角色的事务内复核（28 处） |
+
+**陷阱**：`roleMutation` 对**内置角色**不查 `checkRoleMutation`，对 CUSTOM 角色才查——
+「有没有事务内复核」不能一律按 `checkRoleMutation` 判断。
+
+#### 6. 金额口径：2 条路径（**判断金额正确性前必须先看在哪条路径**）
+
+| 路径 | 口径 | 出现 |
+|---|---|---|
+| 账务（应收/实收/核销/分成） | `Prisma.Decimal`，事务内 `+`/`-` | 22 个文件 |
+| 报表聚合（展示） | `Number(amount)` 数组累加 | `reports/queries.ts`、`reports/export-xlsx.ts` |
+
+**2026-09-20 已把 dashboard 逾期应收与 finance aging 的**回退路径**改成 Decimal 口径**；
+`reports/queries.ts` 仍是 Number 累加。**这不是未修的缺陷**，而是分层选择：
+账务必须精确，报表只做展示。审计时**不要在报表里看到 `Number(amount)` 就报缺陷**——
+先确认它是否参与写库或账务判断。
+
+---
+
 ## 七、每次审计的固定动作
 
 ### 部署：`./scripts/deploy.sh`（2026-11-20 起）
