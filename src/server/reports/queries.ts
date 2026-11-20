@@ -1,4 +1,5 @@
 import { getFinanceFacts, periodReceipts } from "@/server/finance/facts";
+import { applyApprovedWriteOffs } from "@/server/reports/writeoff-align";
 /**
  * v0.20: 律所报表数据聚合（纯 read-only，无 use server）
  *
@@ -116,6 +117,13 @@ export type ClientReceivable = {
   name: string;
   receivable: number;
   received: number;
+  /**
+   * 已批准坏账合计（2026-11-22 P0-5）。
+   * 与案件页同口径：只算 APPROVED，且**不减 receivable**（应收是历史事实），
+   * 只从 balance 里扣。此前报表没扣、案件页扣了 —— 两个数不一致最容易失去信任，
+   * 这一栏就是把口径对齐。
+   */
+  writeOff: number;
   balance: number;
 };
 
@@ -263,6 +271,7 @@ export async function getReportData(period: ReportPeriod, access: ReportAccess =
         name: c.name,
         receivable: 0,
         received: 0,
+        writeOff: 0,
         balance: 0
       });
     }
@@ -276,10 +285,14 @@ export async function getReportData(period: ReportPeriod, access: ReportAccess =
     // 当前应收余额与本期新增应收不同；余额必须按有效核销计算。
     for(const r of facts.receivables.filter(r=>r.moneyKind==='LAWYER_FEE')) {
       const c=r.matter.primaryClient;if(!c)continue;
-      const row=byClient.get(c.id)??{clientId:c.id,name:c.name,receivable:0,received:0,balance:0};
+      const row=byClient.get(c.id)??{clientId:c.id,name:c.name,receivable:0,received:0,writeOff:0,balance:0};
       row.receivable+=r.effectiveAmount.toNumber();row.received+=r.settledAmount.toNumber();row.balance+=r.outstanding.toNumber();byClient.set(c.id,row);
     }
   }
+  // 2026-11-22 P0-5 口径对齐：把已批准坏账计入客户应收余额（与案件页同口径）。
+  // 逻辑在 writeoff-align.ts，独立成模块便于用真库直接测这一步。
+  await applyApprovedWriteOffs(Array.from(byClient.values()));
+
   const byClientReceivable = Array.from(byClient.values()).sort(
     (a, b) => b.balance - a.balance
   );

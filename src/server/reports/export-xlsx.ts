@@ -150,6 +150,7 @@ export async function buildReportWorkbook(period: ReportPeriod, access: ReportAc
     { header: "客户", key: "name", width: 24 },
     { header: "应收金额", key: "receivable", width: 14 },
     { header: facts?"已核销金额":"已收金额", key: "received", width: 14 },
+    { header: "已批坏账", key: "writeOff", width: 14 },
     { header: "应收余额", key: "balance", width: 14 }
   ];
   for (const row of data.byClientReceivable) {
@@ -157,11 +158,12 @@ export async function buildReportWorkbook(period: ReportPeriod, access: ReportAc
       name: row.name,
       receivable: row.receivable,
       received: row.received,
+      writeOff: row.writeOff,
       balance: row.balance
     });
   }
   sheetClient.getRow(1).font = { bold: true };
-  ["receivable", "received", "balance"].forEach((k) => {
+  ["receivable", "received", "writeOff", "balance"].forEach((k) => {
     sheetClient.getColumn(k).numFmt = "#,##0.00";
   });
 

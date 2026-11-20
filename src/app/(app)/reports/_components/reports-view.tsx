@@ -387,6 +387,7 @@ export function ReportsView({
                     <th className="px-2 py-1.5 text-left font-normal">客户</th>
                     <th className="px-2 py-1.5 text-right font-normal">应收</th>
                     <th className="px-2 py-1.5 text-right font-normal">{data.financeReady?"已核销":"已收"}</th>
+                    <th className="px-2 py-1.5 text-right font-normal">已批坏账</th>
                     <th className="px-2 py-1.5 text-right font-normal">余额</th>
                   </tr>
                 </thead>
@@ -399,6 +400,9 @@ export function ReportsView({
                       </td>
                       <td className="px-2 py-1.5 text-right font-mono text-[var(--green)]">
                         {r.received.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">
+                        {r.writeOff > 0 ? r.writeOff.toLocaleString("zh-CN", { minimumFractionDigits: 2 }) : "—"}
                       </td>
                       <td
                         className={cn(
