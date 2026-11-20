@@ -43,6 +43,8 @@ const createSchema = z.object({
   phone: z.string().trim().max(30).optional().or(z.literal("")),
   wechat: z.string().trim().max(60).optional().or(z.literal("")),
   organization: z.string().trim().max(80).optional().or(z.literal("")),
+  // 2026-11-22 P2：客户职业/行业（宽表「客户职业及行业信息」）
+  occupation: z.string().trim().max(60).optional().or(z.literal("")),
   source: z.enum(["REFERRAL", "ONLINE", "OFFLINE", "PARTNER", "AD", "OTHER"]).default("OTHER"),
   sourceDetail: z.string().trim().max(120).optional().or(z.literal("")),
   // 2026-11-22 P0-1：具体渠道（优先于 source 聚合）+ 团购/券金额
@@ -100,6 +102,7 @@ export async function createLead(input: z.input<typeof createSchema>) {
       phone: data.phone || null,
       wechat: data.wechat || null,
       organization: data.organization || null,
+      occupation: data.occupation || null,
       source: data.source as LeadSource,
       sourceDetail: data.sourceDetail || null,
       channelId: data.channelId || null,
@@ -210,7 +213,7 @@ export async function listLeads(
     orderBy: [{ updatedAt: "desc" }],
     take: 200,
     select: {
-      id: true, name: true, phone: true, wechat: true, organization: true,
+      id: true, name: true, phone: true, wechat: true, organization: true, occupation: true,
       source: true, sourceDetail: true, stage: true, category: true,
       expectedAmount: true, invitedAt: true, visitedAt: true, consultedAt: true,
       lostReason: true, convertedIntakeId: true, convertedAt: true, notes: true, visitOutcome: true,

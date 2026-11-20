@@ -65,7 +65,7 @@ export function LeadsView({
   // 渠道设置（2026-11-22 P0-1）：渠道必须可配置（AGENTS §五之二），否则新投放平台无处可填
   const [channelPanel, setChannelPanel] = useState(false);
   const [newChannel, setNewChannel] = useState({ name: "", parentId: "" });
-  const [form, setForm] = useState({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "", channelId: "", voucherAmount: "" });
+  const [form, setForm] = useState({ name: "", phone: "", wechat: "", organization: "", occupation: "", source: "REFERRAL", sourceDetail: "", channelId: "", voucherAmount: "" });
 
   useTopbarAction({ label: "新建线索", onClick: () => setCreating(true) }, []);
 
@@ -109,7 +109,7 @@ export function LeadsView({
           toast.success("线索已登记");
         }
         setCreating(false);
-        setForm({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "", channelId: "", voucherAmount: "" });
+        setForm({ name: "", phone: "", wechat: "", organization: "", occupation: "", source: "REFERRAL", sourceDetail: "", channelId: "", voucherAmount: "" });
         router.refresh();
       } catch (err) {
         toast.error("登记失败", { description: actionErrorMessage(err) });
@@ -411,6 +411,7 @@ export function LeadsView({
                 {Object.entries(SOURCE_CN).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
+            <div><Label className="text-[11px]">职业/行业</Label><Input value={form.occupation} onChange={(e) => setForm({ ...form, occupation: e.target.value })} placeholder="如 餐饮 / 房产中介" /></div>
             <div><Label className="text-[11px]">来源细节</Label><Input value={form.sourceDetail} onChange={(e) => setForm({ ...form, sourceDetail: e.target.value })} placeholder="谁介绍的 / 哪个平台" /></div>
             {/* 2026-11-22 P0-1：渠道两级联动（单选才能聚合出按平台的 ROI） */}
             <div>
