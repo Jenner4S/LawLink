@@ -33,6 +33,7 @@ import { audit } from "@/server/audit";
 import { processDueJobs } from "./worker";
 import { scanScheduleReminders } from "@/server/reminders/schedule";
 import { deliverPendingReminders } from "@/server/reminders/delivery";
+import { purgeExternalCallLogs } from "@/server/settings/retention";
 import { scanLeadInviteReminders } from "@/server/leads/reminders";
 import { shParts } from "@/lib/ui/sh-time";
 import { recoverStaleLeases } from "./queue";
@@ -175,6 +176,25 @@ export function registerCronJobs() {
       { timezone: TIMEZONE }
     );
   }
+
+  // 台账保留期（2026-11-22 运行健康巡检）：外部调用台账无上限增长，
+  // 真实使用中会让统计查询变慢。每周日 03:30 清理超期行（默认保留 365 天，可配置）。
+  cron.schedule(
+    "30 3 * * 0",
+    () =>
+      runWithFailureAudit("外部调用台账保留期清理", "EXTERNAL_CALL_LOG_RETENTION_FAILED_CRON", async () => {
+        const res = await purgeExternalCallLogs();
+        if (res.deleted > 0 || res.days === 0) {
+          await audit({
+            userId: null,
+            action: "CALL_LOG_PURGED",
+            targetType: "SystemSetting",
+            targetId: "retention.externalCallLogDays",
+            detail: { days: res.days, cutoff: res.cutoff?.toISOString() ?? null, deleted: res.deleted }
+          });
+        }
+      })
+  );
 
   // v1.x P1-1: 持久队列 worker——每 2 分钟处理到期任务（含失败退避重试）；
   // 启动时先恢复宕机遗留的租约过期任务
