@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
-import { deletePreservationCase } from "@/server/preservations/actions-v2";
+import { deletePreservationCase, deleteTarget, deleteProperty } from "@/server/preservations/actions-v2";
+import { EditTargetDialog, EditPropertyDialog, type EditableTarget, type EditableProperty } from "./preservation-edit-dialogs";
 import {
   PreservationCaseDialog,
   AddTargetDialog,
@@ -146,6 +147,9 @@ function CaseCard({ caseData: cs, expanded, onToggle, matters, users }: { caseDa
   const [addTargetOpen, setAddTargetOpen] = useState(false);
   const [addPropOpen, setAddPropOpen] = useState<string | null>(null);
   const [renewPropOpen, setRenewPropOpen] = useState<string | null>(null);
+  // 2026-11-20：updateTarget / deleteTarget / updateProperty / deleteProperty 此前零引用
+  const [editTarget, setEditTarget] = useState<EditableTarget | null>(null);
+  const [editProp, setEditProp] = useState<EditableProperty | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
   const allProps = cs.targets.flatMap((t) => t.properties);
@@ -184,7 +188,20 @@ function CaseCard({ caseData: cs, expanded, onToggle, matters, users }: { caseDa
               <div className="flex items-center gap-2">
                 <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-sm font-medium">{target.name}</span>
-                <button type="button" onClick={() => setAddPropOpen(target.id)} className="ml-auto text-[11px] text-primary hover:underline">+ 添加财产</button>
+                <button type="button" onClick={() => setEditTarget({ id: target.id, name: target.name, note: (target as { note?: string | null }).note ?? null })} className="ml-auto text-[11px] text-muted-foreground hover:text-foreground">改</button>
+                <button type="button" onClick={async () => {
+                  const ok = await confirmDialog({
+                    title: `删除被保全人「${target.name}」？`,
+                    description: "其名下的财产登记与续保记录会一并删除，不可恢复。若只是姓名写错，请用「改」。",
+                    confirmText: "删除",
+                    danger: true
+                  });
+                  if (!ok) return;
+                  startTransition(async () => {
+                    try { await deleteTarget(target.id); toast.success("已删除"); } catch { toast.error("删除失败"); }
+                  });
+                }} className="text-[11px] text-muted-foreground hover:text-destructive">删</button>
+                <button type="button" onClick={() => setAddPropOpen(target.id)} className="text-[11px] text-primary hover:underline">+ 添加财产</button>
               </div>
               {target.properties.length === 0 ? (
                 <p className="pl-6 text-xs text-muted-foreground">暂无财产记录，点右上方「+ 添加财产」登记标的类型与到期日。</p>
@@ -204,6 +221,14 @@ function CaseCard({ caseData: cs, expanded, onToggle, matters, users }: { caseDa
                         <span className="shrink-0 rounded border px-1.5 py-0 text-[9px]" style={{ borderColor: sc.border, color: sc.text, backgroundColor: sc.bg }}>{PRES_STATUS_CN[prop.status]}</span>
                         {(prop.status === "ACTIVE" || prop.status === "RENEWED") && (
                           <>
+                            <button type="button" onClick={() => setEditProp({ id: prop.id, propertyType: prop.propertyType, propertyDetail: prop.propertyDetail ?? null, amount: prop.amount === null ? null : Number(prop.amount) })} className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground">改</button>
+                            <button type="button" onClick={async () => {
+                              const ok = await confirmDialog({ title: "删除此财产登记？", description: "续保记录会一并删除，不可恢复。若只是类型或金额写错，请用「改」。", confirmText: "删除", danger: true });
+                              if (!ok) return;
+                              startTransition(async () => {
+                                try { await deleteProperty(prop.id); toast.success("已删除"); } catch { toast.error("删除失败"); }
+                              });
+                            }} className="shrink-0 text-[10px] text-muted-foreground hover:text-destructive">删</button>
                             <button type="button" onClick={() => setRenewPropOpen(prop.id)} className="shrink-0 text-[10px] text-primary hover:underline">续保</button>
                             <button type="button" onClick={() => { startTransition(async () => { try { const { liftProperty } = await import("@/server/preservations/actions-v2"); await liftProperty(prop.id); toast.success("已解除"); } catch { toast.error("操作失败"); } }); }} className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground">解除</button>
                           </>
@@ -221,6 +246,8 @@ function CaseCard({ caseData: cs, expanded, onToggle, matters, users }: { caseDa
 
       <PreservationCaseDialog open={editOpen} onOpenChange={setEditOpen} editCase={cs} matters={matters} users={users} />
       <AddTargetDialog open={addTargetOpen} onOpenChange={setAddTargetOpen} caseId={cs.id} />
+      <EditTargetDialog open={editTarget !== null} onOpenChange={(o) => { if (!o) setEditTarget(null); }} target={editTarget} />
+      <EditPropertyDialog open={editProp !== null} onOpenChange={(o) => { if (!o) setEditProp(null); }} property={editProp} />
       {addPropOpen && <AddPropertyDialog open={!!addPropOpen} onOpenChange={(o) => { if (!o) setAddPropOpen(null); }} targetId={addPropOpen} />}
       {renewPropOpen && (() => { const prop = allProps.find((p) => p.id === renewPropOpen); return prop ? <RenewPropertyDialog open={!!renewPropOpen} onOpenChange={(o) => { if (!o) setRenewPropOpen(null); }} property={prop} /> : null; })()}
     </div>

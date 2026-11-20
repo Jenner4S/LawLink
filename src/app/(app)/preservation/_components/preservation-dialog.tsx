@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   createPreservationCase,
+  updatePreservationCase,
   addTarget,
   addProperty,
   renewProperty,
@@ -103,6 +104,23 @@ export function PreservationCaseDialog({
         // 落库天数与到期日同源折算，两字段不再互相矛盾
         const dur = target ? (f.days ?? defaultDurationDays(sd, propertyType)) : undefined;
 
+        // 2026-11-20 修：编辑模式原先也调用 createPreservationCase 且不传 id，
+        // 「保存」实际会新建一条保全，而 toast 说「已更新」——误导性成功比缺功能更糟。
+        if (isEdit && editCase) {
+          await updatePreservationCase({
+            id: editCase.id,
+            matterId: matterId === "__none__" ? null : (matterId || null),
+            type,
+            court,
+            rulingNumber,
+            ownerId: ownerId === "__none__" ? null : (ownerId || null),
+            note
+          });
+          toast.success("已更新");
+          onOpenChange(false);
+          return;
+        }
+
         await createPreservationCase({
           matterId: matterId === "__none__" ? null : (matterId || null),
           type,
@@ -118,7 +136,7 @@ export function PreservationCaseDialog({
           firstDuration: target ? dur : undefined,
           firstExpiryDate: target ? ed : undefined,
         });
-        toast.success(isEdit ? "已更新" : "保全已创建");
+        toast.success("保全已创建");
         reset();
         onOpenChange(false);
       } catch (err) {

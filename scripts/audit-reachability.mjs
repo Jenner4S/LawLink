@@ -122,8 +122,6 @@ const BASELINE = new Set([
   "deleteFeeEntry",
   "deleteFolder",
   "deleteHoliday",
-  "deleteProperty",
-  "deleteTarget",
   "deleteTask",
   "draftDocument",
   "getCauseById",
@@ -161,9 +159,6 @@ const BASELINE = new Set([
   "softDeleteMatter",
   "triggerAuditCleanupNow",
   "unbindPartyEnterprise",
-  "updatePreservationCase",
-  "updateProperty",
-  "updateTarget",
 ]);
 
 const VERDICT = {
