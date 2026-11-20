@@ -299,4 +299,49 @@ export async function convertLeadToIntake(input: { leadId: string; title?: strin
   return { ok: true as const, intakeId };
 }
 
+/**
+ * 线索跟进时间线（2026-11-21）
+ *
+ * 列表上只显示「跟进 N 次」——次数知道了，却点不开看历史。
+ * 而时间线数据一直都在 `LeadActivity` 里（每次操作都落一行），
+ * 这是典型的「数据有了但用不到」：跟进记录的价值全在「上次谈了什么」，
+ * 而不是「谈了几次」。
+ *
+ * 按发生时间倒序（最近的在最上面），与人的回忆顺序一致。
+ */
+export async function listLeadTimeline(leadId: string) {
+  const session = await requireSession("clients.read");
+  void session;
+
+  const id = String(leadId ?? "").trim();
+  if (!id) throw new ActionError("缺少线索标识");
+
+  const lead = await prisma.lead.findUnique({
+    where: { id },
+    select: {
+      id: true, name: true, phone: true, wechat: true, organization: true,
+      stage: true, source: true, sourceDetail: true, category: true,
+      expectedAmount: true, invitedAt: true, visitedAt: true, consultedAt: true,
+      convertedIntakeId: true, convertedAt: true, lostReason: true, lostAt: true,
+      notes: true, createdAt: true,
+      owner: { select: { name: true } }
+    }
+  });
+  if (!lead) throw new ActionError("线索不存在");
+
+  const activities = await prisma.leadActivity.findMany({
+    where: { leadId: id },
+    orderBy: [{ happenedAt: "desc" }, { createdAt: "desc" }],
+    take: 200,
+    select: {
+      id: true, type: true, happenedAt: true, channel: true, note: true,
+      createdBy: { select: { name: true } }
+    }
+  });
+
+  return { lead: { ...lead, expectedAmount: lead.expectedAmount === null ? null : Number(lead.expectedAmount) }, activities };
+}
+
+export type LeadTimeline = Awaited<ReturnType<typeof listLeadTimeline>>;
+
 export type LeadRow = Awaited<ReturnType<typeof listLeads>>[number];

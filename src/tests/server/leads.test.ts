@@ -46,7 +46,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/server/audit", () => ({ audit: vi.fn(async () => {}), auditTx: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
-const { createLead, listLeads, addLeadActivity, markLeadLost, convertLeadToIntake } =
+const { createLead, listLeads, addLeadActivity, markLeadLost, convertLeadToIntake, listLeadTimeline } =
   await import("@/server/leads/actions");
 
 let seq = 0;
@@ -175,5 +175,60 @@ describe("列表口径", () => {
 
     const all = await listLeads({ stage: "ALL" });
     expect(all.some((r) => r.id === lost.id)).toBe(true);
+  });
+});
+
+describe("跟进时间线", () => {
+  it("按发生时间倒序返回，带记录人与类型", async () => {
+    const { id } = await createLead({ name: uid("时间线"), phone: "13900000020" });
+    await addLeadActivity({ leadId: id, type: "CONTACT", note: "第一次电话", happenedAt: new Date("2026-12-01T10:00:00+08:00") });
+    await addLeadActivity({ leadId: id, type: "INVITE", note: "约周三", happenedAt: new Date("2026-12-02T10:00:00+08:00") });
+    await addLeadActivity({ leadId: id, type: "NOTE", note: "补录备注", happenedAt: new Date("2026-11-30T10:00:00+08:00") });
+
+    const tl = await listLeadTimeline(id);
+    // 最近的排最上（与人的回忆顺序一致）
+    expect(tl.activities.map((a) => a.type)).toEqual(["INVITE", "CONTACT", "NOTE"]);
+    expect(tl.activities[0].note).toBe("约周三");
+    expect(tl.activities[0].createdBy.name).toBe("张律师");
+  });
+
+  it("带出线索基本信息（阶段、跟进人、联系方式、登记时间）", async () => {
+    const { id } = await createLead({ name: uid("信息"), phone: "13900000021", expectedAmount: 12000 });
+    const tl = await listLeadTimeline(id);
+    expect(tl.lead.stage).toBe("LEAD");
+    expect(tl.lead.owner.name).toBe("张律师");
+    expect(tl.lead.phone).toBe("13900000021");
+    expect(tl.lead.expectedAmount).toBe(12000);
+    expect(tl.lead.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("转收案后时间线仍可读，并带出收案关联", async () => {
+    const { id } = await createLead({ name: uid("已转化"), phone: "13900000022" });
+    await addLeadActivity({ leadId: id, type: "VISIT" });
+    await addLeadActivity({ leadId: id, type: "CONSULT" });
+    const { intakeId } = await convertLeadToIntake({ leadId: id });
+    const tl = await listLeadTimeline(id);
+    expect(tl.lead.stage).toBe("CONVERTED");
+    expect(tl.lead.convertedIntakeId).toBe(intakeId);
+    expect(tl.activities).toHaveLength(2);
+  });
+
+  it("线索不存在 → 明确报错（不是静默空时间线）", async () => {
+    await expect(listLeadTimeline("nonexistent-cuid")).rejects.toThrow("线索不存在");
+  });
+
+  it("缺少标识 → 报错", async () => {
+    await expect(listLeadTimeline("")).rejects.toThrow("缺少线索标识");
+  });
+
+  it("只返回本线索的动作，不串到别的线索", async () => {
+    const a = await createLead({ name: uid("甲"), phone: "13900000023" });
+    const b = await createLead({ name: uid("乙"), phone: "13900000024" });
+    await addLeadActivity({ leadId: a.id, type: "CONTACT", note: "甲的记录" });
+    await addLeadActivity({ leadId: b.id, type: "CONTACT", note: "乙的记录" });
+
+    const tlA = await listLeadTimeline(a.id);
+    expect(tlA.activities).toHaveLength(1);
+    expect(tlA.activities[0].note).toBe("甲的记录");
   });
 });

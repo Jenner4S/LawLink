@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTopbarAction } from "@/components/layout/topbar-action";
+import { LeadTimelineDialog } from "./lead-timeline-dialog";
 import { promptDialog } from "@/components/patterns/confirm-dialog";
 import { formatDateTime } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
@@ -35,6 +36,7 @@ export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFun
   const [filter, setFilter] = useState<Filter>("OPEN");
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "" });
 
   useTopbarAction({ label: "新建线索", onClick: () => setCreating(true) }, []);
@@ -259,7 +261,16 @@ export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFun
                     {l.sourceDetail ? <div className="text-[10px] text-[var(--t-muted)]">{l.sourceDetail}</div> : null}
                   </td>
                   <td><span className={`badge ${STAGE_CLS[l.stage] ?? "b-slate"}`} style={{ fontSize: 10 }}>{STAGE_CN[l.stage] ?? l.stage}</span></td>
-                  <td className="text-[11px] text-[var(--t-muted)]">{l.activityCount} 次</td>
+                  <td className="text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setDetailId(l.id)}
+                      className="underline decoration-dotted text-[var(--t-muted)] hover:text-[var(--t-strong)]"
+                      title="查看跟进时间线"
+                    >
+                      {l.activityCount} 次
+                    </button>
+                  </td>
                   <td className="text-[11.5px]">{l.owner.name}</td>
                   <td className="text-[11px] text-[var(--t-muted)]">{formatDateTime(l.updatedAt)}</td>
                   <td>
@@ -293,6 +304,12 @@ export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFun
           </table>
         </div>
       )}
+
+      <LeadTimelineDialog
+        leadId={detailId}
+        open={detailId !== null}
+        onOpenChange={(v) => { if (!v) setDetailId(null); }}
+      />
     </div>
   );
 }
