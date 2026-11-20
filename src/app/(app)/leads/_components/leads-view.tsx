@@ -12,6 +12,7 @@ import { promptDialog } from "@/components/patterns/confirm-dialog";
 import { formatDateTime } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
 import { addLeadActivity, convertLeadToIntake, createLead, markLeadLost, type LeadRow } from "@/server/leads/actions";
+import type { LeadFunnel } from "@/server/leads/analytics";
 
 const STAGE_CN: Record<string, string> = {
   LEAD: "线索", INVITED: "已邀约", VISITED: "已到店",
@@ -28,7 +29,7 @@ const SOURCE_CN: Record<string, string> = {
 
 type Filter = "OPEN" | "CONVERTED" | "LOST" | "ALL";
 
-export function LeadsView({ leads }: { leads: LeadRow[] }) {
+export function LeadsView({ leads, funnel }: { leads: LeadRow[]; funnel: LeadFunnel }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<Filter>("OPEN");
@@ -120,8 +121,77 @@ export function LeadsView({ leads }: { leads: LeadRow[] }) {
     });
   };
 
+  // 比率显示：null（分母为 0）显示「—」，不显示 0%——0% 会被误读成「一个都没成」
+  const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
+
   return (
     <div className="mo-page">
+      {/* 获客看板（阶段二）：分母口径 = 本月新增线索，见 analytics.ts 文件头 */}
+      <div className="card mb-3 p-4">
+        <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+          <span className="text-[13px] font-medium">本月获客漏斗</span>
+          <span className="text-[10.5px] text-[var(--t-muted)]">
+            分母＝本月新增线索（{funnel.total} 条）。用「本月转化的数量 ÷ 本月线索数」会因跨期成交超过 100%，故不采用。
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-[11.5px] sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            { label: "新增线索", value: String(funnel.total), sub: `预计 ¥${funnel.expectedAmount.toLocaleString()}` },
+            { label: "已邀约", value: String(funnel.invited), sub: `邀约率 ${pct(funnel.inviteRate)}` },
+            { label: "已到店", value: String(funnel.visited), sub: `到店率 ${pct(funnel.visitRate)}` },
+            { label: "已谈案", value: String(funnel.consulted), sub: "由动作记录统计" },
+            { label: "已转收案", value: String(funnel.converted), sub: `转化率 ${pct(funnel.conversionRate)}` },
+            { label: "转化天数", value: funnel.medianDaysToConvert === null ? "—" : `${funnel.medianDaysToConvert} 天`, sub: "中位数" }
+          ].map((k) => (
+            <div key={k.label} className="rounded border border-[var(--line)] px-3 py-2">
+              <div className="text-[10px] text-[var(--t-muted)]">{k.label}</div>
+              <div className="font-mono tabular text-[15px]">{k.value}</div>
+              <div className="text-[9.5px] text-[var(--t-muted)]">{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {funnel.total > 0 ? (
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div>
+              <div className="mb-1 text-[11px] text-[var(--t-muted)]">按来源</div>
+              <div className="space-y-0.5">
+                {funnel.bySource.map((r) => (
+                  <div key={r.source} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-16 shrink-0">{SOURCE_CN[r.source] ?? r.source}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded bg-[var(--surface-sunken,rgba(0,0,0,.04))]">
+                      <div className="h-full rounded bg-[var(--teal-deep,#0f766e)]" style={{ width: `${funnel.total ? (r.total / funnel.total) * 100 : 0}%` }} />
+                    </div>
+                    <span className="w-16 shrink-0 text-right tabular text-[var(--t-muted)]">{r.total} 条 · {pct(r.conversionRate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-[11px] text-[var(--t-muted)]">按负责人</div>
+              <div className="space-y-0.5">
+                {funnel.byOwner.map((r) => (
+                  <div key={r.ownerId} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-16 shrink-0 truncate">{r.ownerName}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded bg-[var(--surface-sunken,rgba(0,0,0,.04))]">
+                      <div className="h-full rounded bg-[var(--bronze,#a16207)]" style={{ width: `${funnel.total ? (r.total / funnel.total) * 100 : 0}%` }} />
+                    </div>
+                    <span className="w-16 shrink-0 text-right tabular text-[var(--t-muted)]">{r.total} 条 · {pct(r.conversionRate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {funnel.lostReasons.length > 0 ? (
+          <div className="mt-2 text-[10.5px] text-[var(--t-muted)]">
+            本月流失 {funnel.lost} 条：
+            {funnel.lostReasons.map((r) => `${r.reason}（${r.count}）`).join("、")}
+          </div>
+        ) : null}
+      </div>
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {([["OPEN", "在途"], ["CONVERTED", "已转收案"], ["LOST", "已流失"], ["ALL", "全部"]] as [Filter, string][]).map(([k, label]) => (
           <button
