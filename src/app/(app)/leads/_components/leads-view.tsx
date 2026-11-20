@@ -13,7 +13,9 @@ import { promptDialog } from "@/components/patterns/confirm-dialog";
 import { formatDateTime } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
 import { addLeadActivity, convertLeadToIntake, createLead, markLeadLost, type LeadRow } from "@/server/leads/actions";
+import { createLeadChannel, toggleLeadChannel } from "@/server/leads/channels-actions";
 import type { LeadFunnel } from "@/server/leads/analytics";
+import type { ChannelNode } from "@/server/leads/channels";
 
 const STAGE_CN: Record<string, string> = {
   LEAD: "线索", INVITED: "已邀约", VISITED: "已到店",
@@ -33,12 +35,15 @@ type Filter = "OPEN" | "CONVERTED" | "LOST" | "ALL";
 export function LeadsView({
   leads,
   funnel,
-  owners
+  owners,
+  channels
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
   /** 在途线索的负责人（含人数），用于按人筛选；口径与列表默认一致 */
   owners: { ownerId: string; ownerName: string; count: number }[];
+  /** 两级渠道树（2026-11-22 P0-1） */
+  channels: ChannelNode[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -47,7 +52,10 @@ export function LeadsView({
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "" });
+  // 渠道设置（2026-11-22 P0-1）：渠道必须可配置（AGENTS §五之二），否则新投放平台无处可填
+  const [channelPanel, setChannelPanel] = useState(false);
+  const [newChannel, setNewChannel] = useState({ name: "", parentId: "" });
+  const [form, setForm] = useState({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "", channelId: "", voucherAmount: "" });
 
   useTopbarAction({ label: "新建线索", onClick: () => setCreating(true) }, []);
 
@@ -73,7 +81,12 @@ export function LeadsView({
     if (!form.phone.trim() && !form.wechat.trim()) { toast.error("请至少填写电话或微信"); return; }
     startTransition(async () => {
       try {
-        const res = await createLead({ ...form, source: form.source as never });
+        const res = await createLead({
+          ...form,
+          source: form.source as never,
+          channelId: form.channelId,
+          voucherAmount: form.voucherAmount ? Number(form.voucherAmount) : undefined
+        });
         // 2026-11-22 P0-2：同号可能已有人跟过（撞单/老客户复询）——提示但不阻断
         if (res.duplicates && res.duplicates.length > 0) {
           const first = res.duplicates[0];
@@ -86,7 +99,7 @@ export function LeadsView({
           toast.success("线索已登记");
         }
         setCreating(false);
-        setForm({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "" });
+        setForm({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "", channelId: "", voucherAmount: "" });
         router.refresh();
       } catch (err) {
         toast.error("登记失败", { description: actionErrorMessage(err) });
@@ -195,6 +208,23 @@ export function LeadsView({
               </div>
             </div>
             <div>
+              <div className="mb-1 text-[11px] text-[var(--t-muted)]">按渠道（决定钱往哪投）</div>
+              <div className="space-y-0.5">
+                {funnel.byChannel.slice(0, 6).map((r) => (
+                  <div key={r.key} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-28 shrink-0 truncate" title={r.label}>{r.label}</span>
+                    <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
+                      {r.total} 条 · 到店 {r.visited} · 成交 {r.converted}
+                    </span>
+                    <span className="w-20 shrink-0 text-right tabular">{pct(r.conversionRate)}</span>
+                    {r.voucherAmount > 0 ? (
+                      <span className="w-16 shrink-0 text-right tabular text-[var(--t-muted)]">券 ¥{r.voucherAmount}</span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
               <div className="mb-1 text-[11px] text-[var(--t-muted)]">按负责人</div>
               <div className="space-y-0.5">
                 {funnel.byOwner.map((r) => (
@@ -248,6 +278,92 @@ export function LeadsView({
         </span>
       </div>
 
+      <div className="mb-2">
+        <button
+          type="button"
+          onClick={() => setChannelPanel((v) => !v)}
+          className="text-[11px] text-[var(--t-muted)] underline decoration-dotted"
+        >
+          {channelPanel ? "收起渠道设置" : "渠道设置"}
+        </button>
+      </div>
+
+      {channelPanel ? (
+        <div className="card mb-3 p-4">
+          <p className="mb-1 text-[13px] font-medium">渠道（两级）</p>
+          <p className="mb-2 text-[10.5px] text-[var(--t-muted)]">
+            渠道做成单选才能聚合出「某平台本月来多少条、成交几单」。停用不删除——历史线索仍指向它。
+          </p>
+          <div className="mb-2 space-y-1">
+            {channels.map((c) => (
+              <div key={c.id} className="text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => startTransition(async () => {
+                    await toggleLeadChannel({ id: c.id, active: !c.active }).catch((e) => toast.error(actionErrorMessage(e)));
+                    router.refresh();
+                  })}
+                  className={c.active ? "" : "line-through text-[var(--t-muted)]"}
+                  title="点击启用/停用"
+                >
+                  {c.name}
+                </button>
+                {c.children.length > 0 ? (
+                  <span className="ml-2 text-[var(--t-muted)]">
+                    {c.children.map((x) => (
+                      <button
+                        key={x.id}
+                        type="button"
+                        onClick={() => startTransition(async () => {
+                          await toggleLeadChannel({ id: x.id, active: !x.active }).catch((e) => toast.error(actionErrorMessage(e)));
+                          router.refresh();
+                        })}
+                        className={`ml-1 underline decoration-dotted ${x.active ? "" : "line-through opacity-50"}`}
+                        title="点击启用/停用"
+                      >
+                        {x.name}
+                      </button>
+                    ))}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              className="h-7 w-40 text-[11px]"
+              placeholder="新渠道名称"
+              value={newChannel.name}
+              onChange={(e) => setNewChannel({ ...newChannel, name: e.target.value })}
+            />
+            <select
+              className="input h-7 text-[11px]"
+              value={newChannel.parentId}
+              onChange={(e) => setNewChannel({ ...newChannel, parentId: e.target.value })}
+            >
+              <option value="">作为一级渠道</option>
+              {channels.map((c) => <option key={c.id} value={c.id}>挂在「{c.name}」下</option>)}
+            </select>
+            <Button
+              size="sm"
+              disabled={isPending || !newChannel.name.trim()}
+              onClick={() => startTransition(async () => {
+                try {
+                  await createLeadChannel({ name: newChannel.name, parentId: newChannel.parentId || undefined });
+                  toast.success("渠道已添加");
+                  setNewChannel({ name: "", parentId: "" });
+                  router.refresh();
+                } catch (err) {
+                  toast.error("添加失败", { description: actionErrorMessage(err) });
+                }
+              })}
+            >
+              添加
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {creating ? (
         <div className="card mb-3 p-4">
           <p className="mb-2 text-[13px] font-medium">新建线索</p>
@@ -262,6 +378,30 @@ export function LeadsView({
               </select>
             </div>
             <div><Label className="text-[11px]">来源细节</Label><Input value={form.sourceDetail} onChange={(e) => setForm({ ...form, sourceDetail: e.target.value })} placeholder="谁介绍的 / 哪个平台" /></div>
+            {/* 2026-11-22 P0-1：渠道两级联动（单选才能聚合出按平台的 ROI） */}
+            <div>
+              <Label className="text-[11px]">渠道</Label>
+              <select className="input" value={form.channelId} onChange={(e) => setForm({ ...form, channelId: e.target.value })}>
+                <option value="">未指定</option>
+                {channels.filter((c) => c.active).map((c) => (
+                  <optgroup key={c.id} label={c.name}>
+                    {c.children.filter((x) => x.active).map((x) => (
+                      <option key={x.id} value={x.id}>{c.name} / {x.name}</option>
+                    ))}
+                    <option value={c.id}>{c.name}（一级）</option>
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-[11px]">团购/券金额</Label>
+              <Input
+                value={form.voucherAmount}
+                onChange={(e) => setForm({ ...form, voucherAmount: e.target.value })}
+                placeholder="如 99"
+                inputMode="decimal"
+              />
+            </div>
           </div>
           <div className="mt-3 flex gap-2">
             <Button size="sm" onClick={submitCreate} disabled={isPending} className="gap-1">

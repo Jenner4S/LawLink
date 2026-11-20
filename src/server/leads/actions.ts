@@ -45,6 +45,9 @@ const createSchema = z.object({
   organization: z.string().trim().max(80).optional().or(z.literal("")),
   source: z.enum(["REFERRAL", "ONLINE", "OFFLINE", "PARTNER", "AD", "OTHER"]).default("OTHER"),
   sourceDetail: z.string().trim().max(120).optional().or(z.literal("")),
+  // 2026-11-22 P0-1：具体渠道（优先于 source 聚合）+ 团购/券金额
+  channelId: z.string().trim().optional().or(z.literal("")),
+  voucherAmount: z.coerce.number().nonnegative().max(1_000_000).optional(),
   category: z.string().trim().min(1).default("CIVIL_COMMERCIAL"),
   expectedAmount: z.coerce.number().nonnegative().max(1_000_000_000).optional(),
   notes: z.string().trim().max(1000).optional().or(z.literal(""))
@@ -99,6 +102,8 @@ export async function createLead(input: z.input<typeof createSchema>) {
       organization: data.organization || null,
       source: data.source as LeadSource,
       sourceDetail: data.sourceDetail || null,
+      channelId: data.channelId || null,
+      voucherAmount: data.voucherAmount ?? null,
       category: data.category as MatterCategory,
       expectedAmount: data.expectedAmount ?? null,
       ownerId: session.user.id,
@@ -189,6 +194,7 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
       expectedAmount: true, invitedAt: true, visitedAt: true, consultedAt: true,
       lostReason: true, convertedIntakeId: true, convertedAt: true, notes: true, visitOutcome: true,
       ownerId: true, owner: { select: { name: true } }, updatedAt: true,
+      channelId: true, voucherAmount: true, channel: { select: { id: true, name: true, parent: { select: { name: true } } } },
       _count: { select: { activities: true } }
     }
   });
@@ -205,6 +211,7 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
   return rows.map((r) => ({
     ...r,
     expectedAmount: r.expectedAmount === null ? null : Number(r.expectedAmount),
+    voucherAmount: r.voucherAmount === null ? null : Number(r.voucherAmount),
     activityCount: r._count.activities,
     /** 列表内同号的其它线索数（0 = 不重复） */
     phoneDuplicateCount: (() => {

@@ -3644,6 +3644,48 @@ enum LeadStage {
   LOST // 流失
 }
 
+/// 投放/获客渠道（2026-11-22 对标分析 P0-1）
+///
+/// ## 为什么必须独立成表，而不是给 Lead 加两个文本字段
+///
+/// 客户现行系统里「渠道 + 二级渠道」是**单选**（本地生活 / 大众点评）。
+/// 单选才能聚合出「大众点评这个月来 40 条、成交 3 单」——这正是他把字段做成
+/// 单选而不是备注的原因。LawLink 此前只有固定枚举 + sourceDetail 自由文本，
+/// 于是导不出按平台的 ROI。
+///
+/// ## 两级自引用
+///
+/// parentId 为空＝一级渠道（如「本地生活」）；有值＝二级渠道（如「大众点评」）。
+/// 只做两级：客户截图里也只有两级，再多一层在这个规模上没有收益。
+///
+/// Lead.source 枚举保留：它是**来源大类**（转介绍/网络/地推…），与具体投放平台是
+/// 不同粒度，且历史数据用它。聚合时优先 channelId，为空回退 source。
+enum LeadChannelKind {
+  PAID // 付费投放（本地生活团购、信息流）
+  ORGANIC // 自然流量（搜索、公众号）
+  REFERRAL // 转介绍
+  PARTNER // 合作机构
+  OTHER // 其他
+}
+
+model LeadChannel {
+  id        String          @id @default(cuid())
+  name      String
+  /// 两级：空＝一级；有值＝二级
+  parentId  String?
+  parent    LeadChannel?    @relation("LeadChannelTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  LeadChannel[]   @relation("LeadChannelTree")
+  kind      LeadChannelKind @default(OTHER)
+  active    Boolean         @default(true)
+  sort      Int             @default(0)
+  leads     Lead[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([parentId, name])
+  @@index([parentId, active, sort])
+}
+
 enum LeadSource {
   REFERRAL // 老客户转介绍
   ONLINE // 网络/搜索/公众号
@@ -3688,6 +3730,12 @@ model Lead {
   source            LeadSource       @default(OTHER)
   /// 来源细节（谁介绍的、哪个平台、哪场活动）
   sourceDetail      String?
+  /// 具体渠道（2026-11-22 P0-1）：优先于 source 用于投放 ROI 聚合
+  channelId         String?
+  channel           LeadChannel?     @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  /// 团购/券金额（2026-11-22 P0-1）：客户在平台买的咨询/面谈券金额。
+  /// 口径待业主确认（收入侧 or 成本侧），当前只存不参与计算。
+  voucherAmount     Decimal?         @db.Decimal(14, 2)
   stage             LeadStage        @default(LEAD)
   /// 意向业务类别，与 MatterCategory 同枚举，便于按类别算转化率
   category          MatterCategory   @default(CIVIL_COMMERCIAL)

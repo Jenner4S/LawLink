@@ -57,6 +57,20 @@ export type LeadFunnel = {
   /** 已转收案的线索的预计金额合计 */
   convertedAmount: number;
   bySource: { source: LeadSource; total: number; converted: number; conversionRate: number | null }[];
+  /**
+   * 按**渠道**聚合（2026-11-22 P0-1）。这是客户做那张表的初衷：决定钱往哪投。
+   * 优先用 channelId（一级渠道名，二级用「一级 / 二级」表示）；为空回退 source 枚举文案。
+   * voucherAmount 为该渠道本期券金额合计（口径待业主确认，只展示不参与比率）。
+   */
+  byChannel: {
+    key: string;
+    label: string;
+    total: number;
+    visited: number;
+    converted: number;
+    voucherAmount: number;
+    conversionRate: number | null;
+  }[];
   byOwner: { ownerId: string; ownerName: string; total: number; converted: number; conversionRate: number | null }[];
   lostReasons: { reason: string; count: number }[];
 };
@@ -73,6 +87,8 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
       id: true, stage: true, source: true, ownerId: true,
       owner: { select: { name: true } },
       expectedAmount: true, convertedAt: true, createdAt: true, lostReason: true, visitOutcome: true,
+      channelId: true, voucherAmount: true,
+      channel: { select: { name: true, parent: { select: { name: true } } } },
       activities: { select: { type: true } }
     }
   });
@@ -89,6 +105,7 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
   const daysToConvert: number[] = [];
 
   const sourceAgg = new Map<LeadSource, { total: number; converted: number }>();
+  const channelAgg = new Map<string, { label: string; total: number; visited: number; converted: number; voucherAmount: number }>();
   const ownerAgg = new Map<string, { ownerName: string; total: number; converted: number }>();
   const lostAgg = new Map<string, number>();
 
@@ -119,6 +136,18 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
     s.total += 1;
     if (isConverted) s.converted += 1;
     sourceAgg.set(lead.source, s);
+
+    // 渠道聚合：有 channelId 用它（更细），否则回退 source 枚举（存量数据）
+    const chKey = lead.channelId ?? `SRC:${lead.source}`;
+    const chLabel = lead.channel
+      ? (lead.channel.parent ? `${lead.channel.parent.name} / ${lead.channel.name}` : lead.channel.name)
+      : `（未指定渠道·来源 ${lead.source}）`;
+    const ch = channelAgg.get(chKey) ?? { label: chLabel, total: 0, visited: 0, converted: 0, voucherAmount: 0 };
+    ch.total += 1;
+    if (lead.visitOutcome === "ARRIVED") ch.visited += 1;
+    if (isConverted) ch.converted += 1;
+    if (lead.voucherAmount !== null) ch.voucherAmount += Number(lead.voucherAmount);
+    channelAgg.set(chKey, ch);
 
     const o = ownerAgg.get(lead.ownerId) ?? { ownerName: lead.owner.name, total: 0, converted: 0 };
     o.total += 1;
@@ -159,6 +188,17 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
     convertedAmount: Math.round(convertedAmount * 100) / 100,
     bySource: [...sourceAgg.entries()]
       .map(([source, v]) => ({ source, total: v.total, converted: v.converted, conversionRate: rate(v.converted, v.total) }))
+      .sort((a, b) => b.total - a.total),
+    byChannel: [...channelAgg.entries()]
+      .map(([key, v]) => ({
+        key,
+        label: v.label,
+        total: v.total,
+        visited: v.visited,
+        converted: v.converted,
+        voucherAmount: Math.round(v.voucherAmount * 100) / 100,
+        conversionRate: rate(v.converted, v.total)
+      }))
       .sort((a, b) => b.total - a.total),
     byOwner: [...ownerAgg.entries()]
       .map(([ownerId, v]) => ({ ownerId, ownerName: v.ownerName, total: v.total, converted: v.converted, conversionRate: rate(v.converted, v.total) }))

@@ -1,5 +1,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { listLeadOwners, listLeads } from "@/server/leads/actions";
+import { listLeadChannels } from "@/server/leads/channels";
+import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
 import { LeadsView } from "./_components/leads-view";
 
@@ -12,11 +14,15 @@ import { LeadsView } from "./_components/leads-view";
  */
 export default async function LeadsPage() {
   await requireSession("clients.read");
-  const [leads, funnel, owners] = await Promise.all([
+  // 首次进入自动预置常用渠道（幂等）：空表意味着没人建，等于没这个功能
+  await ensureDefaultChannels().catch(() => ({ created: 0 }));
+  const [leads, funnel, owners, channels] = await Promise.all([
     listLeads({ stage: "ALL" }),
-    getLeadFunnel(),
-    listLeadOwners()
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
+    getLeadFunnel(),
+    listLeadOwners(),
+    // 2026-11-22 P0-1：两级渠道树
+    listLeadChannels()
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} />;
 }
