@@ -16,14 +16,11 @@
 
 import { prisma } from "@/lib/prisma";
 
+/**
+ * 角色中文名只在界面下拉里用（那边已有自己的常量），服务端不需要第二份 ——
+ * 两份并存必然有一天只改一处。故此处不导出标签表。
+ */
 export type CommissionRoleKey = "REFERRER" | "INVITER" | "CLOSER" | "OTHER";
-
-export const COMMISSION_ROLE_LABEL: Record<CommissionRoleKey, string> = {
-  REFERRER: "案源人",
-  INVITER: "邀约人",
-  CLOSER: "面谈签约人",
-  OTHER: "其他"
-};
 
 export type RoleSuggestion = {
   role: CommissionRoleKey;

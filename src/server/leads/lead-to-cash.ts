@@ -25,7 +25,6 @@
  * · 不与财务台账对账替代：这里是**派生视图**，权威数仍在财务页与台账。
  */
 
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type LeadToCash = {
@@ -135,16 +134,3 @@ export async function getLeadToCash(input: { start: Date; end: Date }): Promise<
   };
 }
 
-/** 供测试与调用方复用的空值形态，避免各处各写一份 0/null */
-export const EMPTY_LEAD_TO_CASH: LeadToCash = {
-  leadCount: 0,
-  convertedCount: 0,
-  signedMatterCount: 0,
-  paidMatterCount: 0,
-  contractAmount: 0,
-  receivedAmount: 0,
-  collectionRate: null,
-  leadToCashRate: null
-};
-
-export type { Prisma };

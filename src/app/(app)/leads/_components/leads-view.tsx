@@ -275,7 +275,11 @@ export function LeadsView({
                     {/* 单位成本（2026-11-22）：只做成本，不做 ROI 比率——
                         收入侧没有可信数据，混进来会把"线索质量"和"客单价"搅在一起。
                         分母为 0 或未录券金额时显示「—」，不显示 0（0 成本会被误读成"不花钱"）。 */}
-                    <span className="w-24 shrink-0 text-right tabular">
+                    {/* 单到店成本也已算好，但列宽不够就放 title 里——信息可得、不挤版面 */}
+                    <span
+                      className="w-24 shrink-0 text-right tabular"
+                      title={`单到店成本 ${r.costPerVisit === null ? "—" : `¥${r.costPerVisit}`}`}
+                    >
                       {r.costPerLead === null ? "—" : `¥${r.costPerLead}`}
                       {" / "}
                       {r.costPerConverted === null ? "—" : `¥${r.costPerConverted}`}
