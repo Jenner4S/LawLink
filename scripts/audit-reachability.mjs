@@ -168,7 +168,6 @@ const BASELINE = new Set([
   "updatePreservationCase",
   "updateProperty",
   "updateTarget",
-  "updateTask"
 ]);
 
 const VERDICT = {
@@ -178,6 +177,10 @@ const VERDICT = {
 
   // ── 有意：财务页明示「已入账记录不可直接删除」，更正走冲正/退回 ──
   deleteFeeEntry: ["intentional", "财务页明示已入账不可直接删除；更正走 rejectFeeEntry / 冲正"],
+  // 2026-11-22 判定：不是缺口。responsibilityReady 只查 WorkResponsibility 表是否存在，
+  // 该表由 0_init 迁移创建、生产恒为真 → deleteTask 第一句就抛错。
+  // 取消任务走责任面板 CANCEL。给它补按钮只会得到一个永远失败的按钮。
+  deleteTask: ["dead", "责任面板启用后被 CANCEL 取代；首句守卫恒抛错，函数体不可达。应删除而非补入口"],
   deleteBilling: ["intentional", "合同删除未开放，避免破坏已签署事实与分成依据"],
 
   // ── 有意：建案动线是「收案 → 转正式案件」 ──
@@ -224,7 +227,13 @@ const VERDICT = {
   //   下面这些**没有可达的同类替代**，也就是说：功能写好了，但用户点不到。
   //   需要维护者决定「补入口」还是「删掉」，本脚本不预设答案：
   //
-  //   · updateTask / deleteTask —— 建了任务后无法改标题、无法删（只能勾办结）
+  //   · updateTask —— **2026-11-22 已补入口**（案件办案进程待办行的「改」按钮，
+  //       见 task-edit-dialog.tsx）；已从 BASELINE 移除，将来 UI 被删会重新报警。
+  //   · deleteTask —— **不是缺口，是设计性死代码**：`responsibilityReady` 只判断
+  //       `WorkResponsibility` 表是否存在，该表由 0_init 迁移创建、生产恒为真，
+  //       所以 deleteTask 第一句就抛「请在事项责任面板取消任务并填写原因，原记录保留」。
+  //       取消任务要走责任面板的 CANCEL 动作。**不要给它补按钮**（会是一个永远失败的按钮），
+  //       真正的处理是删掉这个函数或让它退役。
   //   · updateNote / deleteNote —— 记录写了不能改不能删
   //   · updateFirmFile / getFirmFileVersionHistory —— 律所文书只能新增与删除，不能更新、看不到版本历史
   //   · bindPartyToEnterprise / unbindPartyEnterprise / getEnterpriseSummaryByParty —— 工商绑定只写在服务层

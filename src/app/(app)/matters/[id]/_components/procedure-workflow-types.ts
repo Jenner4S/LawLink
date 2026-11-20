@@ -253,6 +253,11 @@ export type ActionItem = {
   meta: string;
   priority: number;
   taskId?: string;
+  // 2026-11-22：任务编辑需要回填原值。**assigneeId 必须原样回传**——
+  // updateTask 会比对该字段，省略或改动都会抛「变更责任人请从事项责任面板发起交接」。
+  assigneeId?: string | null;
+  description?: string | null;
+  stageId?: string | null;
   deadlineId?: string;
   memoId?: string;
   pendingConfirm?: boolean;

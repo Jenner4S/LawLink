@@ -57,6 +57,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { uploadDocument } from "@/server/documents/actions";
 import { createTask, toggleTaskCompleted } from "@/server/tasks/actions";
+import { TaskEditDialog, type EditableTask } from "./task-edit-dialog";
 import { createProcedureStage, deleteProcedureMemo, ensureProcedureStage, removeProcedureStage, toggleDeadlineCompleted, toggleProcedureMemo } from "@/server/procedures/actions";
 import { deleteExpress } from "@/server/express/actions";
 import type { ExpressItem } from "./info-extras";
@@ -233,6 +234,8 @@ export function ProcedureWorkflowPanel({
   const [stageCreateOpen, setStageCreateOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [uploadSignal, setUploadSignal] = useState(0);
+  // 任务编辑（2026-11-22）：updateTask 此前零界面入口
+  const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
   const [, startStageRemovalTransition] = useTransition();
 
   const stages = useMemo(
@@ -420,6 +423,18 @@ export function ProcedureWorkflowPanel({
               onAddTask={procedure && selectedStage ? () => setTaskStage(selectedStage) : undefined}
               onAddDeadline={procedure ? () => setDeadlineOpen(true) : undefined}
               onAddHearing={procedure && onAddLedger ? () => onAddLedger("hearing") : undefined}
+              onEditTask={(item) =>
+                setEditingTask({
+                  id: item.taskId!,
+                  matterId: matter.id,
+                  title: item.title,
+                  description: item.description ?? null,
+                  dueAt: item.at,
+                  priority: item.priority,
+                  stageId: item.stageId ?? null,
+                  assigneeId: item.assigneeId ?? null
+                })
+              }
             />
           ) : (
           <ArchiveGlance
@@ -485,6 +500,12 @@ export function ProcedureWorkflowPanel({
           defaultProcedureId={procedure.id}
         />
       ) : null}
+      {/* 任务编辑（2026-11-22）：updateTask 此前零界面入口，建错了改不了 */}
+      <TaskEditDialog
+        open={editingTask !== null}
+        onOpenChange={(o) => { if (!o) setEditingTask(null); }}
+        task={editingTask}
+      />
     </>
   );
 }
@@ -769,7 +790,8 @@ function NextActions({
   waiting,
   onAddTask,
   onAddDeadline,
-  onAddHearing
+  onAddHearing,
+  onEditTask
 }: {
   /** 侧栏紧凑排布（办案进程页签） */
   compact?: boolean;
@@ -779,6 +801,8 @@ function NextActions({
   canManage: boolean;
   waiting: WaitingItem[];
   onAddTask?: () => void;
+  /** 任务编辑入口（2026-11-22）：由主面板持有状态并渲染对话框 */
+  onEditTask?: (item: ActionItem) => void;
   onAddDeadline?: () => void;
   onAddHearing?: () => void;
 }) {
@@ -841,9 +865,19 @@ function NextActions({
               </span>
               <span className="ops">
                 {canManage && item.kind === "task" && item.taskId ? (
-                  <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => run(() => toggleTaskCompleted(item.taskId!), "任务已完成，已记入记录")}>
-                    完成
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={pending}
+                      onClick={() => onEditTask?.(item)}
+                    >
+                      改
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => run(() => toggleTaskCompleted(item.taskId!), "任务已完成，已记入记录")}>
+                      完成
+                    </button>
+                  </>
                 ) : null}
                 {canManage && item.kind === "memo" && item.memoId ? (
                   <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => run(() => toggleProcedureMemo(item.memoId!), "已办结，转入记录")}>

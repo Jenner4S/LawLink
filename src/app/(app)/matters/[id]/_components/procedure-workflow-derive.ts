@@ -91,7 +91,10 @@ export function buildActionItems(procedure: WorkflowProcedure | null, stages: Wo
         stageName: stage.name,
         meta: [assignee ? `指派 ${assignee}` : "未指派", task.description?.trim() || null].filter(Boolean).join(" · "),
         priority: task.priority,
-        taskId: task.id
+        taskId: task.id,
+        assigneeId: task.assigneeId,
+        description: task.description,
+        stageId: task.stageId
       });
     }
   }

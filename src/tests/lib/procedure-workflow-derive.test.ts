@@ -74,6 +74,37 @@ describe("buildActionItems", () => {
     expect(items.map((i) => i.title)).toEqual(["未完成任务"]);
   });
 
+  it("任务卡片带回编辑所需的原值（责任人/说明/环节）——编辑对话框靠它回填", () => {
+    // 2026-11-22：updateTask 补了界面入口。编辑表单必须原样拿到这四个字段，
+    // 尤其 assigneeId —— updateTask 会比对它，缺失或改动都会抛
+    // 「变更责任人请从事项责任面板发起交接」。
+    const s = stage({
+      key: "k1",
+      name: "庭前准备",
+      tasks: [
+        {
+          id: "t9",
+          title: "整理证据目录",
+          description: "含原件核对",
+          dueAt: inDays(3),
+          completed: false,
+          completedAt: null,
+          priority: 2,
+          stageId: "st-real",
+          assigneeId: "u-real"
+        }
+      ]
+    });
+    const items = buildActionItems(procedure({ deadlines: [], memos: [] }), [s], []);
+    const task = items.find((i) => i.kind === "task");
+    expect(task).toBeDefined();
+    expect(task!.taskId).toBe("t9");
+    expect(task!.assigneeId).toBe("u-real");
+    expect(task!.description).toBe("含原件核对");
+    expect(task!.stageId).toBe("st-real");
+    expect(task!.priority).toBe(2);
+  });
+
   it("任务卡片的 meta 显示指派对象；没指派时显示「未指派」", () => {
     const s = stage({
       key: "k1",
