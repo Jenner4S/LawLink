@@ -7,7 +7,8 @@ import { getReportData, periodPresets } from "@/server/reports/queries";
 import { resolveReportPeriod } from "@/server/reports/resolve-period";
 import {
   getCaseCycleAnalysis,
-  getReviewIssueAnalysis
+  getReviewIssueAnalysis,
+  getSatisfactionAnalysis
 } from "@/server/reports/analytics";
 import { ReportsView } from "./_components/reports-view";
 
@@ -23,10 +24,13 @@ export default async function ReportsPage({
   }
 
   const resolved = resolveReportPeriod(await searchParams);
-  const [data, cycle, reviewAnalysis] = await Promise.all([
-    getReportData(resolved.period, reportAccess(session.user)),
-    getCaseCycleAnalysis(resolved.period, reportAccess(session.user)),
-    getReviewIssueAnalysis(resolved.period, reportAccess(session.user))
+  const access = reportAccess(session.user);
+  const [data, cycle, reviewAnalysis, satisfaction] = await Promise.all([
+    getReportData(resolved.period, access),
+    getCaseCycleAnalysis(resolved.period, access),
+    getReviewIssueAnalysis(resolved.period, access),
+    // 2026-11-21（门户 S3 验收判据「满意度看板：员工侧只读看板」）
+    getSatisfactionAnalysis(resolved.period, access)
   ]);
   const presets = periodPresets();
 
@@ -40,6 +44,7 @@ export default async function ReportsPage({
       data={data}
       cycle={cycle}
       reviewAnalysis={reviewAnalysis}
+      satisfaction={satisfaction}
       presetLabels={{
         month: presets.month.label,
         quarter: presets.quarter.label,

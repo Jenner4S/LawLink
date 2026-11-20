@@ -610,41 +610,42 @@ model TeamMember {
 }
 
 model Client {
-  rateSchedules     RateSchedule[]
+  rateSchedules       RateSchedule[]
   // 客户门户账号（2026-11-20 门户 S1）。独立表，不复用 User——
   // 客户与员工的身份、权限、会话必须结构性隔离，不能靠角色字段区分。
-  portalUsers       ClientPortalUser[]
-  portalShares      PortalShare[]
-  id                String                  @id @default(cuid())
-  name              String
-  type              ClientType
+  portalUsers         ClientPortalUser[]
+  portalShares        PortalShare[]
+  portalSatisfactions PortalSatisfaction[]
+  id                  String                  @id @default(cuid())
+  name                String
+  type                ClientType
   // v1.x P0-1: 主体身份唯一性——证件类型 + 规范化号码。
   // 唯一约束为部分唯一索引（仅约束已填号码且未删除的行），见迁移 SQL；
   // 存量行未补录 idType 前不受约束，新增/编辑时由查重服务强制。
-  idType            ClientIdType?
-  idNumber          String? // v1.x P1 §三：加密密文（iv.tag.ct）；回填前可能仍是明文
-  idNumberBlind     String? // 等值盲索引（HMAC-SHA256 域分离密钥）
-  address           String?
-  phone             String?
-  email             String?
-  source            String?
-  tags              String[]
-  notes             String?
-  legalRep          String?
+  idType              ClientIdType?
+  idNumber            String? // v1.x P1 §三：加密密文（iv.tag.ct）；回填前可能仍是明文
+  idNumberBlind       String? // 等值盲索引（HMAC-SHA256 域分离密钥）
+  address             String?
+  phone               String?
+  email               String?
+  source              String?
+  tags                String[]
+  notes               String?
+  legalRep            String?
   // v0.39: 案件云式补充字段
-  internalCode      String?                 @unique // 客户编号 KH-{YYYY}-{4位}
-  cooperationStatus ClientCooperationStatus @default(SIGNED) // 合作状态
-  industry          String? // 所属行业
-  gender            ClientGender? // 性别（个人客户）
-  ethnicity         String? // 民族（个人客户）
-  contacts          Contact[]
-  intakes           Intake[]
-  matterLinks       MatterClient[]
-  matters           Matter[]
-  deletedAt         DateTime?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  Engagement        Engagement[]
+  internalCode        String?                 @unique // 客户编号 KH-{YYYY}-{4位}
+  cooperationStatus   ClientCooperationStatus @default(SIGNED) // 合作状态
+  industry            String? // 所属行业
+  gender              ClientGender? // 性别（个人客户）
+  ethnicity           String? // 民族（个人客户）
+  contacts            Contact[]
+  intakes             Intake[]
+  matterLinks         MatterClient[]
+  matters             Matter[]
+  deletedAt           DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  Engagement          Engagement[]
 
   contractConfirmations ContractConfirmation[]
 
@@ -852,30 +853,31 @@ model Matter {
   closedAt        DateTime?
   archivedAt      DateTime?
 
-  procedures        MatterProcedure[]
-  parties           Party[]
-  relatedEntities   RelatedEntity[]
-  linksFrom         MatterLink[]       @relation("MatterLinkFrom") // v0.32 关联案件（本案 → 关联案）
-  linksTo           MatterLink[]       @relation("MatterLinkTo") // 反向（关联案 → 本案）
-  notes             Note[]
-  tasks             Task[]
-  documents         Document[]
-  timelineEvents    TimelineEvent[]
-  billings          Billing[]
-  feeEntries        FeeEntry[]
-  commissionPlans   CommissionPlan[]
-  archiveRecords    ArchiveRecord[]
-  invoiceRequests   InvoiceRequest[]
+  procedures          MatterProcedure[]
+  portalSatisfactions PortalSatisfaction[]
+  parties             Party[]
+  relatedEntities     RelatedEntity[]
+  linksFrom           MatterLink[]         @relation("MatterLinkFrom") // v0.32 关联案件（本案 → 关联案）
+  linksTo             MatterLink[]         @relation("MatterLinkTo") // 反向（关联案 → 本案）
+  notes               Note[]
+  tasks               Task[]
+  documents           Document[]
+  timelineEvents      TimelineEvent[]
+  billings            Billing[]
+  feeEntries          FeeEntry[]
+  commissionPlans     CommissionPlan[]
+  archiveRecords      ArchiveRecord[]
+  invoiceRequests     InvoiceRequest[]
   // v0.8: 卷宗 + 用章
-  folders           DocumentFolder[]
-  sealRequests      SealRequest[]
+  folders             DocumentFolder[]
+  sealRequests        SealRequest[]
   // v0.9: 法院短信 + 财产保全 + 快递追踪（保全 v0.48 起仅三层模型）
-  smsMessages       SmsMessage[]
-  smsInboundFiles   SmsInboundFile[]
-  preservationCases PreservationCase[]
-  expressTrackings  ExpressTracking[]
+  smsMessages         SmsMessage[]
+  smsInboundFiles     SmsInboundFile[]
+  preservationCases   PreservationCase[]
+  expressTrackings    ExpressTracking[]
   // v0.21: AI 文书审查历史
-  reviewRecords     ReviewRecord[]
+  reviewRecords       ReviewRecord[]
 
   // v0.28: 自定义字段值（{ [CustomFieldDef.key]: string }）
   customValues Json @default("{}")
@@ -3575,7 +3577,11 @@ model PortalSatisfaction {
   portalUserId String?
   portalUser   ClientPortalUser? @relation(fields: [portalUserId], references: [id], onDelete: SetNull)
   clientId     String
+  client       Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
   matterId     String
+  /// 补关系而不是在内存里过滤：报表口径要能直接叠加隔离墙（access.matters），
+  /// 否则「被墙挡住案件的评价」会出现在看板上。为此本关系带真实外键。
+  matter       Matter            @relation(fields: [matterId], references: [id], onDelete: Cascade)
   /// 1..5
   score        Int
   /// 0..10（NPS），可选

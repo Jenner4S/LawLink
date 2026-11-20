@@ -7,10 +7,12 @@ import { toast } from "sonner";
 import type { LucideIcon } from "lucide-react";
 import { Wallet, Briefcase, Archive, CheckCircle2, Download, CircleAlert, Send, Loader2, Printer } from "lucide-react";
 import { matterCategoryLabel, matterCategoryColor } from "@/lib/enums";
+import { formatDate } from "@/lib/utils";
 import type { ReportData } from "@/server/reports/queries";
 import type {
   CycleStats,
-  ReviewIssueAnalysis
+  ReviewIssueAnalysis,
+  SatisfactionAnalysis
 } from "@/server/reports/analytics";
 import { pushWeeklyReportToAll } from "@/server/reports/push-weekly";
 import { triggerArchiveOverdueScanNow } from "@/server/cron/manual-triggers";
@@ -39,6 +41,7 @@ export function ReportsView({
   data,
   cycle,
   reviewAnalysis,
+  satisfaction,
   presetLabels
 }: {
   periodKey: PeriodKey;
@@ -49,6 +52,8 @@ export function ReportsView({
   data: ReportData;
   cycle: CycleStats[];
   reviewAnalysis: ReviewIssueAnalysis;
+  /** 客户满意度看板（2026-11-21，门户 S3 验收判据）；只读 */
+  satisfaction: SatisfactionAnalysis;
   presetLabels: Record<Exclude<PeriodKey, "custom">, string>;
 }) {
   const router = useRouter();
@@ -443,6 +448,116 @@ export function ReportsView({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      {/* 客户满意度（门户 S3，只读看板） */}
+      <section className="ll-surface p-5">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
+          客户满意度
+          <span className="text-[10px] font-normal text-muted-foreground">
+            （本期 {satisfaction.count} 条评价
+            {satisfaction.anonymousCount > 0 ? ` · 其中 ${satisfaction.anonymousCount} 条匿名` : ""}）
+          </span>
+        </h3>
+        {satisfaction.count === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            本期没有客户评价。客户在门户「案件进度」页可对已开放的案件打分。
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <div className="rounded border border-border px-3 py-2">
+                <div className="text-[10px] text-muted-foreground">平均分</div>
+                <div className="font-mono tabular text-base">
+                  {satisfaction.averageScore?.toFixed(1) ?? "—"}
+                  <span className="ml-0.5 text-[10px] font-normal text-muted-foreground">/ 5</span>
+                </div>
+              </div>
+              <div className="rounded border border-border px-3 py-2">
+                <div className="text-[10px] text-muted-foreground">NPS</div>
+                <div className="font-mono tabular text-base">
+                  {satisfaction.nps.score ?? "—"}
+                  <span className="ml-0.5 text-[10px] font-normal text-muted-foreground">
+                    （{satisfaction.nps.responses} 人填答）
+                  </span>
+                </div>
+              </div>
+              <div className="rounded border border-border px-3 py-2">
+                <div className="text-[10px] text-muted-foreground">推荐者 / 贬损者</div>
+                <div className="font-mono tabular text-base">
+                  {satisfaction.nps.promoters} / {satisfaction.nps.detractors}
+                </div>
+              </div>
+              <div className="rounded border border-border px-3 py-2">
+                <div className="text-[10px] text-muted-foreground">匿名占比</div>
+                <div className="font-mono tabular text-base">
+                  {Math.round((satisfaction.anonymousCount / satisfaction.count) * 100)}%
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-[11px] text-muted-foreground">分数分布</div>
+              <div className="space-y-1">
+                {satisfaction.distribution
+                  .map((n, i) => ({ star: i + 1, n }))
+                  .reverse()
+                  .map(({ star, n }) => (
+                    <div key={star} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-8 shrink-0 text-right tabular">{star} 分</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+                        <div
+                          className="h-full rounded bg-[var(--teal-deep,#0f766e)]"
+                          style={{ width: `${satisfaction.count ? (n / satisfaction.count) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <span className="w-6 shrink-0 tabular text-muted-foreground">{n}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/30 text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-normal">案件</th>
+                    <th className="px-3 py-1.5 text-left font-normal">客户</th>
+                    <th className="px-3 py-1.5 text-left font-normal">评分</th>
+                    <th className="px-3 py-1.5 text-left font-normal">意见</th>
+                    <th className="px-3 py-1.5 text-left font-normal">提交时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {satisfaction.recent.map((r, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="max-w-[180px] truncate px-3 py-1.5">{r.matterTitle}</td>
+                      <td className="px-3 py-1.5">
+                        {r.clientName}
+                        {r.anonymous ? (
+                          <span className="ml-1 text-[9px] text-muted-foreground">（匿名）</span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-1.5 tabular">
+                        {r.score} 分{r.npsScore !== null ? ` · NPS ${r.npsScore}` : ""}
+                      </td>
+                      <td className="max-w-[260px] truncate px-3 py-1.5 text-muted-foreground">
+                        {r.comment ?? "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {formatDate(r.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[10.5px] leading-relaxed text-muted-foreground">
+              匿名评价只隐藏「是哪个人」，仍计入客户维度——否则客户级统计会出现无法归因的空洞。
+              NPS 分母只算填写了 NPS 的评价；未填按 0 分计会把 NPS 系统性压低。
+            </p>
           </div>
         )}
       </section>
