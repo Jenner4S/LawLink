@@ -73,8 +73,18 @@ export function LeadsView({
     if (!form.phone.trim() && !form.wechat.trim()) { toast.error("请至少填写电话或微信"); return; }
     startTransition(async () => {
       try {
-        await createLead({ ...form, source: form.source as never });
-        toast.success("线索已登记");
+        const res = await createLead({ ...form, source: form.source as never });
+        // 2026-11-22 P0-2：同号可能已有人跟过（撞单/老客户复询）——提示但不阻断
+        if (res.duplicates && res.duplicates.length > 0) {
+          const first = res.duplicates[0];
+          const more = res.duplicates.length > 1 ? ` 等 ${res.duplicates.length} 条` : "";
+          toast.warning("该号码可能已有人跟进", {
+            duration: 10000,
+            description: `${first.kind === "LEAD" ? "线索" : first.kind === "CLIENT" ? "客户" : "收案"}「${first.name}」${first.ownerName ? `（${first.ownerName}）` : ""}${more}。线索已照常登记——同号也可能是家人代接或公司总机，请自行确认。`
+          });
+        } else {
+          toast.success("线索已登记");
+        }
         setCreating(false);
         setForm({ name: "", phone: "", wechat: "", organization: "", source: "REFERRAL", sourceDetail: "" });
         router.refresh();
@@ -279,8 +289,16 @@ export function LeadsView({
                 <tr key={l.id}>
                   <td>
                     <div className="text-[12.5px] font-medium">{l.name}</div>
-                    <div className="text-[10.5px] text-[var(--t-muted)]">
-                      {l.phone ?? l.wechat ?? "—"}{l.organization ? ` · ${l.organization}` : ""}
+                    <div className="text-[10.5px] text-[var(--t-muted)] flex items-center gap-1">
+                      <span>{l.phone ?? l.wechat ?? "—"}{l.organization ? ` · ${l.organization}` : ""}</span>
+                      {l.phoneDuplicateCount > 0 ? (
+                        <span
+                          className="rounded bg-[var(--amber-bg,rgba(161,98,7,.12))] px-1 text-[9.5px] text-[var(--bronze,#a16207)]"
+                          title={`列表中还有 ${l.phoneDuplicateCount} 条相同号码的线索`}
+                        >
+                          重复×{l.phoneDuplicateCount}
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td className="text-[11.5px]">

@@ -34,6 +34,7 @@ import { requireSession } from "@/lib/auth/session";
 import { hasCustomPermission } from "@/lib/roles/catalog";
 import { audit } from "@/server/audit";
 import { retireLeadReminders } from "./reminders";
+import { findPhoneDuplicates, normalizePhone } from "./phone";
 import { revalidatePath } from "next/cache";
 import type { LeadSource, LeadStage, LeadActivityType, MatterCategory } from "@prisma/client";
 
@@ -113,8 +114,21 @@ export async function createLead(input: z.input<typeof createSchema>) {
     targetId: created.id,
     detail: { name: data.name, source: data.source }
   });
+  // 2026-11-22 对标分析 P0-2：同一号码可能已有人跟过（撞单/老客户复询）。
+  // **只提示不阻断**——同号可能是家人代接、公司总机，硬拦会把真实新客户挡在门外。
+  const duplicates = await findPhoneDuplicates(data.phone, { excludeLeadId: created.id }).catch(() => []);
+  if (duplicates.length > 0) {
+    await audit({
+      userId: session.user.id,
+      action: "LEAD_DUPLICATE_WARNED",
+      targetType: "Lead",
+      targetId: created.id,
+      detail: { phone: normalizePhone(data.phone), count: duplicates.length, kinds: [...new Set(duplicates.map((d) => d.kind))] }
+    });
+  }
+
   revalidatePath("/leads");
-  return { ok: true as const, id: created.id };
+  return { ok: true as const, id: created.id, duplicates };
 }
 
 /**
@@ -179,10 +193,25 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
     }
   });
 
+  // 列表内的重复识别：同一归一手机号出现多次即标记。
+  // 在内存算而不是再发一次 SQL——这 200 条已经全取回来了，
+  // 各写一套归一化逻辑反而会出现"库里算的和列表显示的不一致"。
+  const phoneCount = new Map<string, number>();
+  for (const r of rows) {
+    const n = normalizePhone(r.phone);
+    if (n.length >= 7) phoneCount.set(n, (phoneCount.get(n) ?? 0) + 1);
+  }
+
   return rows.map((r) => ({
     ...r,
     expectedAmount: r.expectedAmount === null ? null : Number(r.expectedAmount),
-    activityCount: r._count.activities
+    activityCount: r._count.activities,
+    /** 列表内同号的其它线索数（0 = 不重复） */
+    phoneDuplicateCount: (() => {
+      const n = normalizePhone(r.phone);
+      if (n.length < 7) return 0;
+      return (phoneCount.get(n) ?? 1) - 1;
+    })()
   }));
 }
 
