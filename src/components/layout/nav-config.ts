@@ -13,8 +13,7 @@ import {
   Contact,
   Compass,
   Megaphone,
-  BookText
-} from "lucide-react";
+  BookText, FileText } from "lucide-react";
 import type { NavCounts } from "@/server/layout/nav-counts";
 
 export type NavItem = {
@@ -44,6 +43,9 @@ export const APP_ITEMS: { label: string; icon: LucideIcon; kind: "tools" | "link
   { label: "实务工具", icon: Calculator, kind: "tools" },
   { label: "快递跟踪", href: "/express", icon: Package, kind: "link" },
   { label: "律所文书", href: "/firm-resources", icon: FolderArchive, kind: "link" },
+  // 2026-11-20：listAllDocuments 此前零引用——跨案件找材料只能一个个案件点开翻
+  // （律所里「上次那份保证合同在哪」每天都会发生）。与「律所文书」（所级）区分：这里是案件级。
+  { label: "案件材料", href: "/documents", icon: FileText, kind: "link" },
   { label: "公告指引", href: "/announcements", icon: Megaphone, kind: "link" },
   { label: "制度规范", href: "/policy", icon: BookText, kind: "link" },
   { label: "通讯录", href: "/contacts", icon: Contact, kind: "link" },

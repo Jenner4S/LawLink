@@ -134,7 +134,6 @@ const BASELINE = new Set([
   "getWorkflowTogglesAction",
   "hardDeleteDocument",
   "hasActiveBorrowGrant",
-  "listAllDocuments",
   "listArchiveBorrows",
   "listCauseL2",
   "listExpiringProperties",
