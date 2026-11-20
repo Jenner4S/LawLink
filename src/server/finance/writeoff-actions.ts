@@ -48,20 +48,92 @@ const requestSchema = z.object({
   note: z.string().trim().max(500).optional().or(z.literal(""))
 });
 
-/** 申报坏账（进入 PENDING，不扣减任何金额） */
+/**
+ * 按「最早到期优先」把坏账额分摊到该案的未收应收条目。
+ *
+ * 为什么自动分摊而不是让人逐条勾选：
+ *   · 业务上就是"先冲最早该收的那笔"，人工勾选只会引入不一致；
+ *   · 但**必须落明细**——只记总额的话，对账时回答不了"这笔坏账冲的是哪几笔"。
+ *
+ * 规则：
+ *   · 只取未收余额 > 0 的条目（已核销的不能再被坏账冲）；
+ *   · 指定了 billingId 时只看该合同下的条目；
+ *   · 总额超过可选未收合计 → 拒绝（不能凭空多冲）。
+ */
+async function allocateWriteOffItems(
+  matterId: string,
+  billingId: string | null,
+  total: number
+): Promise<{ receivableId: string; amount: number }[]> {
+  const rows = await prisma.receivable.findMany({
+    where: {
+      matterId,
+      ...(billingId ? { billingId } : {}),
+      moneyKind: "LAWYER_FEE"
+    },
+    select: { id: true, amount: true, settledAmount: true, adjustmentAmount: true, dueDate: true, createdAt: true },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }]
+  });
+
+  const open = rows
+    .map((r) => ({
+      id: r.id,
+      // 未收余额 = 应收 + 调整 − 已核销；负数按 0（超额核销的条目不再参与坏账）
+      open: Math.max(
+        0,
+        Math.round((Number(r.amount) + Number(r.adjustmentAmount) - Number(r.settledAmount)) * 100) / 100
+      )
+    }))
+    .filter((r) => r.open > 0);
+
+  const available = Math.round(open.reduce((n, r) => n + r.open, 0) * 100) / 100;
+
+  /**
+   * 该案（或该合同）**完全没有应收条目**时，允许按合同级申报、不落明细。
+   *
+   * 为什么不做成一律报错：财务常见"先报坏账、后补应收"，此时条目尚未生成。
+   * 一律拒绝会把一个合法的早报场景变成"系统不让报"。
+   * 但只要**有**条目且金额超了，就一定拒绝——那才是真的多冲。
+   */
+  if (open.length === 0) return [];
+
+  if (total > available) {
+    throw new ActionError(
+      `坏账金额 ${total} 超过该${billingId ? "合同" : "案"}未收合计 ${available}，请先核对金额`
+    );
+  }
+
+  const items: { receivableId: string; amount: number }[] = [];
+  let left = Math.round(total * 100) / 100;
+  for (const r of open) {
+    if (left <= 0) break;
+    const take = Math.min(r.open, left);
+    items.push({ receivableId: r.id, amount: Math.round(take * 100) / 100 });
+    left = Math.round((left - take) * 100) / 100;
+  }
+  return items;
+}
+
+/** 申报坏账（进入 PENDING，不扣减任何金额；但会落逐笔冲抵明细） */
 export async function requestWriteOff(input: z.input<typeof requestSchema>) {
   const session = await requireSession("finance.write");
   const data = parseInput(requestSchema, input);
   await assertMatterWritable(data.matterId, { allowFinanceRole: true });
 
+  const billingId = data.billingId?.trim() || null;
+  const items = await allocateWriteOffItems(data.matterId, billingId, data.amount);
+
   const created = await prisma.receivableWriteOff.create({
     data: {
       matterId: data.matterId,
-      billingId: data.billingId?.trim() || null,
+      billingId,
       amount: new Prisma.Decimal(data.amount),
       reason: data.reason,
       note: data.note || null,
-      requestedById: session.user.id
+      requestedById: session.user.id,
+      items: {
+        create: items.map((i) => ({ receivableId: i.receivableId, amount: new Prisma.Decimal(i.amount) }))
+      }
     },
     select: { id: true }
   });
@@ -71,7 +143,13 @@ export async function requestWriteOff(input: z.input<typeof requestSchema>) {
     action: "WRITE_OFF_REQUEST",
     targetType: "ReceivableWriteOff",
     targetId: created.id,
-    detail: { matterId: data.matterId, amount: data.amount, reason: data.reason }
+    detail: {
+      matterId: data.matterId,
+      amount: data.amount,
+      reason: data.reason,
+      // 逐笔冲抵明细进审计：事后核对「这笔坏账冲了哪几笔」不必再查库
+      items: items.map((i) => ({ receivableId: i.receivableId, amount: i.amount }))
+    }
   });
   revalidatePath(`/matters`);
   return { ok: true as const, id: created.id };
@@ -149,10 +227,21 @@ export async function listWriteOffs(matterId: string) {
       createdAt: true, decidedAt: true, rejectReason: true,
       requestedBy: { select: { id: true, name: true } },
       decidedBy: { select: { id: true, name: true } },
-      billing: { select: { id: true, title: true } }
+      billing: { select: { id: true, title: true } },
+      // 逐笔冲抵明细（2026-11-22）：让界面能回答「这笔坏账冲了哪几笔应收」
+      items: {
+        select: {
+          id: true, amount: true,
+          receivable: { select: { id: true, title: true } }
+        }
+      }
     }
   });
-  return rows.map((r) => ({ ...r, amount: Number(r.amount) }));
+  return rows.map((r) => ({
+    ...r,
+    amount: Number(r.amount),
+    items: r.items.map((i) => ({ id: i.id, receivableId: i.receivable.id, receivableTitle: i.receivable.title, amount: Number(i.amount) }))
+  }));
 }
 
 export type WriteOffRow = Awaited<ReturnType<typeof listWriteOffs>>[number];

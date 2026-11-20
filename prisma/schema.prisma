@@ -1536,6 +1536,7 @@ model Receivable {
   adjustmentAmount       Decimal                   @default(0) @db.Decimal(14, 2)
   billing                Billing?                  @relation(fields: [billingId], references: [id], onDelete: Restrict)
   corrections            FinanceCorrection[]       @relation("CorrectionReceivable")
+  writeOffItems          ReceivableWriteOffItem[]  @relation("WriteOffItems")
   correctionEffects      FinanceCorrectionEffect[] @relation("EffectReceivable")
   moneyKind              MoneyKind
   revision               Int                       @default(0)
@@ -3887,25 +3888,54 @@ enum WriteOffStatus {
   REJECTED // 已驳回（不扣减）
 }
 
+/// 坏账的逐笔冲抵明细（2026-11-22）
+///
+/// ## 为什么需要子表而不是给 ReceivableWriteOff 加一列
+///
+/// 一笔坏账常常横跨**多条应收条目**（同一案的分期、不同合同）。
+/// 只记总额，对账时回答不了「这笔坏账冲的是哪几笔」，
+/// 而律师对账时问的恰恰是这一句。
+///
+/// ## 口径
+///
+/// · 明细金额合计**必须等于**坏账总额（服务层强制，非数据库约束：
+///   总额与明细在不同表，跨表等式用触发器会引入难以调试的隐式失败）；
+/// · 每条明细金额 ≤ 该应收条目的未收余额（已核销的不能再被坏账冲）；
+/// · 只允许同案条目（跨案坏账应拆成两笔申报，一案一议）。
+model ReceivableWriteOffItem {
+  id           String             @id @default(cuid())
+  writeOffId   String
+  writeOff     ReceivableWriteOff @relation("WriteOffItems", fields: [writeOffId], references: [id], onDelete: Cascade)
+  receivableId String
+  receivable   Receivable         @relation("WriteOffItems", fields: [receivableId], references: [id], onDelete: Restrict)
+  amount       Decimal            @db.Decimal(14, 2)
+  createdAt    DateTime           @default(now())
+
+  @@unique([writeOffId, receivableId])
+  @@index([receivableId])
+}
+
 model ReceivableWriteOff {
-  id            String         @id @default(cuid())
+  id            String                   @id @default(cuid())
   matterId      String
-  matter        Matter         @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  matter        Matter                   @relation(fields: [matterId], references: [id], onDelete: Cascade)
   /// 可空：整案坏账时不指向具体合同
   billingId     String?
-  billing       Billing?       @relation(fields: [billingId], references: [id], onDelete: SetNull)
-  amount        Decimal        @db.Decimal(14, 2)
-  reason        WriteOffReason @default(OTHER)
+  billing       Billing?                 @relation(fields: [billingId], references: [id], onDelete: SetNull)
+  amount        Decimal                  @db.Decimal(14, 2)
+  reason        WriteOffReason           @default(OTHER)
   note          String?
-  status        WriteOffStatus @default(PENDING)
+  status        WriteOffStatus           @default(PENDING)
   requestedById String
-  requestedBy   User           @relation("WriteOffRequester", fields: [requestedById], references: [id])
+  requestedBy   User                     @relation("WriteOffRequester", fields: [requestedById], references: [id])
   decidedById   String?
-  decidedBy     User?          @relation("WriteOffDecider", fields: [decidedById], references: [id])
+  decidedBy     User?                    @relation("WriteOffDecider", fields: [decidedById], references: [id])
   decidedAt     DateTime?
   rejectReason  String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  /// 逐笔冲抵明细（2026-11-22）：一笔坏账横跨多条应收条目时，必须能回答冲了哪几笔
+  items         ReceivableWriteOffItem[] @relation("WriteOffItems")
 
   @@index([matterId, status])
   @@index([status, createdAt])

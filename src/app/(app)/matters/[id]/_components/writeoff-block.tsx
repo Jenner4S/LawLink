@@ -114,6 +114,15 @@ export function WriteOffBlock({
                 <span className="text-[var(--t-muted)]">复核 {r.decidedBy.name}</span>
               ) : null}
               {r.rejectReason ? <span className="text-[var(--red)]">驳回：{r.rejectReason}</span> : null}
+              {/* 逐笔冲抵（2026-11-22）：对账时问的是"这笔坏账冲了哪几笔应收" */}
+              {r.items.length > 0 ? (
+                <span
+                  className="text-[10.5px] text-[var(--t-muted)]"
+                  title={r.items.map((i) => `${i.receivableTitle} ${formatCurrency(i.amount)}`).join("；")}
+                >
+                  冲抵 {r.items.length} 笔
+                </span>
+              ) : null}
               {r.note ? <span className="min-w-0 flex-1 truncate text-[var(--t-muted)]" title={r.note}>{r.note}</span> : null}
               {r.status === "PENDING" && canDecide && r.requestedBy.id !== currentUserId ? (
                 <span className="ml-auto flex gap-1">
