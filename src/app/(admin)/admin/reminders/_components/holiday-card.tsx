@@ -4,19 +4,23 @@
  * （每行「YYYY-MM-DD 名称」，调休上班日行尾加 /调休）。仅超级管理员可保存。
  */
 import { useState, useTransition } from "react";
-import { CalendarDays, Loader2 } from "lucide-react";
+import { CalendarDays, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { saveHolidayBatch } from "@/server/calendar/holiday-actions";
+import { saveHolidayBatch, deleteHoliday } from "@/server/calendar/holiday-actions";
 import { formatDate } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
+import { confirmDialog } from "@/components/patterns/confirm-dialog";
+import { useRouter } from "next/navigation";
 
 export type HolidayRow = { id: string; date: Date; name: string; kind: string };
 
 export function HolidayCard({ year, rows, canEdit }: { year: number; rows: HolidayRow[]; canEdit: boolean }) {
   const [text, setText] = useState("");
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [removing, setRemoving] = useState<string | null>(null);
 
   function parseLines(raw: string): { entries: { date: string; name: string; kind: "HOLIDAY" | "WORKDAY" }[]; error?: string } {
     const entries: { date: string; name: string; kind: "HOLIDAY" | "WORKDAY" }[] = [];
@@ -68,8 +72,46 @@ export function HolidayCard({ year, rows, canEdit }: { year: number; rows: Holid
         ) : (
           <div className="t-xs" style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
             {rows.map((r) => (
-              <span key={r.id} className="offset-chip" title={r.kind === "WORKDAY" ? "调休上班日" : "放假日"}>
+              <span
+                key={r.id}
+                className="offset-chip"
+                title={r.kind === "WORKDAY" ? "调休上班日" : "放假日"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
+              >
                 {formatDate(r.date)} {r.name}{r.kind === "WORKDAY" ? "（调休上班）" : ""}
+                {/* 2026-11-20：deleteHoliday 此前零引用——录错或国务院改通知后删不掉，
+                    只能整年重录（saveHolidayBatch 是批量新增，不负责删除） */}
+                {canEdit ? (
+                  <button
+                    type="button"
+                    title="删除这条安排"
+                    disabled={removing === r.id}
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: `删除「${formatDate(r.date)} ${r.name}」？`,
+                        description: "删除后该日不再参与届满日顺延计算。若本次是修改日期，删完记得补录新的一条。",
+                        confirmText: "删除",
+                        danger: true
+                      });
+                      if (!ok) return;
+                      setRemoving(r.id);
+                      startTransition(async () => {
+                        try {
+                          await deleteHoliday(r.id);
+                          toast.success("已删除");
+                          router.refresh();
+                        } catch (err) {
+                          toast.error("删除失败", { description: actionErrorMessage(err) });
+                        } finally {
+                          setRemoving(null);
+                        }
+                      });
+                    }}
+                    style={{ border: 0, background: "transparent", cursor: "pointer", padding: 0, lineHeight: 0, color: "inherit", opacity: 0.6 }}
+                  >
+                    {removing === r.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-2.5 w-2.5" />}
+                  </button>
+                ) : null}
               </span>
             ))}
           </div>

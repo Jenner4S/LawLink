@@ -120,7 +120,6 @@ const BASELINE = new Set([
   "deleteDocument",
   "deleteFeeEntry",
   "deleteFolder",
-  "deleteHoliday",
   "deleteTask",
   "draftDocument",
   "getCauseById",
@@ -167,6 +166,15 @@ const VERDICT = {
   // 该表由 0_init 迁移创建、生产恒为真 → deleteTask 第一句就抛错。
   // 取消任务走责任面板 CANCEL。给它补按钮只会得到一个永远失败的按钮。
   deleteTask: ["dead", "责任面板启用后被 CANCEL 取代；首句守卫恒抛错，函数体不可达。应删除而非补入口"],
+  // 2026-11-20 核实：batchApproveArchiveRecords 的**整个函数体就是一句 throw**
+  // （archive/actions.ts:707-708「归档申请必须逐件核对制度、材料和人工核验事项，不能批量通过」）。
+  // 它不是"缺入口"，是刻意禁用——补 UI 只会得到一个永远失败的按钮。
+  batchApproveArchiveRecords: ["dead", "函数体恒抛「不能批量通过」；刻意禁用，补 UI 只会得到永远失败的按钮。应删除"],
+  // ── 2026-11-20 第二批判定：页面已用「不带 Action 后缀」或「内联查询」的替代路径 ──
+  getWebhookSettingsAction: ["dead", "重复包装：/admin/reminders 直接调 getWebhookSettings()，本 action 无调用方"],
+  getWorkflowTogglesAction: ["dead", "重复包装：/admin/firm-profile 直接调 getWorkflowToggles()，本 action 无调用方"],
+  listSmsSuggestions: ["dead", "重复查询：收件箱页在 prisma.smsMessage 查询里内联 include suggestions，本 lister 无调用方"],
+  listExpiringProperties: ["dead", "重复实现：保全页在客户端由 allProperties 算 expiring30（KPI 卡「30天内到期」），本 action 无调用方"],
   deleteBilling: ["intentional", "合同删除未开放，避免破坏已签署事实与分成依据"],
 
   // ── 有意：建案动线是「收案 → 转正式案件」 ──
