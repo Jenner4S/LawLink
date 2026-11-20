@@ -135,6 +135,56 @@ describe("assertCanHandleMatter · 隔离墙", () => {
   });
 });
 
+describe("不泄露案件存在性（隔离墙的存在本身即机密）", () => {
+  // 2026-11-22 补：此前没有任何测试**直接对比**「案件真不存在」与「案件存在但被墙」
+  // 两种情况下的对外文案。现有测试只验「被墙会被拒」，但如果某天有人把被墙分支的
+  // 文案改成「无权访问此案件」，测试依然全绿，而**泄露就发生了** ——
+  // 因为攻击者由此可以区分「这个 ID 存在于系统里」与「不存在」。
+  //
+  // 这条性质写在 src/app/(app)/matters/[id]/page.tsx:48 的注释里，
+  // 属于**设计决策**而非实现细节，所以必须由测试钉住，而不是只靠注释。
+
+  async function messageOf(fn: () => Promise<unknown>): Promise<string> {
+    try {
+      await fn();
+      return "<未抛错>";
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  it("assertCanHandleMatter：不存在的 id 与被墙的真实案件返回同一条消息", async () => {
+    const lawyer = await seedUser("对照承办");
+    const principal = await seedUser("对照主任", "PRINCIPAL_LAWYER");
+    const matter = await seedMatter(lawyer.id);
+    await seedWall(matter.id, principal.id, [lawyer.id]);
+
+    const missing = await messageOf(() =>
+      assertCanHandleMatter({ id: lawyer.id, role: "LAWYER" }, "cnotarealmatterid00000")
+    );
+    const walled = await messageOf(() =>
+      assertCanHandleMatter({ id: lawyer.id, role: "LAWYER" }, matter.id)
+    );
+
+    expect(missing).toBe(walled);
+    // 顺带钉住措辞本身：一旦有人「优化文案」把两者区分开，这里会红
+    expect(missing).toContain("不存在");
+  });
+
+  it("assertCanAccessMatter：同样不区分「不存在」与「无权」", async () => {
+    const lawyer = await seedUser("对照承办2");
+    const principal = await seedUser("对照主任2", "PRINCIPAL_LAWYER");
+    const matter = await seedMatter(lawyer.id);
+    await seedWall(matter.id, principal.id, [lawyer.id]);
+
+    const missing = await messageOf(() =>
+      assertCanAccessMatter(lawyer.id, "LAWYER", "cnotarealmatterid00001")
+    );
+    const walled = await messageOf(() => assertCanAccessMatter(lawyer.id, "LAWYER", matter.id));
+    expect(missing).toBe(walled);
+  });
+});
+
 describe("assertCanAccessMatter / assertCanAssociateMatter · 隔离墙", () => {
   it("assertCanAccessMatter 的合伙人分支也查墙", async () => {
     const principal = await seedUser("主任", "PRINCIPAL_LAWYER");
