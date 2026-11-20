@@ -2520,6 +2520,9 @@ enum ReminderDeliveryObjectType {
   PRESERVATION_PROPERTY
   ARCHIVE_BORROW
   DIGEST
+  /// 客户门户工单（2026-11-21，S3）：到期未回复提醒经办律师。
+  /// 走同一张台账而不是另建通知表——「该发未发」只有台账答得了。
+  PORTAL_REQUEST
 }
 
 enum ReminderDeliveryKind {

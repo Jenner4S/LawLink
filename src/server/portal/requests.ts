@@ -26,6 +26,8 @@ import { audit } from "@/server/audit";
 import { revalidatePath } from "next/cache";
 import { getPortalViewer } from "@/lib/portal/session";
 import { assertCanHandleMatter } from "@/lib/permissions";
+import { registerReminderDelivery, voidPendingDeliveries } from "@/server/reminders/ledger";
+import { shDayKey } from "@/lib/ui/sh-time";
 
 /** 员工侧默认回复时限：2 个工作日（按自然日近似，工单不是法定期限，不做节假日顺延） */
 const DEFAULT_DUE_DAYS = 2;
@@ -53,6 +55,38 @@ export async function submitPortalRequest(input: z.input<typeof submitSchema>) {
     },
     select: { id: true }
   });
+
+  // 到期提醒（2026-11-21）：走提醒台账而不是另发通知——台账能回答「该发未发」，
+  // 扫描式通知答不了。registeredAt 设为 dueAt：投递器到点才 sweep，不会提前打扰。
+  // 接收人＝该客户在办案件的主办律师；查不到就升级给合伙人/主任（不静默丢失）。
+  const owner = await prisma.matter.findFirst({
+    where: { primaryClientId: viewer.clientId, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { ownerId: true }
+  });
+  let recipientId = owner?.ownerId ?? null;
+  if (!recipientId) {
+    const fallback = await prisma.user.findFirst({
+      where: { active: true, role: { in: ["PRINCIPAL_LAWYER"] } },
+      select: { id: true }
+    });
+    recipientId = fallback?.id ?? null;
+  }
+  if (recipientId) {
+    await registerReminderDelivery(
+      {
+        objectType: "PORTAL_REQUEST",
+        objectId: created.id,
+        kind: "OFFSET",
+        offset: 0,
+        channel: "IN_APP",
+        dayKey: shDayKey(dueAt),
+        userId: recipientId
+      },
+      prisma as never,
+      dueAt
+    );
+  }
 
   await audit({
     userId: viewer.portalUserId,
@@ -164,6 +198,9 @@ export async function answerPortalRequest(input: z.input<typeof answerSchema>) {
       status: data.closeIt ? "CLOSED" : "ANSWERED"
     }
   });
+
+  // 已回复 → 作废该工单所有待发提醒（不这么做，员工回完了还会收到"超期未回复"）
+  await voidPendingDeliveries("PORTAL_REQUEST", [row.id], "CANCELLED", "ANSWERED");
 
   await audit({
     userId: session.user.id,

@@ -129,6 +129,8 @@ async function sweepOnce(limit: number): Promise<DeliverySweepResult> {
         outcome = await deliverScheduleRow(row, now);
       } else if (row.objectType === "ARCHIVE_BORROW") {
         outcome = await deliverArchiveBorrowRow(row, now);
+      } else if (row.objectType === "PORTAL_REQUEST") {
+        outcome = await deliverPortalRequestRow(row, now);
       } else {
         // 未接入的对象类型（如 DIGEST 行不经投递器）——防御性跳过
         await finalize(row, "SKIPPED", { reason: "UNSUPPORTED" });
@@ -438,4 +440,56 @@ async function finalize(row: SweepRow, status: "SENT" | "SUPERSEDED" | "CANCELLE
   };
   if (detail) data.detail = detail as Prisma.InputJsonValue;
   await prisma.reminderDelivery.update({ where: { id: row.id }, data });
+}
+
+/**
+ * 客户工单到期未回复提醒（2026-11-21，门户 S3）
+ *
+ * 与借阅到期同一套做法：**投递前复核对象现值**。
+ * 客户已经自己撤回不了工单，但员工可能已经回复——那时提醒没有意义，
+ * 必须 CANCELLED 而不是照发（这正是台账相对于"定时扫表发通知"的价值：
+ * 它问的是「这条提醒还该不该发」，而不是「今天到点了没」）。
+ */
+async function deliverPortalRequestRow(row: SweepRow, now: Date): Promise<RowOutcome> {
+  const req = await prisma.portalRequest.findUnique({
+    where: { id: row.objectId },
+    select: {
+      id: true,
+      status: true,
+      subject: true,
+      createdAt: true,
+      answeredAt: true,
+      clientId: true
+    }
+  });
+  if (!req) {
+    await finalize(row, "CANCELLED", { reason: "OBJECT_GONE" });
+    return "voided";
+  }
+  // 已回复/已关闭：提醒失去意义
+  if (req.status !== "OPEN") {
+    await finalize(row, "CANCELLED", { reason: `REQUEST_${req.status}` });
+    return "voided";
+  }
+
+  const refType = "PortalRequestDue";
+  const dup = await prisma.notification.findFirst({
+    where: { refType, refId: req.id, userId: row.userId, createdAt: { gte: shDayStart(now) } },
+    select: { id: true }
+  });
+  const client = await prisma.client.findUnique({ where: { id: req.clientId }, select: { name: true } });
+  if (!dup) {
+    await createNotification({
+      userId: row.userId,
+      type: "SYSTEM",
+      priority: "HIGH",
+      title: "客户提问待回复",
+      content: `${client?.name ?? "客户"} 的提问「${req.subject}」已超过承诺时限仍未回复。`,
+      href: "/clients",  // 客户详情需 id；这里给可点入口而不是死链
+      refType,
+      refId: req.id
+    });
+  }
+  await finalize(row, "SENT", { notifiedAt: now.toISOString(), dup: Boolean(dup) });
+  return "sent";
 }
