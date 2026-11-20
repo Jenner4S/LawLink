@@ -12,6 +12,7 @@ import { TeamMatterOverview } from "./_components/team-matter-overview";
 import { notFound, redirect } from "next/navigation";
 import { getMatterById } from "@/server/matters/actions";
 import { ActionError } from "@/lib/action-error";
+import { listWriteOffs } from "@/server/finance/writeoff-actions";
 import { getMatterFinance } from "@/server/finance/actions";
 import { listActiveColleagues } from "@/server/users/actions";
 import { getLatestArchiveRecord } from "@/server/archive/actions";
@@ -85,9 +86,10 @@ export default async function MatterDetailPage({ params }: PageProps) {
     expresses,
     latestArchive,
     customFieldDefs,
-    preservationCases
+    preservationCases,
+    writeOffRows
   ] = await Promise.all([
-    allowed("finance.read") ? getMatterFinance(matter.id) : Promise.resolve({ billings: [], entries: [], plans: [], stats: { outstanding:0, allocated:0, clientFunds:0, contractAmount: 0, receivable: 0, received: 0, pendingReceived: 0, refund: 0, cost: 0, commission: 0, invoiced: 0 }, contingency: { plans: [], total: 0 } }),
+    allowed("finance.read") ? getMatterFinance(matter.id) : Promise.resolve({ billings: [], entries: [], plans: [], stats: { outstanding:0, allocated:0, clientFunds:0, contractAmount: 0, receivable: 0, received: 0, pendingReceived: 0, refund: 0, cost: 0, commission: 0, invoiced: 0, writeOff: 0, outstandingNet: 0 }, writeOffs: [], contingency: { plans: [], total: 0 } }),
     listActiveColleagues(),
     prisma.document.findMany({
       where: { matterId: matter.id, deletedAt: null, ...(!allowed("documents.read") ? { id: { in: [] } } : {}) },
@@ -179,7 +181,9 @@ export default async function MatterDetailPage({ params }: PageProps) {
           }
         }
       }
-    })
+    }),
+    // 2026-11-22 P0-5：坏账明细（含申报人/状态，用于界面展示与审批）
+    allowed("finance.read") ? listWriteOffs(matter.id) : Promise.resolve([])
   ]);
 
   // getMatterFinance 已在 action 出口统一序列化 Decimal
@@ -248,6 +252,7 @@ export default async function MatterDetailPage({ params }: PageProps) {
         conflictNode={<MatterConflictReview matterId={matter.id} data={conflictReview} canWrite={allowed("matters.write")&&matter.status!=="ARCHIVED"}/>}
         matter={matter}
         finance={finance}
+        writeOffRows={writeOffRows}
         userOptions={[
           ...userOptions,
           ...matter.members.filter((m) => !userOptions.some((u) => u.id === m.userId)).map((m) => ({ ...m.user, active: false, isTeammate: false }))

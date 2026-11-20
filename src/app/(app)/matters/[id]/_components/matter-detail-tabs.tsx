@@ -23,7 +23,9 @@ import {
 import { cn, formatCurrency } from "@/lib/utils";
 import { contactRoleLabels } from "./info-panel";
 import { MatterArchive, TeamRailCard } from "./matter-archive";
+import { canExecuteFinance } from "@/lib/roles/catalog";
 import { FinancePanel } from "./finance-panel";
+import { WriteOffBlock } from "./writeoff-block";
 import { ContractConfirmationPanel } from "@/app/(app)/clients/[id]/_components/contract-confirmation-panel";
 import { EmailPanel } from "./email-panel";
 import { ImportantItemDialog } from "./procedure-content";
@@ -150,11 +152,23 @@ export type FinancePayload = {
     cost: number;
     commission: number;
     invoiced: number;
+    /** 已批准坏账合计（2026-11-22 P0-5） */
+    writeOff: number;
+    /** 扣掉坏账后的未收余额 */
+    outstandingNet: number;
   };
   /**
    * 风险代理计提（2026-11-22 P0-4）。金额不落库、按当前实收派生（见 contingency.ts）。
    * 只在有风代合同时非空。
    */
+  /** 坏账明细（含三种状态；只有 APPROVED 计入 stats.writeOff） */
+  writeOffs: {
+    id: string;
+    amount: unknown;
+    reason: string;
+    note: string | null;
+    decidedAt: Date | null;
+  }[];
   contingency: {
     total: number;
     plans: {
@@ -193,6 +207,7 @@ export function MatterDetailTabs({
   colleagues,
   currentUserRole,
   rolePermissions,
+  writeOffRows,
   canAssociateThisMatter,
   canLeadThisMatter,
   canOwnThisMatter,
@@ -219,6 +234,8 @@ export function MatterDetailTabs({
   colleagues: PresUserOption[];
   currentUserRole: string | null;
   rolePermissions?: RoleGrant[];
+  /** 坏账明细（2026-11-22 P0-5），由页面用 listWriteOffs 取 */
+  writeOffRows?: unknown[];
   canAssociateThisMatter: boolean;
   canLeadThisMatter: boolean;
   canOwnThisMatter: boolean;
@@ -647,6 +664,19 @@ export function MatterDetailTabs({
                 clientId={matter.primaryClient?.id ?? matter.clientLinks[0]?.client.id ?? ""}
                 matterId={matter.id}
                 canManage={Boolean(canAssociateThisMatter && !isArchived && allowed("clients.write"))}
+              />
+            ) : null}
+            {allowed("finance.read") ? (
+              <WriteOffBlock
+                matterId={matter.id}
+                rows={(writeOffRows ?? []) as never}
+                canRequest={allowed("finance.write") && !isArchived}
+                // 批准要求「独立财务执行资格」：内置财务，或自定义角色显式授 ALL。
+                // 与服务端 canExecuteFinance 同口径；服务端还会再挡一次自批。
+                // 批准要求「独立财务执行资格」：内置财务，或自定义角色显式授 ALL。
+                // 与服务端 canExecuteFinance 同口径；服务端还会再挡一次自批。
+                canDecide={canExecuteFinance({ role: currentUserRole ?? "", rolePermissions } as never, "finance.correct")}
+                currentUserId={viewerId ?? ""}
               />
             ) : null}
             {allowed("finance.read") ? (

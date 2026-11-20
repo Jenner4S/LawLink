@@ -23,7 +23,7 @@ import { serializeDecimals } from "@/lib/decimal";
 import { computeContingencyAccruals, sumContingencyAccruals } from "./contingency";
 
 export async function computeMatterFinanceFacts(matterId: string) {
-  const [billings, entries, plans, issuedInvoices] = await Promise.all([
+  const [billings, entries, plans, issuedInvoices, writeOffs] = await Promise.all([
     prisma.billing.findMany({
       where: { matterId },
       orderBy: { createdAt: "desc" }
@@ -47,6 +47,11 @@ export async function computeMatterFinanceFacts(matterId: string) {
       // 票据展示字段一并取出：门户账单要列表（号/金额/开票日），
       // 让两侧拿同一份数据，而不是门户再查一遍（那正是 Q2 要避免的）
       select: { id: true, amount: true, invoiceNo: true, issuedAt: true }
+    }),
+    // 2026-11-22 P0-5：已批准坏账（只有 APPROVED 才扣减未收余额）
+    prisma.receivableWriteOff.findMany({
+      where: { matterId, status: "APPROVED" },
+      select: { id: true, amount: true, reason: true, note: true, decidedAt: true }
     })
   ]);
 
@@ -88,7 +93,15 @@ export async function computeMatterFinanceFacts(matterId: string) {
     refund: facts ? sumAmounts(facts.refunds) : sum((e) => e.type === "REFUND"),
     cost: facts ? sumAmounts(facts.expenses.map(e=>({amount:e.amount.minus(e.reversed)}))) : sum((e) => e.type === "COST"),
     commission: facts ? sumAmounts(facts.commissions.map(c=>({amount:c.accrued}))) : sum((e) => e.type === "COMMISSION"),
-    invoiced: issuedInvoices.reduce((acc, i) => acc.plus(i.amount), new Prisma.Decimal(0)).toNumber() - invoiceAdjustmentTotal
+    invoiced: issuedInvoices.reduce((acc, i) => acc.plus(i.amount), new Prisma.Decimal(0)).toNumber() - invoiceAdjustmentTotal,
+    /**
+     * 已批准坏账合计（2026-11-22 P0-5）。
+     * **不减应收发生额**——应收是历史事实（合同签了多少），坏账是对事实的处置；
+     * 混在一起就分不清「当初应收多少」与「后来免了多少」。
+     */
+    writeOff: writeOffs.reduce((n, w) => n + Number(w.amount), 0),
+    /** 扣掉坏账后的未收余额（律师真正还能收的钱） */
+    outstandingNet: Math.max(0, (facts ? Number(facts.lawyerSummary.outstanding) : Math.max(0, legacyReceivable - legacyReceived)) - writeOffs.reduce((n, w) => n + Number(w.amount), 0))
   };
 
   // 2026-11-22 P0-4：风险代理计提。金额不落库、按当前实收派生，
@@ -96,5 +109,5 @@ export async function computeMatterFinanceFacts(matterId: string) {
   const contingencyPlans = computeContingencyAccruals(billings, stats.received);
   const contingency = { plans: contingencyPlans, total: sumContingencyAccruals(contingencyPlans) };
 
-  return serializeDecimals({ billings, entries, plans, stats, invoices: issuedInvoices, contingency, ledgerReady:Boolean(facts) });
+  return serializeDecimals({ billings, entries, plans, stats, invoices: issuedInvoices, contingency, writeOffs, ledgerReady:Boolean(facts) });
 }

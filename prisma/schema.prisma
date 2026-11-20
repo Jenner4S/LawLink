@@ -501,6 +501,8 @@ model User {
   ownedMatters              Matter[]                      @relation("MatterOwner")
   registeredMatters         Matter[]                      @relation("MatterRegistrar")
   ownedLeads                Lead[]                        @relation("LeadOwner")
+  writeOffsRequested        ReceivableWriteOff[]          @relation("WriteOffRequester")
+  writeOffsDecided          ReceivableWriteOff[]          @relation("WriteOffDecider")
   leadActivities            LeadActivity[]                @relation("LeadActivityAuthor")
   createdIntakes            Intake[]                      @relation("IntakeCreator")
   ledTeams                  Team[]                        @relation("TeamLeader")
@@ -869,6 +871,7 @@ model Matter {
   billings            Billing[]
   feeEntries          FeeEntry[]
   commissionPlans     CommissionPlan[]
+  writeOffs           ReceivableWriteOff[]
   archiveRecords      ArchiveRecord[]
   invoiceRequests     InvoiceRequest[]
   // v0.8: 卷宗 + 用章
@@ -1722,6 +1725,7 @@ model Billing {
   /// 计提基数是**回款**不是合同额（行业惯例；业主口径待确认，见对标方案 §八）。
   /// Intake.contingencyTerms（自由文本）保留为收费方式说明，不做数据迁移。
   contingencyPercent Decimal?                @db.Decimal(5, 2)
+  writeOffs          ReceivableWriteOff[]
   schedule           String?
   status             BillingStatus           @default(DRAFT)
   signedAt           DateTime?
@@ -3794,4 +3798,58 @@ model LeadActivity {
   createdAt   DateTime         @default(now())
 
   @@index([leadId, happenedAt])
+}
+
+// ============================================================
+// 坏账登记（2026-11-22，对标分析 P0-5）
+//
+// 客户现行系统有一列「退款及无法收取费用差额」——把退款与"确实收不回来"合在
+// 一起。两者成因不同（退款是退给客户，坏账是客户不给/给不了），
+// 混在一列既没法追责也没法做风控。
+//
+// LawLink 此前只有退款（Payment.refundedAmount），**没有坏账**——
+// 于是应收会永远挂着，报表里的"回款率"永远到不了 100%，而没人知道差额是什么。
+//
+// 为什么不直接改应收金额：
+// 应收是**历史事实**（合同签了多少钱），坏账是**对事实的处置决定**。
+// 把处置写进事实，就再也分不清"当初应收多少"和"后来免了多少"。
+// 所以坏账独立成表，只在**未收余额**上做扣减。
+// ============================================================
+
+enum WriteOffReason {
+  CUSTOMER_UNREACHABLE // 客户失联
+  INABILITY_TO_PAY // 无力支付
+  WAIVED // 主动减免（人情/关系）
+  IN_DISPUTE // 争议中已判无法追偿
+  OTHER // 其他
+}
+
+enum WriteOffStatus {
+  PENDING // 待审批（此时不扣减应收）
+  APPROVED // 已批准（扣减生效）
+  REJECTED // 已驳回（不扣减）
+}
+
+model ReceivableWriteOff {
+  id            String         @id @default(cuid())
+  matterId      String
+  matter        Matter         @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  /// 可空：整案坏账时不指向具体合同
+  billingId     String?
+  billing       Billing?       @relation(fields: [billingId], references: [id], onDelete: SetNull)
+  amount        Decimal        @db.Decimal(14, 2)
+  reason        WriteOffReason @default(OTHER)
+  note          String?
+  status        WriteOffStatus @default(PENDING)
+  requestedById String
+  requestedBy   User           @relation("WriteOffRequester", fields: [requestedById], references: [id])
+  decidedById   String?
+  decidedBy     User?          @relation("WriteOffDecider", fields: [decidedById], references: [id])
+  decidedAt     DateTime?
+  rejectReason  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([matterId, status])
+  @@index([status, createdAt])
 }

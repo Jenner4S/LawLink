@@ -13,7 +13,7 @@ const targetLabels: Record<string, string> = {
   Engagement: "委托", EvidenceItem: "证据项",
   // 门户 S1（2026-11-20）：客户侧账号与邀请，审计页须能一眼看出是「客户门户」而非员工账号
   ClientPortalUser: "客户门户账号", PortalInvite: "门户邀请", PortalShare: "门户披露",
-  PortalRequest: "客户提问", PortalSatisfaction: "客户评价", Lead: "获客线索", LeadChannel: "获客渠道",
+  PortalRequest: "客户提问", PortalSatisfaction: "客户评价", Lead: "获客线索", ReceivableWriteOff: "坏账", LeadChannel: "获客渠道",
   // 第七轮体检：补齐缺失对象标签（缺失时审计页显示「其他对象」）
   ArchiveBorrowRequest: "案卷借阅申请", CommissionSettlement: "分成结算", DeadlineRule: "期限规则",
   FeeEntryList: "收付记录列表", FinanceCorrection: "财务更正", Holiday: "放假安排",
@@ -116,6 +116,8 @@ const words: Record<string, string> = {
   DISABLED: "已停用", RETIRE: "作废", DUPLICATE: "重复", WARNED: "已提示",
   // 到店结果（2026-11-22 P0-3）
   SHOW: "到店", CHANNEL: "渠道", CONTINGENCY: "风险代理",
+  // 坏账（2026-11-22 P0-5）：APPROVE/REJECT 已在通用词表，只需补 OFF
+  OFF: "坏账", WRITE: "登记",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");
