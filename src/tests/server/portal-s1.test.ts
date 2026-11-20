@@ -48,7 +48,7 @@ vi.mock("@/lib/permissions", async () => {
 });
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-const { invitePortalUser, acceptPortalInvite, authenticatePortalUser, revokePortalUser } =
+const { invitePortalUser, acceptPortalInvite, authenticatePortalUser, revokePortalUser, listPortalUsersForClient } =
   await import("@/server/portal/actions");
 const { readPortalSession, signPortalSession, PORTAL_COOKIE } = await import("@/lib/portal/auth");
 const { claimInvite } = await import("@/server/portal/invite-claim");
@@ -214,5 +214,55 @@ describe("会话签名 · 篡改与跨用途", () => {
     expect(readPortalSession(undefined)).toBeNull();
     expect(readPortalSession("")).toBeNull();
     expect(readPortalSession("not-a-token")).toBeNull();
+  });
+});
+
+describe("员工侧账号清单与停用（S1 收口）", () => {
+  it("清单只返回界面需要的字段，不泄露哈希与会话版本", async () => {
+    const client = await seedClient();
+    const email = `${uid("p")}@client.local`;
+    await invitePortalUser({ clientId: client.id, email, name: "张经理" });
+
+    const rows = await listPortalUsersForClient(client.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].email).toBe(email);
+    expect(rows[0].inviteCount).toBe(1);
+    for (const forbidden of ["passwordHash", "sessionVersion", "tokenHash"]) {
+      expect(Object.keys(rows[0])).not.toContain(forbidden);
+    }
+  });
+
+  it("停用后账号 active=false 且 sessionVersion+1（旧会话立即失效）", async () => {
+    const client = await seedClient();
+    const email = `${uid("p")}@client.local`;
+    const invited = await invitePortalUser({ clientId: client.id, email, name: "张经理" });
+    // 真的走一遍接受邀请：这一步把 sessionVersion 递增到 1（作废旧会话），
+    // 停用再递增到 2。若不真接受，测的就只是「0 → 1」，覆盖不到「已有会话被作废」。
+    const login = await acceptPortalInvite({ token: invited.token, password: "portal-pass-1" });
+    expect(readPortalSession(login.session)).not.toBeNull();
+    const portalUserId = invited.portalUserId;
+    const svBefore = (await prisma.clientPortalUser.findUniqueOrThrow({ where: { id: portalUserId } })).sessionVersion;
+    expect(svBefore).toBeGreaterThan(0);
+
+    await revokePortalUser(portalUserId);
+
+    const after = await prisma.clientPortalUser.findUniqueOrThrow({ where: { id: portalUserId } });
+    expect(after.active).toBe(false);
+    expect(after.sessionVersion).toBe(svBefore + 1);
+  });
+
+  it("停用后重新邀请会复用同一账号并恢复启用（不新建第二个账号）", async () => {
+    const client = await seedClient();
+    const email = `${uid("p")}@client.local`;
+    const first = await invitePortalUser({ clientId: client.id, email, name: "张经理" });
+    await revokePortalUser(first.portalUserId);
+
+    const again = await invitePortalUser({ clientId: client.id, email, name: "张经理" });
+    expect(again.portalUserId).toBe(first.portalUserId); // 复用
+    expect(again.token).not.toBe(first.token);
+
+    const row = await prisma.clientPortalUser.findUniqueOrThrow({ where: { id: first.portalUserId } });
+    expect(row.active).toBe(true);
+    expect(await prisma.clientPortalUser.count({ where: { clientId: client.id } })).toBe(1);
   });
 });

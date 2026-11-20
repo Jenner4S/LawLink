@@ -276,3 +276,42 @@ export async function revokePortalUser(portalUserId: string) {
   revalidatePath(`/clients/${user.clientId}`);
   return { ok: true as const };
 }
+
+/**
+ * 员工侧：某客户的门户账号清单（2026-11-20，S1 收口）
+ *
+ * 与「邀请」同一权限口径（clients.write）。返回最小字段：
+ * 邮箱、姓名、启用状态、最近登录、邀请次数与最近邀请是否已用。
+ * **不返回** passwordHash、sessionVersion、tokenHash——这些对界面无意义，
+ * 返回越多越容易在某个卡片里被顺手渲染出来。
+ */
+export async function listPortalUsersForClient(clientId: string) {
+  const session = await requireSession("clients.write");
+  const id = String(clientId ?? "").trim();
+  if (!id) throw new ActionError("缺少客户标识");
+
+  const rows = await prisma.clientPortalUser.findMany({
+    where: { clientId: id },
+    orderBy: [{ active: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      active: true,
+      lastLoginAt: true,
+      createdAt: true,
+      _count: { select: { invites: true } }
+    }
+  });
+
+  void session;
+  return rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    active: r.active,
+    lastLoginAt: r.lastLoginAt,
+    createdAt: r.createdAt,
+    inviteCount: r._count.invites
+  }));
+}

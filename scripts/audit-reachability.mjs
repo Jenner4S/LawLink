@@ -107,7 +107,6 @@ const unreachable = [...defs.keys()].filter((n) => !uiCount.has(n)).sort();
  */
 const BASELINE = new Set([
   "activateMatterService",
-  "revokePortalUser",
   "allocatePayment",
   "mergeClients",
   "batchApproveArchiveRecords",
@@ -215,9 +214,6 @@ const VERDICT = {
   // 2026-11-20 门户 S1：服务层先落地（两张表 + 迁移 + 邀请/接受/登录/撤销 + 15 例真库测试），
   // UI（门户路由、门户登录页、客户详情「邀请开通」）按 S1 分期在下一轮交付。
   // 登记为 intentional 而不是「有意不给入口」——写清是**分期未完**，交付时须移出 BASELINE。
-  // 2026-11-20：邀请/接受/登录已全部可达（客户详情「邀请开通门户」+ /portal/login + /portal/invite/[token]）。
-  // 仅「停用某个门户账号」还差一个入口——S2 的客户门户账号列表里给；届时移出 BASELINE。
-  revokePortalUser: ["intentional", "停用门户账号的入口随 S2 账号列表补；届时移出 BASELINE"],
   // 2026-11-20 更正：原判定写「默认卷宗不允许改名 / 不允许删除」，**两句都不准确**。
   //   · renameFolder 实现里**没有** isDefault 限制，任何目录都可改名（已补入口）。
   //   · deleteFolder 明确只拒绝 isDefault，非默认可删，卷内材料移到散件不丢（已补入口）。
