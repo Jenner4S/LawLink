@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Download } from "lucide-react";
 import {
-  listArchivedMatters
+  listArchivedMatters,
+  listRejectedArchiveRecords
 } from "@/server/archive/actions";
 import { listArchivePageData } from "@/server/archive/borrow";
 import { BorrowPanel } from "./_components/borrow-panel";
@@ -20,6 +21,9 @@ export default async function ArchivePage() {
   const page = await listArchivePageData();
   const canAuditAll = isSystemAdmin(session.user);
   const items = page.hasArchiveRead ? await listArchivedMatters() : [];
+  // 2026-11-20：listRejectedArchiveRecords 此前零引用——律师看不到自己被驳回的归档申请
+  // 与驳回原因（注释写明「用于我的已驳回归档入口」，但从未接线）。
+  const rejected = page.hasArchiveRead ? await listRejectedArchiveRecords() : [];
 
   return (
     <div className="space-y-4">
@@ -30,6 +34,36 @@ export default async function ArchivePage() {
       />
 
       <BorrowPanel mine={page.borrows.mine} pending={page.borrows.pending} canApply={!page.hasArchiveRead} />
+
+      {rejected.length > 0 ? (
+        <div className="card" style={{ overflow: "hidden" }}>
+          <div className="panel-head">
+            <div className="panel-title">
+              我的被驳回归档 <span className="badge b-white" style={{ marginLeft: 2 }}>{rejected.length}</span>
+            </div>
+          </div>
+          <div className="panel-body" style={{ paddingTop: 8 }}>
+            <p className="t-xs t-mute" style={{ marginBottom: 8 }}>
+              被驳回的申请不会消失，可在案件详情按驳回原因补齐材料后重新提交。
+            </p>
+            <div className="space-y-1.5">
+              {rejected.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2">
+                  <span className="rounded bg-[var(--red-bg)] px-1.5 py-0.5 text-[10px] text-[var(--red)]">已驳回</span>
+                  <Link href={matterHref(r.matter)} className="truncate text-xs font-medium hover:text-[var(--teal-deep)]">
+                    {r.matter.title}
+                  </Link>
+                  <span className="font-mono text-[10px] text-[var(--t-muted)]">{r.matter.internalCode ?? "—"}</span>
+                  {r.reviewedAt ? <span className="text-[10px] text-[var(--t-muted)]">驳回于 {formatDate(r.reviewedAt)}</span> : null}
+                  {r.reviewNote ? (
+                    <span className="w-full text-[11px] text-[var(--red)]">原因：{r.reviewNote}</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {page.hasArchiveRead && items.length === 0 ? (
         <div className="card">

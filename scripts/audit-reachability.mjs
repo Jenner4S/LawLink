@@ -142,7 +142,6 @@ const BASELINE = new Set([
   "listExpiringProperties",
   "listInvoiceRequestsByMatter",
   "listMyPasskeys",
-  "listRejectedArchiveRecords",
   "listSealRequests",
   "listSmsSuggestions",
   "listTemplates",
@@ -175,6 +174,16 @@ const VERDICT = {
   getWorkflowTogglesAction: ["dead", "重复包装：/admin/firm-profile 直接调 getWorkflowToggles()，本 action 无调用方"],
   listSmsSuggestions: ["dead", "重复查询：收件箱页在 prisma.smsMessage 查询里内联 include suggestions，本 lister 无调用方"],
   listExpiringProperties: ["dead", "重复实现：保全页在客户端由 allProperties 算 expiring30（KPI 卡「30天内到期」），本 action 无调用方"],
+  // ── 2026-11-20 第三批：用章线按「台账页未单独建」定性（代码注释亦已说明） ──
+  // seals/actions.ts:125-133 明写 getSealApprovalCapabilities 是**陷阱**：
+  // requireSession("approval") 后把 canApprove/canViewFirmQueue 硬编码 true，
+  // 「看起来能用、用起来会放行」。现用印审批走 /approvals?type=SEAL_APPROVE 由
+  // requireApprovalRoute + canDecide 逐条判定，零引用下无害；保留但要启用必须先重写。
+  getSealApprovalCapabilities: ["intentional", "陷阱函数：硬编码 canApprove=true，启用前必须按真实权限重写（代码注释已警告）"],
+  getSealRequest: ["intentional", "功能正确但低效（拉全所队列再 find），用章台账页未单独建，保留待接线"],
+  getSealStats: ["intentional", "依赖同样未接线的 listSealRequests；用章台账页未建，保留待接线"],
+  // 卷宗目录由 default-folders 自动创建并给定 orderIndex，不开放手工排序
+  reorderFolders: ["intentional", "卷宗目录顺序由 default-folders 决定，不开放手工排序（建/删目录本就未开放）"],
   deleteBilling: ["intentional", "合同删除未开放，避免破坏已签署事实与分成依据"],
 
   // ── 有意：建案动线是「收案 → 转正式案件」 ──
