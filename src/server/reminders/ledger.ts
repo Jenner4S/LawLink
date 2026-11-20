@@ -45,7 +45,13 @@ export async function registerReminderDelivery(
   key: DedupeKey,
   tx: Pick<typeof prisma, "reminderDelivery"> = prisma,
   /** 覆盖登记时刻：未来档位（如借阅 T-3/到期提醒）设为应发动的一刻，投递器到点才 sweep */
-  registeredAt: Date = new Date()
+  registeredAt: Date = new Date(),
+  /**
+   * 登记时快照（可选）。2026-11-21 引入：投递前要用它判断「对象是否已改期」——
+   * 例如邀约提醒记下当时的 invitedAt，投递时若已改期，这条提醒说的就不是那个时间了。
+   * 不存快照就只能盲发，或假装看不出改期。
+   */
+  detail: Prisma.InputJsonValue | undefined = undefined
 ): Promise<"REGISTERED" | "ALREADY"> {
   const db = tx;
   // 实现注记：必须用 createMany + skipDuplicates（ON CONFLICT DO NOTHING）而非
@@ -62,7 +68,8 @@ export async function registerReminderDelivery(
       dayKey: key.dayKey,
       userId: key.userId,
       status: "PENDING",
-      registeredAt
+      registeredAt,
+      ...(detail === undefined ? {} : { detail })
     }],
     skipDuplicates: true
   });
@@ -70,7 +77,11 @@ export async function registerReminderDelivery(
   // 同键已存在：作废行复活（清作废原因、刷新登记时刻）→ 失败行重武装
   const revived = await db.reminderDelivery.updateMany({
     where: { ...dedupeFields(key), status: { in: ["SUPERSEDED", "CANCELLED"] } },
-    data: { status: "PENDING", registeredAt: new Date(), detail: Prisma.DbNull }
+    data: {
+      status: "PENDING",
+      registeredAt: new Date(),
+      detail: detail === undefined ? Prisma.DbNull : detail
+    }
   });
   if (revived.count > 0) return "REGISTERED";
   // 失败行重武装同样是「本次产生了应发项」——必须返回 REGISTERED，否则调用方

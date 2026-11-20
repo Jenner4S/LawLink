@@ -193,7 +193,7 @@ async function sweepOnce(limit: number): Promise<DeliverySweepResult> {
     orderBy: [{ registeredAt: "asc" }],
     select: {
       id: true, objectType: true, objectId: true, kind: true, offset: true,
-      channel: true, dayKey: true, userId: true, attempts: true
+      channel: true, dayKey: true, userId: true, attempts: true, detail: true
     }
   });
 
@@ -252,6 +252,8 @@ type SweepRow = {
   dayKey: string;
   userId: string;
   attempts: number;
+  /** 登记时快照（2026-11-21）：用于判断对象是否已改期等漂移 */
+  detail: unknown;
 };
 
 type RowOutcome = "sent" | "voided" | "skipped";
@@ -606,22 +608,36 @@ async function deliverLeadRow(row: SweepRow, now: Date): Promise<RowOutcome> {
     await finalize(row, "CANCELLED", { reason: `LEAD_${lead.stage}` });
     return "voided";
   }
+  // 改期：登记时的 invitedAt 快照与当前值不一致 → 这条提醒说的不是那个时间了。
+  // 作废而不是照发：客户改到下周三，还提醒「明天到店」只会制造不信任；
+  // 作废后下一轮扫描会按新时间重新登记。
+  const snapshot = row.detail && typeof row.detail === "object" && "invitedAt" in (row.detail as Record<string, unknown>)
+    ? String((row.detail as Record<string, unknown>).invitedAt)
+    : null;
+  if (snapshot && lead.invitedAt && snapshot !== lead.invitedAt.toISOString()) {
+    await finalize(row, "SUPERSEDED", { reason: "INVITE_RESCHEDULED", was: snapshot, now: lead.invitedAt.toISOString() });
+    return "voided";
+  }
 
-  const refType = "LeadInviteOverdue";
+  const refType = row.offset > 0 ? "LeadInviteOverdue" : "LeadInviteUpcoming";
   const dup = await prisma.notification.findFirst({
     where: { refType, refId: lead.id, userId: row.userId, createdAt: { gte: shDayStart(now) } },
     select: { id: true }
   });
   if (!dup) {
-    const days = lead.invitedAt
-      ? Math.max(1, Math.round((now.getTime() - lead.invitedAt.getTime()) / 86_400_000))
-      : 1;
+    // 文案按 offset 三态（负=提前 / 0=当天 / 正=逾期）。
+    // 事前提醒的优先级低于逾期：还没到约定时间，不需要把它标成 HIGH 抢占注意力。
+    const isAhead = row.offset <= 0;
+    const title = row.offset < 0 ? "明天有到店邀约" : row.offset === 0 ? "今天有到店邀约" : "邀约客户未到店";
+    const content = isAhead
+      ? `${lead.name} 的到店时间就在${row.offset < 0 ? "明天" : "今天"}。请提前确认，改期比事后追责有用得多。`
+      : `${lead.name} 约了 ${row.offset} 天前的到店时间但未到店。请跟进确认是否改期——停在「已邀约」的线索不会自己变红。`;
     await createNotification({
       userId: row.userId,
       type: "SYSTEM",
-      priority: "HIGH",
-      title: "邀约客户未到店",
-      content: `${lead.name} 约了 ${days} 天前的到店时间但未到店。请跟进确认是否改期——停在「已邀约」的线索不会自己变红。`,
+      priority: isAhead ? "NORMAL" : "HIGH",
+      title,
+      content,
       href: "/leads",
       refType,
       refId: lead.id

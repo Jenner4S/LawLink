@@ -42,7 +42,7 @@ afterAll(async () => { await dropDb?.(); }, 60_000);
 vi.mock("@/lib/prisma", () => ({ get prisma() { return prisma; } }));
 vi.mock("@/server/notifications/create", () => ({ createNotification: vi.fn(async () => ({ id: "n1" })) }));
 
-const { scanLeadInviteReminders, retireLeadReminders, LEAD_REMINDER_DAYS } =
+const { scanLeadInviteReminders, retireLeadReminders, LEAD_REMINDER_DAYS, LEAD_REMINDER_AHEAD_DAYS } =
   await import("@/server/leads/reminders");
 const { deliverPendingReminders } = await import("@/server/reminders/delivery");
 const { createNotification } = await import("@/server/notifications/create");
@@ -166,5 +166,94 @@ describe("投递前复核现值", () => {
     expect(n).toBe(1);
     const row = await prisma.reminderDelivery.findFirst({ where: { objectType: "LEAD", objectId: lead.id } });
     expect(row?.status).toBe("CANCELLED");
+  });
+});
+
+describe("事前提醒（提前 1 天 / 当天）", () => {
+  /**
+   * 只有逾期提醒是半个闭环：客户明天要来，跟进人今天不知道；当天要来了也没有提示。
+   * **事前提醒比事后追责有用**：到店这件事，提醒得早能改期，提醒得晚只能算账。
+   */
+  const inDays = (n: number) => new Date(NOW.getTime() + n * 86_400_000);
+
+  async function seedFuture(args: { invitedAt: Date; active?: boolean }) {
+    const owner = args.active === false
+      ? await prisma.user.create({ data: { email: `${uid("e")}@t.local`, name: "停用", role: "LAWYER", passwordHash: "x", active: false } })
+      : { id: OWNER.id };
+    return prisma.lead.create({
+      data: { name: uid("线索"), phone: "13800000000", stage: "INVITED", invitedAt: args.invitedAt, ownerId: owner.id }
+    });
+  }
+
+  it("约定在明天 → 登记提前 1 天提醒（offset = -1）", async () => {
+    const lead = await seedFuture({ invitedAt: inDays(1) });
+    await scanLeadInviteReminders(NOW);
+    const rows = await prisma.reminderDelivery.findMany({ where: { objectType: "LEAD", objectId: lead.id }, select: { offset: true } });
+    expect(rows.map((r) => r.offset)).toEqual([-1]);
+  });
+
+  it("约定在今天且时刻未到 → 登记当天提醒（offset = 0）", async () => {
+    const lead = await seedFuture({ invitedAt: new Date(NOW.getTime() + 3 * 3600_000) });
+    await scanLeadInviteReminders(NOW);
+    const rows = await prisma.reminderDelivery.findMany({ where: { objectType: "LEAD", objectId: lead.id }, select: { offset: true } });
+    expect(rows.map((r) => r.offset)).toEqual([0]);
+  });
+
+  it("约定在今天但时刻已过 → 不按「当天」提醒（避免和逾期口径重复）", async () => {
+    const lead = await seedFuture({ invitedAt: new Date(NOW.getTime() - 2 * 3600_000) });
+    await scanLeadInviteReminders(NOW);
+    const rows = await prisma.reminderDelivery.findMany({ where: { objectType: "LEAD", objectId: lead.id }, select: { offset: true } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("约定在后天 → 不提醒（只提前 1 天）", async () => {
+    const lead = await seedFuture({ invitedAt: inDays(2) });
+    await scanLeadInviteReminders(NOW);
+    expect(await prisma.reminderDelivery.count({ where: { objectType: "LEAD", objectId: lead.id } })).toBe(0);
+  });
+
+  it("跟进人停用 → 事前提醒也不登记", async () => {
+    const lead = await seedFuture({ invitedAt: inDays(1), active: false });
+    await scanLeadInviteReminders(NOW);
+    expect(await prisma.reminderDelivery.count({ where: { objectType: "LEAD", objectId: lead.id } })).toBe(0);
+  });
+
+  it("registeredAhead 只计事前两类", async () => {
+    await seedFuture({ invitedAt: inDays(1) });
+    await seedLead({ stage: "INVITED", invitedDaysAgo: 1 });
+    const res = await scanLeadInviteReminders(NOW);
+    expect(res.registeredAhead).toBeGreaterThanOrEqual(1);
+    expect(res.registeredAhead).toBeLessThanOrEqual(res.registered);
+    expect(LEAD_REMINDER_AHEAD_DAYS).toEqual([1, 0]);
+  });
+
+  it("事前提醒发的是「明天/今天有到店邀约」，且优先级不是 HIGH", async () => {
+    const lead = await seedFuture({ invitedAt: inDays(1) });
+    await scanLeadInviteReminders(NOW);
+    vi.mocked(createNotification).mockClear();
+    await deliverPendingReminders(50);
+    const mine = vi.mocked(createNotification).mock.calls
+      .map((c) => c[0] as { title: string; priority?: string; refId?: string })
+      .filter((a) => a.refId === lead.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].title).toBe("明天有到店邀约");
+    expect(mine[0].priority).toBe("NORMAL");
+  });
+
+  it("**改期检测**：登记后把约定时间改了 → 这条作废，不按旧时间提醒", async () => {
+    const lead = await seedFuture({ invitedAt: inDays(1) });
+    await scanLeadInviteReminders(NOW);
+
+    // 客户改到下周三（模拟跟进人改期）
+    await prisma.lead.update({ where: { id: lead.id }, data: { invitedAt: inDays(7) } });
+
+    vi.mocked(createNotification).mockClear();
+    await deliverPendingReminders(50);
+    const row = await prisma.reminderDelivery.findFirst({ where: { objectType: "LEAD", objectId: lead.id } });
+    expect(row?.status).toBe("SUPERSEDED");
+    const mine = vi.mocked(createNotification).mock.calls
+      .map((c) => c[0] as { refId?: string })
+      .filter((a) => a.refId === lead.id);
+    expect(mine).toHaveLength(0);
   });
 });

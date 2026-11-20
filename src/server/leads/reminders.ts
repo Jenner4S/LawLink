@@ -34,6 +34,17 @@ import { registerReminderDelivery, voidPendingDeliveries } from "@/server/remind
 /** 逾期第几天提醒（1/3/7），之后不再提醒 */
 export const LEAD_REMINDER_DAYS = [1, 3, 7] as const;
 
+/**
+ * 事前提醒：提前 1 天 + 当天（2026-11-21 补全）
+ *
+ * 只有逾期提醒是半个闭环——客户明天要来，跟进人今天不知道；当天要来了，
+ * 也没有任何提示。**事前提醒比事后追责有用得多**：到店这件事，提醒得早能改期，
+ * 提醒得晚只能算账。
+ *
+ * offset 语义沿用台账既有约定：负=提前天数，0=当天，正=逾期天数。
+ */
+export const LEAD_REMINDER_AHEAD_DAYS = [1, 0] as const;
+
 /** 上海日键（与台账其它通道一致：同一自然日去重） */
 function shDayKey(d: Date): string {
   const sh = new Date(d.getTime() + 8 * 3600_000);
@@ -48,19 +59,23 @@ function dayDiff(from: Date, to: Date): number {
   return Math.round((kb - ka) / 86_400_000);
 }
 
-export type LeadReminderScanResult = { scanned: number; registered: number; skippedDisabled: number };
+export type LeadReminderScanResult = {
+  scanned: number;
+  registered: number;
+  skippedDisabled: number;
+  /** 事前（提前 1 天 / 当天）登记数，便于区分两类提醒的量 */
+  registeredAhead: number;
+};
 
 /**
- * 扫描「已邀约但没到店」的线索并登记提醒。
+ * 扫描已邀约线索，登记**事前**（提前 1 天 / 当天）与**逾期**（1/3/7 天）提醒。
  * 由定时任务调用；同一天重复调用是幂等的（台账去重）。
  */
 export async function scanLeadInviteReminders(now: Date = new Date()): Promise<LeadReminderScanResult> {
   const candidates = await prisma.lead.findMany({
     where: {
       stage: "INVITED",
-      invitedAt: { not: null },
-      // 只扫已经过期的：约定时间早于现在
-      AND: [{ invitedAt: { lt: now } }]
+      invitedAt: { not: null }
     },
     select: {
       id: true, name: true, invitedAt: true, ownerId: true,
@@ -70,12 +85,28 @@ export async function scanLeadInviteReminders(now: Date = new Date()): Promise<L
   });
 
   let registered = 0;
+  let registeredAhead = 0;
   let skippedDisabled = 0;
 
   for (const lead of candidates) {
     if (!lead.invitedAt) continue;
-    const overdueDays = dayDiff(lead.invitedAt, now);
-    if (!LEAD_REMINDER_DAYS.includes(overdueDays as 1 | 3 | 7)) continue;
+
+    // daysUntil > 0 未来；0 当天；< 0 已过期
+    const daysUntil = dayDiff(now, lead.invitedAt);
+    let offset: number | null = null;
+
+    if (daysUntil > 0) {
+      // 未来：只在提前 1 天提醒
+      if (LEAD_REMINDER_AHEAD_DAYS.includes(daysUntil as 0 | 1)) offset = -daysUntil;
+    } else if (daysUntil === 0) {
+      // 当天：约定时刻还没到 → 当天提醒；已过 → 走逾期口径（第 0 天不重复提醒）
+      if (lead.invitedAt.getTime() > now.getTime()) offset = 0;
+    } else {
+      const overdueDays = -daysUntil;
+      if (LEAD_REMINDER_DAYS.includes(overdueDays as 1 | 3 | 7)) offset = overdueDays;
+    }
+
+    if (offset === null) continue;
 
     // 跟进人已停用：不发，交给人工转派（见文件头「接收人」）
     if (!lead.owner.active) {
@@ -87,15 +118,18 @@ export async function scanLeadInviteReminders(now: Date = new Date()): Promise<L
       objectType: "LEAD",
       objectId: lead.id,
       kind: "OFFSET",
-      offset: overdueDays,
+      offset,
       channel: "IN_APP",
       dayKey: shDayKey(now),
       userId: lead.ownerId
-    });
-    if (res === "REGISTERED") registered += 1;
+    }, prisma, new Date(), { invitedAt: lead.invitedAt.toISOString() });
+    if (res === "REGISTERED") {
+      registered += 1;
+      if (offset <= 0) registeredAhead += 1;
+    }
   }
 
-  return { scanned: candidates.length, registered, skippedDisabled };
+  return { scanned: candidates.length, registered, skippedDisabled, registeredAhead };
 }
 
 /**
