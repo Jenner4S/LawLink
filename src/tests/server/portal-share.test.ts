@@ -64,7 +64,7 @@ vi.mock("next/navigation", () => ({
   redirect: (u: string) => { throw Object.assign(new Error("NEXT_REDIRECT"), { digest: `NEXT_REDIRECT;${u}` }); }
 }));
 
-const { shareDocumentToPortal, revokePortalShare } = await import("@/server/portal/share");
+const { shareDocumentToPortal, revokePortalShare, listPortalSharesForMatter } = await import("@/server/portal/share");
 const { portalCanReadDocument, assertPortalCanDownload } = await import("@/lib/portal/access");
 
 let seq = 0;
@@ -224,5 +224,51 @@ describe("撤销即失效", () => {
     await revokePortalShare({ shareId });
     const again = await revokePortalShare({ shareId });
     expect(again.alreadyRevoked).toBe(true);
+  });
+});
+
+describe("员工侧清单（撤销的前提：看不到就撤不了）", () => {
+  it("列出本案全部分享，生效中在前、已撤销在后，并带材料名", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+    const d1 = await seedDoc(matter.id, "合同.pdf");
+    const d2 = await seedDoc(matter.id, "评估意见.pdf");
+
+    const a = await shareDocumentToPortal({ documentId: d1.id });
+    await shareDocumentToPortal({ documentId: d2.id });
+    await revokePortalShare({ shareId: a.shareId, reason: "误发" });
+
+    const rows = await listPortalSharesForMatter(matter.id);
+    expect(rows).toHaveLength(2);
+    // 生效中的排在前（revokedAt asc：null 在前）
+    expect(rows[0].revokedAt).toBeNull();
+    expect(rows[0].documentName).toBe("评估意见.pdf");
+    expect(rows[1].revokedAt).not.toBeNull();
+    expect(rows[1].documentName).toBe("合同.pdf");
+  });
+
+  it("材料已被删除时清单仍列出该分享，并标注（留痕不能因为材料没了就消失）", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+    const doc = await seedDoc(matter.id, "将删除.pdf");
+    await shareDocumentToPortal({ documentId: doc.id });
+    await prisma.document.update({ where: { id: doc.id }, data: { deletedAt: new Date() } });
+
+    const rows = await listPortalSharesForMatter(matter.id);
+    expect(rows).toHaveLength(1);
+    // 名字保留（留痕要回答「当时分享过什么」），另给一个标记让面板标注
+    expect(rows[0].documentName).toBe("将删除.pdf");
+    expect(rows[0].documentDeleted).toBe(true);
+  });
+
+  it("别的案件看不到本案的分享（清单按 matterId 隔离）", async () => {
+    const client = await seedClient();
+    const m1 = await seedMatter(client.id);
+    const m2 = await seedMatter(client.id);
+    const doc = await seedDoc(m1.id);
+    await shareDocumentToPortal({ documentId: doc.id });
+
+    expect(await listPortalSharesForMatter(m1.id)).toHaveLength(1);
+    expect(await listPortalSharesForMatter(m2.id)).toHaveLength(0);
   });
 });

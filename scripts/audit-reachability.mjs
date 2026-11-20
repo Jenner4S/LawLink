@@ -108,8 +108,6 @@ const unreachable = [...defs.keys()].filter((n) => !uiCount.has(n)).sort();
 const BASELINE = new Set([
   "activateMatterService",
   "revokePortalUser",
-  "revokePortalShare",
-  "listPortalSharesForMatter",
   "allocatePayment",
   "mergeClients",
   "batchApproveArchiveRecords",
@@ -220,11 +218,6 @@ const VERDICT = {
   // 2026-11-20：邀请/接受/登录已全部可达（客户详情「邀请开通门户」+ /portal/login + /portal/invite/[token]）。
   // 仅「停用某个门户账号」还差一个入口——S2 的客户门户账号列表里给；届时移出 BASELINE。
   revokePortalUser: ["intentional", "停用门户账号的入口随 S2 账号列表补；届时移出 BASELINE"],
-  // 2026-11-20 门户 S2：分享动作**已可达**（材料行「分享给客户」），
-  // 但「撤销分享」与「已分享清单」还差员工侧入口 —— 数据层已就绪并经 10 例真库测试
-  // （含撤销即失效、软删留痕）。二期在材料区加「客户可见」清单并给撤销按钮，届时移出 BASELINE。
-  revokePortalShare: ["intentional", "撤销的**数据层已就绪并测试**，员工侧清单与撤销按钮随 S2 二期补"],
-  listPortalSharesForMatter: ["intentional", "同上：清单读取已就绪，等员工侧「客户可见」面板"],
   // 2026-11-20 更正：原判定写「默认卷宗不允许改名 / 不允许删除」，**两句都不准确**。
   //   · renameFolder 实现里**没有** isDefault 限制，任何目录都可改名（已补入口）。
   //   · deleteFolder 明确只拒绝 isDefault，非默认可删，卷内材料移到散件不丢（已补入口）。

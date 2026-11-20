@@ -29,7 +29,7 @@ import {
   StickyNote,
   Truck,
   Sparkles,
-  Upload, FolderCog } from "lucide-react";
+  Upload, FolderCog, Eye } from "lucide-react";
 import type {
   DocumentCategory,
   DocumentSourceOrigin,
@@ -60,6 +60,7 @@ import { TaskEditDialog, type EditableTask } from "./task-edit-dialog";
 import { NoteEditDialog, type EditableNote } from "./note-edit-dialog";
 import { DocFolderMoveDialog } from "./doc-folder-move-dialog";
 import { shareDocumentToPortal } from "@/server/portal/share";
+import { PortalSharePanel } from "./portal-share-panel";
 import { deleteNote } from "@/server/notes/actions";
 import { createProcedureStage, deleteProcedureMemo, ensureProcedureStage, removeProcedureStage, toggleDeadlineCompleted, toggleProcedureMemo } from "@/server/procedures/actions";
 import { deleteExpress } from "@/server/express/actions";
@@ -2005,6 +2006,7 @@ function StageMaterialsPanel({
   const [picked, setPicked] = useState<File | null>(null);
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
   const [folderMgrOpen, setFolderMgrOpen] = useState(false);
+  const [sharePanelOpen, setSharePanelOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [sourceParty, setSourceParty] = useState("");
   const [sourceOrigin, setSourceOrigin] = useState<DocumentSourceOrigin | "">("");
@@ -2128,6 +2130,19 @@ function StageMaterialsPanel({
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFolderMgrOpen(true)} title="卷宗目录：改名 / 删除非默认目录">
               <FolderCog />
               目录
+            </button>
+          ) : null}
+          {/* 2026-11-20 门户 S2 二期：分享已能用了，但律师看不到分享过什么、也撤不回来。
+              对「披露给外部客户」这件事，没有清单和撤销入口是不合格的。 */}
+          {canManage ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setSharePanelOpen(true)}
+              title="查看已分享给客户的材料，可收回"
+            >
+              <Eye />
+              客户可见
             </button>
           ) : null}
           {canManage ? (
@@ -2279,6 +2294,9 @@ function StageMaterialsPanel({
           onOpenChange={setFolderMgrOpen}
           matterId={matterId}
         />
+      ) : null}
+      {sharePanelOpen ? (
+        <PortalSharePanel open={sharePanelOpen} onOpenChange={setSharePanelOpen} matterId={matterId} />
       ) : null}
 
     </div>

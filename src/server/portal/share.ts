@@ -155,7 +155,10 @@ export async function listPortalSharesForMatter(matterId: string) {
 
   const rows = await prisma.portalShare.findMany({
     where: { matterId, shareType: "DOCUMENT" },
-    orderBy: [{ revokedAt: "asc" }, { sharedAt: "desc" }],
+    // nulls: "first" 是必须的：Postgres 的 ASC 默认把 NULL 排**最后**，
+    // 直接 orderBy revokedAt: "asc" 会让「已撤销」全部排在生效中的前面——
+    // 面板上律师第一眼看到的就是一堆收回记录。这是测试抓出来的，不是猜的。
+    orderBy: [{ revokedAt: { sort: "asc", nulls: "first" } }, { sharedAt: "desc" }],
     select: {
       id: true,
       documentId: true,
@@ -168,13 +171,20 @@ export async function listPortalSharesForMatter(matterId: string) {
 
   // 材料名单独取：PortalShare 与 Document 不建关系（披露是留痕，不该被材料删除连带）
   const docIds = rows.map((r) => r.documentId).filter((d): d is string => Boolean(d));
+  // 软删的材料也要能查到名字：披露是留痕，材料被删掉之后
+  // 「当时分享过什么」照样要回答得出。所以不过滤 deletedAt，而是把状态一并返回。
   const docs = docIds.length
-    ? await prisma.document.findMany({ where: { id: { in: docIds } }, select: { id: true, name: true } })
+    ? await prisma.document.findMany({ where: { id: { in: docIds } }, select: { id: true, name: true, deletedAt: true } })
     : [];
-  const nameOf = new Map(docs.map((d) => [d.id, d.name]));
+  const docOf = new Map(docs.map((d) => [d.id, d]));
 
-  return rows.map((r) => ({
-    ...r,
-    documentName: r.documentId ? (nameOf.get(r.documentId) ?? "（材料已删除）") : null
-  }));
+  return rows.map((r) => {
+    const doc = r.documentId ? docOf.get(r.documentId) : undefined;
+    return {
+      ...r,
+      documentName: doc?.name ?? (r.documentId ? "（材料已删除）" : null),
+      /** 材料被软删：面板据此标注，但名字保留——留痕不该因为材料没了就变成一句「已删除」 */
+      documentDeleted: Boolean(doc?.deletedAt)
+    };
+  });
 }
