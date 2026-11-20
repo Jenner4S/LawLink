@@ -92,6 +92,7 @@ import {
   type UserOption
 } from "@/app/(app)/preservation/_components/preservation-types";
 import { TemplatePickerDialog } from "./template-picker-dialog";
+import { AiDraftDialog } from "./ai-draft-dialog";
 import { AdjustDeadlineDialog } from "./procedure-content";
 import { confirmDeadline } from "@/server/deadlines/confirm";
 import { DocIcon, EmptyState, SourceChip } from "@/components/patterns/moan";
@@ -1972,6 +1973,7 @@ function StageMaterialsPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<File | null>(null);
+  const [aiDraftOpen, setAiDraftOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [sourceParty, setSourceParty] = useState("");
   const [sourceOrigin, setSourceOrigin] = useState<DocumentSourceOrigin | "">("");
@@ -2079,6 +2081,14 @@ function StageMaterialsPanel({
             <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenTemplate}>
               <Sparkles />
               从模板生成
+            </button>
+          ) : null}
+          {/* 2026-11-20：draftDocument 此前零引用——「填空 → AI 生成草稿 → 复制/下载」无入口。
+              「从模板生成」只能产出已有模板的文书，新类型此前只能手写。 */}
+          {canManage ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAiDraftOpen(true)} title="填空后由 AI 生成文书草稿（需管理员配置模型）">
+              <Sparkles />
+              AI 起草
             </button>
           ) : null}
           {canManage ? (
@@ -2218,6 +2228,13 @@ function StageMaterialsPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {aiDraftOpen ? (
+        <AiDraftDialog
+          open={aiDraftOpen}
+          onOpenChange={setAiDraftOpen}
+        />
+      ) : null}
+
     </div>
   );
 }

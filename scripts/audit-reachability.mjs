@@ -120,7 +120,6 @@ const BASELINE = new Set([
   "deleteFeeEntry",
   "deleteFolder",
   "deleteTask",
-  "draftDocument",
   "getCauseById",
   "getDashboardKpis",
   "getEnterpriseSummaryByParty",
