@@ -93,6 +93,8 @@ beforeEach(() => {
   writeFile.mockResolvedValue("mock-only-no-file-written");
   // F-1：日程提醒登记走台账（createMany 默认成功；updateMany 默认零命中）
   db.reminderDelivery.createMany.mockResolvedValue({ count: 1 });
+  // 默认 0：登记路径依赖 updateMany.count===0 判定「同键已存在」（ALREADY）。
+  // 需要投递的用例自行改成 1（租约领取要 count>0 才会继续）。
   db.reminderDelivery.updateMany.mockResolvedValue({ count: 0 });
   db.$transaction.mockImplementation(async (fn: (tx: typeof db) => Promise<unknown>) => fn(db));
 });
@@ -197,6 +199,8 @@ describe("提醒与审计保留", () => {
       .map((r, i) => ({ id: `row${i}`, objectType: r.objectType, objectId: r.objectId, kind: r.kind, offset: r.offset, channel: r.channel, dayKey: r.dayKey, userId: r.userId, attempts: 0 })));
     await scanDueReminders();
     const { deliverPendingReminders } = await import("@/server/reminders/delivery");
+    // 2026-11-21 租约：投递前要先原子领取成功（count>0）
+    db.reminderDelivery.updateMany.mockResolvedValue({ count: 1 });
     await deliverPendingReminders(100);
     const notifications = db.notification.createMany.mock.calls.flatMap(([args]) => args.data);
     expect(notifications.filter(n => n.type === "DEADLINE_REMINDER").map(n => [n.title, n.priority])).toEqual([

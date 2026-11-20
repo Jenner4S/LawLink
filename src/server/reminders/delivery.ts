@@ -75,6 +75,8 @@ export type DeliverySweepResult = {
   processed: number; sent: number; voided: number; skipped: number; failed: number;
   /** 上一轮 sweep 仍在进行，本次整轮让开（重入守卫，见下） */
   reentrantSkipped?: boolean;
+  /** 候选行全被其他实例领走（多实例下正常现象，不是错误） */
+  leaseMissed?: boolean;
 };
 
 /**
@@ -94,6 +96,14 @@ let sweepInFlight = false;
 /**
  * 投递器：sweep 到期 PENDING 行，逐行复核对象现值后发送并落终态。
  */
+/** 租约时长：一轮 sweep 正常在秒级完成；给 2 分钟容忍慢库与 GC 停顿 */
+const LEASE_MS = 2 * 60 * 1000;
+/** 失败退避基数：2^n 分钟，封顶 30 分钟（MAX_ATTEMPTS=5 → 1/2/4/8/16 分钟） */
+const BACKOFF_BASE_MS = 60 * 1000;
+const BACKOFF_CAP_MS = 30 * 60 * 1000;
+/** 本进程的租约所有者标识（多实例时各副本不同） */
+const LEASE_OWNER = `pid:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
+
 export async function deliverPendingReminders(limit = 20): Promise<DeliverySweepResult> {
   if (sweepInFlight) {
     return { processed: 0, sent: 0, voided: 0, skipped: 0, failed: 0, reentrantSkipped: true };
@@ -108,10 +118,48 @@ export async function deliverPendingReminders(limit = 20): Promise<DeliverySweep
 
 async function sweepOnce(limit: number): Promise<DeliverySweepResult> {
   const now = new Date();
-  const rows = await prisma.reminderDelivery.findMany({
-    where: { status: "PENDING", registeredAt: { lte: now } },
+
+  // ① 候选：到点、未在退避窗口内
+  const candidates = await prisma.reminderDelivery.findMany({
+    where: {
+      status: "PENDING",
+      registeredAt: { lte: now },
+      AND: [{ OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] }]
+    },
     orderBy: [{ registeredAt: "asc" }],
     take: limit,
+    select: { id: true }
+  });
+  if (candidates.length === 0) {
+    return { processed: 0, sent: 0, voided: 0, skipped: 0, failed: 0 };
+  }
+
+  // ② 原子领取：只有 leaseUntil 为空或已过期的行才能被本次抢到。
+  //    这是多实例下唯一可靠的互斥——进程内 sweepInFlight 只管得住自己那个进程。
+  //    租约过期可被其他实例接手，等价于崩溃恢复（比「启动时扫一次」更简单）。
+  const leaseUntil = new Date(now.getTime() + LEASE_MS);
+  const claimed = await prisma.reminderDelivery.updateMany({
+    where: {
+      id: { in: candidates.map((c) => c.id) },
+      status: "PENDING",
+      AND: [{ OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] }]
+    },
+    data: { leaseOwner: LEASE_OWNER, leaseUntil }
+  });
+  if (claimed.count === 0) {
+    return { processed: 0, sent: 0, voided: 0, skipped: 0, failed: 0, leaseMissed: true };
+  }
+
+  // ③ 只处理**本次抢到**的行：再按 leaseOwner + leaseUntil 精确筛选，
+  //    避免把恰好落在同一窗口、被别的实例领走的行也读进来。
+  const rows = await prisma.reminderDelivery.findMany({
+    where: {
+      id: { in: candidates.map((c) => c.id) },
+      status: "PENDING",
+      leaseOwner: LEASE_OWNER,
+      leaseUntil: leaseUntil
+    },
+    orderBy: [{ registeredAt: "asc" }],
     select: {
       id: true, objectType: true, objectId: true, kind: true, offset: true,
       channel: true, dayKey: true, userId: true, attempts: true
@@ -140,12 +188,19 @@ async function sweepOnce(limit: number): Promise<DeliverySweepResult> {
     } catch (err) {
       result.failed++;
       const attempts = row.attempts + 1;
+      // 指数退避：不改 registeredAt（那是「应发时刻」，是事实），
+      // 用 nextAttemptAt 择下一次尝试，正常行因此不再被失败行挤掉。
+      const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (attempts - 1), BACKOFF_CAP_MS);
       await prisma.reminderDelivery.update({
         where: { id: row.id },
         data: {
           status: attempts >= MAX_ATTEMPTS ? "FAILED" : "PENDING",
           attempts,
-          lastError: err instanceof Error ? err.message : String(err)
+          lastError: err instanceof Error ? err.message : String(err),
+          ...(attempts >= MAX_ATTEMPTS ? {} : { nextAttemptAt: new Date(Date.now() + backoff) }),
+          // 失败即释放租约：不释放的话要等 LEASE_MS 到期才能重试
+          leaseOwner: null,
+          leaseUntil: null
         }
       });
     }
@@ -436,7 +491,10 @@ async function deliverArchiveBorrowRow(row: SweepRow, now: Date): Promise<RowOut
 async function finalize(row: SweepRow, status: "SENT" | "SUPERSEDED" | "CANCELLED" | "SKIPPED", detail?: Record<string, unknown>) {
   const data: Prisma.ReminderDeliveryUpdateInput = {
     status,
-    sentAt: status === "SENT" ? new Date() : null
+    sentAt: status === "SENT" ? new Date() : null,
+    // 终态释放租约：租约只为「处理中」这层互斥存在，处理完就该让位
+    leaseOwner: null,
+    leaseUntil: null
   };
   if (detail) data.detail = detail as Prisma.InputJsonValue;
   await prisma.reminderDelivery.update({ where: { id: row.id }, data });

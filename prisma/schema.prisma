@@ -2549,25 +2549,38 @@ enum ReminderDeliveryStatus {
 }
 
 model ReminderDelivery {
-  id           String                     @id @default(cuid())
-  objectType   ReminderDeliveryObjectType
-  objectId     String
-  kind         ReminderDeliveryKind
-  offset       Int // 仅 OFFSET / ESCALATION 有意义，其余恒 0
-  channel      ReminderDeliveryChannel
-  dayKey       String // 上海日 YYYY-MM-DD（补发幂等的自然键）
-  userId       String // 接收人；通道级行（WEBHOOK/全所摘要）为空串
-  status       ReminderDeliveryStatus     @default(PENDING)
-  registeredAt DateTime // 登记时刻＝应发动的一刻：保存即时触发取保存时刻，档位扫描取扫描时刻；投递条件 registeredAt <= now
-  sentAt       DateTime?
-  attempts     Int                        @default(0)
-  lastError    String?
-  detail       Json? // 通道级补充（如 Digest 的 sentCount/userCount、SKIPPED 原因）
-  createdAt    DateTime                   @default(now())
-  updatedAt    DateTime                   @updatedAt
+  id            String                     @id @default(cuid())
+  objectType    ReminderDeliveryObjectType
+  objectId      String
+  kind          ReminderDeliveryKind
+  offset        Int // 仅 OFFSET / ESCALATION 有意义，其余恒 0
+  channel       ReminderDeliveryChannel
+  dayKey        String // 上海日 YYYY-MM-DD（补发幂等的自然键）
+  userId        String // 接收人；通道级行（WEBHOOK/全所摘要）为空串
+  status        ReminderDeliveryStatus     @default(PENDING)
+  registeredAt  DateTime // 登记时刻＝应发动的一刻：保存即时触发取保存时刻，档位扫描取扫描时刻；投递条件 registeredAt <= now
+  sentAt        DateTime?
+  attempts      Int                        @default(0)
+  /// 数据库级租约（2026-11-21）：sweep 先原子领取再发送。
+  ///
+  /// 进程内守卫（sweepInFlight）只能防**同一进程**的重入；
+  /// 多实例部署时两个副本会同时捞到同一行、各发一次通知。唯一约束挡不住——
+  /// 它防的是「同键重复行」，不是「同一行重复发送」。
+  leaseOwner    String?
+  leaseUntil    DateTime?
+  /// 失败退避：失败行原先把 registeredAt 保持不变，永远排在取数队首，
+  /// 占满 take 窗口，让「今天到期」的正常提醒被推迟数小时。
+  /// 退避后按 nextAttemptAt 择时，正常行不再被失败行挤掉。
+  nextAttemptAt DateTime?
+  lastError     String?
+  detail        Json? // 通道级补充（如 Digest 的 sentCount/userCount、SKIPPED 原因）
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
 
   @@unique([objectType, objectId, kind, offset, channel, dayKey, userId], map: "reminder_delivery_dedupe")
   @@index([dayKey, channel, status], map: "reminder_delivery_day_channel_status")
+  @@index([status, nextAttemptAt], map: "reminder_delivery_status_next_attempt")
+  @@index([leaseUntil], map: "reminder_delivery_lease_until")
   @@index([status, registeredAt])
   @@map("reminder_delivery")
 }

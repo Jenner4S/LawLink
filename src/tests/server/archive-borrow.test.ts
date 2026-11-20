@@ -55,6 +55,8 @@ beforeEach(() => {
   scheduleRegister.registerReminderDelivery.mockResolvedValue("REGISTERED");
   scheduleRegister.voidPendingDeliveries.mockResolvedValue(0);
   db.archiveBorrowRequest.updateMany.mockResolvedValue({ count: 1 });
+  // 2026-11-21 租约：sweep 先用 updateMany 原子领取，需要返回 { count }
+  db.reminderDelivery.updateMany.mockResolvedValue({ count: 1 });
   db.archiveBorrowRequest.update.mockResolvedValue({});
   notify.mockResolvedValue({});
   approveCtx.mockResolvedValue(true);

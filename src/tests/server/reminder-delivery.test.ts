@@ -87,7 +87,8 @@ beforeEach(() => {
     updates.push(args);
     return {};
   });
-  db.reminderDelivery.updateMany.mockResolvedValue({ count: 0 });
+  // 2026-11-21 租约：sweep 先用 updateMany 原子领取，count 必须 >0 才会继续处理
+  db.reminderDelivery.updateMany.mockResolvedValue({ count: 1 });
 });
 
 it("OFFSET 行复核通过：发送档位通知并落 SENT", async () => {
