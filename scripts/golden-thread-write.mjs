@@ -13,8 +13,12 @@
  * 的**逻辑层**已有真库覆盖（business-chain-e2e.test.ts），本脚本补的是**界面提交**这一层：
  * 浏览器里的表单 → React 校验 → server action → 落库。
  *
- * 选「门户提问」作为写操作样本，因为它只有普通 input/textarea（不含 Radix Select，
- * 后者对合成点击不可靠），能把「写链路是否通」这件事单独隔离出来验证。
+ * 覆盖两条写链（都刻意选**普通 input / 提交按钮**，不含 Radix Select，
+ * 后者对合成点击不可靠，会把「写链是否通」这个问题污染成「选择器是否稳」）：
+ *   ① 门户侧：客户提工单（portal session）
+ *   ② 员工侧：新建客户（staff session，登录页表单 → 顶栏主操作 → 保存）
+ * 员工侧这条尤其重要：staff 的写操作全部走 NextAuth 会话 + server action，
+ * 与门户是两套完全不同的鉴权路径，只测门户等于只测了一半。
  *
  * ## 安全性
  * · 只建一条可精确定位的探针工单（标题含随机标记），结束时按**标记**删除并复验为 0；
@@ -30,6 +34,7 @@ import { createHmac } from "node:crypto";
 const CDP_PORT = process.env.CDP ?? "9333";
 const BASE = process.env.BASE ?? "http://localhost:3000";
 const MARK = `探针写链-${Date.now().toString(36)}`;
+const CLIENT_MARK = `探针客户-${Date.now().toString(36)}`;
 
 let pass = 0;
 let fail = 0;
@@ -105,6 +110,104 @@ async function clickButtonByText(ctx, text) {
     b.click();
     return true;
   })()`);
+}
+
+/* ---------------------------------------------------------------- 员工侧 */
+const STAFF_EMAIL = process.env.STAFF_EMAIL ?? "admin@lawlink.local";
+const STAFF_PASSWORD = process.env.STAFF_PASSWORD ?? "LawLink2026!Dev";
+
+async function staffLogin(ctx) {
+  await ctx.send("Network.clearBrowserCookies");
+  await ctx.send("Page.navigate", { url: BASE + "/login" });
+  let ok = false;
+  for (let i = 0; i < 100; i += 1) {
+    ok = await ctx.evaluate(`Boolean(document.querySelector('input[type=email]'))`);
+    if (ok) break;
+    await sleep(200);
+  }
+  if (!ok) return false;
+  await ctx.evaluate(`(function(){var e=document.querySelector('input[type=email]');e.focus();e.select();})()`);
+  await ctx.send("Input.insertText", { text: STAFF_EMAIL });
+  await ctx.evaluate(`(function(){var e=document.querySelector('input[type=password]');e.focus();e.select();})()`);
+  await ctx.send("Input.insertText", { text: STAFF_PASSWORD });
+  await sleep(200);
+  await ctx.evaluate(`(function(){var b=document.querySelector('button[type=submit]');if(b)b.click();})()`);
+  for (let i = 0; i < 100; i += 1) {
+    await sleep(300);
+    const path = await ctx.evaluate("location.pathname");
+    if (path && path !== "/login") return true;
+  }
+  return false;
+}
+
+async function staffCreateClient(ctx, name) {
+  const diag = await goto(ctx, "/clients");
+  if (diag.err) return { ok: false, why: "clients 页错误" };
+  // 顶栏主操作「新建客户」
+  const opened = await clickButtonByText(ctx, "新建客户");
+  if (!opened) return { ok: false, why: "找不到「新建客户」按钮" };
+
+  // 等对话框出现（名称占位符随客户类型变化，故用 label 定位 input）
+  let ready = false;
+  for (let i = 0; i < 60; i += 1) {
+    ready = await ctx.evaluate(`(function(){
+      var inputs = [].slice.call(document.querySelectorAll('input'));
+      return inputs.some(function(x){ return x.placeholder === "张三" || x.placeholder === "上海某某有限公司"; });
+    })()`);
+    if (ready) break;
+    await sleep(200);
+  }
+  if (!ready) return { ok: false, why: "新建客户对话框未出现" };
+
+  // 类型默认 INDIVIDUAL（自然人）→ 占位符「张三」；idNumber 可选，只填名称即可
+  const typed = await ctx.evaluate(`(function(){
+    var inputs = [].slice.call(document.querySelectorAll('input'));
+    var el = inputs.find(function(x){ return x.placeholder === "张三" || x.placeholder === "上海某某有限公司"; });
+    if (!el) return false;
+    el.focus();
+    return document.activeElement === el;
+  })()`);
+  if (!typed) return { ok: false, why: "名称输入框无法聚焦" };
+  await ctx.send("Input.insertText", { text: name });
+
+  // 联系人 1 的姓名也是必填（占位符就是「姓名」）。不填的话保存会被 zod 拦下，
+  // 表现是「点了没反应、对话框不关」——第一版就卡在这里，靠 dump dialogText 才看见这一栏。
+  const contactTyped = await ctx.evaluate(`(function(){
+    var inputs = [].slice.call(document.querySelectorAll('input'));
+    var el = inputs.find(function(x){ return x.placeholder === "姓名"; });
+    if (!el) return false;
+    el.focus();
+    return document.activeElement === el;
+  })()`);
+  if (!contactTyped) return { ok: false, why: "联系人姓名输入框无法聚焦" };
+  await ctx.send("Input.insertText", { text: "探针联系人" });
+
+  // 按**文案**点保存，不要用 button[type=submit] —— 页面上还有搜索框等其它 submit，
+  // document.querySelector 会取到第一个（第一版就取错了，表现是「点了没反应、对话框不关」）
+  const btnInfo = await ctx.evaluate(`(function(){
+    var all = [].slice.call(document.querySelectorAll('button'));
+    return JSON.stringify({
+      texts: all.map(function(b){ return (b.textContent||"").trim(); }).filter(Boolean),
+      hasCreate: all.some(function(b){ return (b.textContent||"").trim() === "创建客户"; })
+    });
+  })()`);
+  const saved = await clickButtonByText(ctx, "创建客户");
+  if (!saved) return { ok: false, why: `找不到「创建客户」按钮；按钮文案=${btnInfo}` };
+
+  // 诊断：保存后 3s 看对话框是否关闭、有没有校验错误文案
+  await sleep(3000);
+  const state = await ctx.evaluate(`(function(){
+    var dlg = document.querySelector('[role=dialog]');
+    var errs = [].slice.call(document.querySelectorAll('[role=alert], .text-destructive, [data-sonner-toast]'))
+      .map(function(x){ return (x.textContent||"").trim(); }).filter(Boolean).slice(0,4);
+    return JSON.stringify({
+      dialogOpen: Boolean(dlg),
+      nameValue: (function(){var i=[].slice.call(document.querySelectorAll('input')).find(function(x){return x.placeholder==="张三"||x.placeholder==="上海某某有限公司";}); return i? i.value : null;})(),
+      errs: errs,
+      dialogText: dlg ? (dlg.innerText || "").replace(/\s+/g, " ").slice(0, 600) : null
+    });
+  })()`);
+  return { ok: true, state };
 }
 
 /* ---------------------------------------------------------------- 主流程 */
@@ -191,6 +294,32 @@ async function main() {
       const visible = await ctx.evaluate(`document.body.innerText.includes(${JSON.stringify(MARK)})`);
       check("刷新后界面可见刚提交的工单", !after.err && visible === true);
     }
+
+    /* ---------------- 员工侧写链：新建客户 ---------------- */
+    console.log(`\n=== 金线写操作：员工新建客户（标记 ${CLIENT_MARK}） ===`);
+    const loggedIn = await staffLogin(ctx);
+    check("员工登录成功（NextAuth 会话建立）", loggedIn);
+
+    if (loggedIn) {
+      const res = await staffCreateClient(ctx, CLIENT_MARK);
+      check("新建客户对话框可打开、可填写、可保存", res.ok, res.why ?? "");
+      // 只在失败时打印状态，成功时保持输出简洁（诊断信息本身是排查用的）
+      if (res.state && !res.ok) console.log(`  · 保存后状态：${res.state}`);
+
+      let client = null;
+      for (let i = 0; i < 40; i += 1) {
+        client = await db.client.findFirst({ where: { name: CLIENT_MARK }, select: { id: true } });
+        if (client) break;
+        await sleep(250);
+      }
+      check("界面提交后**真实落库**（staff 会话 → server action → DB）", Boolean(client), client ? "" : `10s 内未落库；保存后状态=${res.state ?? "(无)"}`);
+
+      if (client) {
+        const after = await goto(ctx, "/clients");
+        const visible = await ctx.evaluate(`document.body.innerText.includes(${JSON.stringify(CLIENT_MARK)})`);
+        check("客户列表刷新后可见新建客户", !after.err && visible === true);
+      }
+    }
   } finally {
     try {
       // 按**内容标记**删除，不依赖 id 变量（历史上变量污染导致残留）
@@ -198,6 +327,11 @@ async function main() {
       if (del.count) console.log(`  · 已删除探针工单 ${del.count} 条`);
       const left = await db.portalRequest.count({ where: { subject: MARK } });
       if (left !== 0) console.log(`  ❌ 探针工单残留 ${left} 条`);
+      // 员工侧探针客户：按名称标记删（该客户没有任何案件/收案，可直接删）
+      const delClient = await db.client.deleteMany({ where: { name: CLIENT_MARK } });
+      if (delClient.count) console.log(`  · 已删除探针客户 ${delClient.count} 条`);
+      const leftClient = await db.client.count({ where: { name: CLIENT_MARK } });
+      if (leftClient !== 0) console.log(`  ❌ 探针客户残留 ${leftClient} 条`);
       if (shareId) await db.portalShare.deleteMany({ where: { id: shareId } });
       if (portalUserId) await db.clientPortalUser.deleteMany({ where: { id: portalUserId } });
     } catch (err) {
