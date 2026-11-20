@@ -123,7 +123,6 @@ const BASELINE = new Set([
   "getEnterpriseSummaryByParty",
   "getExpress",
   "getMatterAllocationSummary",
-  "getSealRequest",
   "getSmsMessage",
   "getTemplate",
   "getWebhookSettingsAction",
@@ -164,7 +163,6 @@ const VERDICT = {
   getWorkflowTogglesAction: ["dead", "重复包装：/admin/firm-profile 直接调 getWorkflowToggles()，本 action 无调用方"],
   listSmsSuggestions: ["dead", "重复查询：收件箱页在 prisma.smsMessage 查询里内联 include suggestions，本 lister 无调用方"],
   listExpiringProperties: ["dead", "重复实现：保全页在客户端由 allProperties 算 expiring30（KPI 卡「30天内到期」），本 action 无调用方"],
-  getSealRequest: ["intentional", "功能正确但低效（拉全所队列再 find），用章台账页未单独建，保留待接线"],
   getSealStats: ["intentional", "依赖同样未接线的 listSealRequests；用章台账页未建，保留待接线"],
   // 卷宗目录由 default-folders 自动创建并给定 orderIndex，不开放手工排序
   reorderFolders: ["intentional", "卷宗目录顺序由 default-folders 决定，不开放手工排序（建/删目录本就未开放）"],

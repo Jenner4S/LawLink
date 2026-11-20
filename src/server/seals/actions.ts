@@ -119,16 +119,6 @@ async function notifySealApprovalRequested(input: {
   });
 }
 
-/**
- * 零引用（2026-11-21 审计）。功能正确但低效 —— 为了取一条把全所队列拉出来再 find。
- * 保留可见，若将来要接线，应改成 `prisma.sealRequest.findFirst({ where: { id } })`
- * 并补 visibility 判定，不要沿用这个「拉全量再筛」的写法。
- */
-export async function getSealRequest(id: string) {
-  const rows = await listSealRequests({ scope: "all" });
-  return rows.find(row => row.id === id) ?? null;
-}
-
 export async function listSealTypeConfigs() {
   await requireSession("approval");
   return prisma.sealTypeConfig.findMany({ orderBy: { type: "asc" } });
