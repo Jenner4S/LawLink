@@ -13,7 +13,7 @@ import {
   Contact,
   Compass,
   Megaphone,
-  BookText, FileText } from "lucide-react";
+  BookText, FileText, Stamp } from "lucide-react";
 import type { NavCounts } from "@/server/layout/nav-counts";
 
 export type NavItem = {
@@ -46,6 +46,9 @@ export const APP_ITEMS: { label: string; icon: LucideIcon; kind: "tools" | "link
   // 2026-11-20：listAllDocuments 此前零引用——跨案件找材料只能一个个案件点开翻
   // （律所里「上次那份保证合同在哪」每天都会发生）。与「律所文书」（所级）区分：这里是案件级。
   { label: "案件材料", href: "/documents", icon: FileText, kind: "link" },
+  // 2026-11-20：listSealRequests / getSealStats 此前无任何页面——用印审完就翻不到，
+  // 也无法回答「这个月用了几次章、都是谁的案子」。/seals 原为 308 重定向，改为台账页。
+  { label: "用章台账", href: "/seals", icon: Stamp, kind: "link" },
   { label: "公告指引", href: "/announcements", icon: Megaphone, kind: "link" },
   { label: "制度规范", href: "/policy", icon: BookText, kind: "link" },
   { label: "通讯录", href: "/contacts", icon: Contact, kind: "link" },
