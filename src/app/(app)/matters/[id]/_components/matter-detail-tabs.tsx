@@ -35,6 +35,7 @@ import type { SealContractItem, ExpressItem } from "./info-extras";
 import { AddDeadlineDialog, AddHearingDialog, AddProcedureSheet } from "./procedure-forms";
 import { deleteProcedure } from "@/server/procedures/actions";
 import { useRouter } from "next/navigation";
+import { setBillingContingency } from "@/server/finance/actions";
 import { LifecycleActions } from "./lifecycle-actions";
 import { AddBillingSheet } from "./finance-forms";
 import { EvidenceItemDialog, type EvidenceItemRow } from "./evidence-panel";
@@ -108,6 +109,8 @@ export type FinancePayload = {
     status: "DRAFT" | "ACTIVE" | "CLOSED";
     signedAt: Date | null;
     createdAt: Date;
+    /** 风代比例（2026-11-22 P0-4）：null = 普通收费 */
+    contingencyPercent: number | null;
   }[];
   entries: {
     id: string;
@@ -147,6 +150,21 @@ export type FinancePayload = {
     cost: number;
     commission: number;
     invoiced: number;
+  };
+  /**
+   * 风险代理计提（2026-11-22 P0-4）。金额不落库、按当前实收派生（见 contingency.ts）。
+   * 只在有风代合同时非空。
+   */
+  contingency: {
+    total: number;
+    plans: {
+      billingId: string;
+      billingTitle: string;
+      percent: number;
+      basis: number;
+      accrued: number;
+      contractAmount: number;
+    }[];
   };
 };
 
@@ -838,6 +856,9 @@ function BillingsCard({ matterId, billings, canManage, contractTotal }: { matter
               </span>
               <span className="v mono">{formatCurrency(Number(b.contractAmount))}</span>
               <span className="m">{[b.signedAt ? `${formatShortDate(b.signedAt)} 签署` : null, b.schedule].filter(Boolean).join(" · ")}</span>
+              {/* 2026-11-22 P0-4：风代比例就地设置。
+                  放在合同行而不是单独页面：比例是合同要素，看不到合同就没有填它的语境。 */}
+              {canManage ? <BillingContingencyInput billingId={b.id} percent={b.contingencyPercent ?? null} /> : null}
             </div>
           ))}
           <div className="panel-foot flex items-center justify-between">
@@ -848,6 +869,52 @@ function BillingsCard({ matterId, billings, canManage, contractTotal }: { matter
       )}
       {canManage ? <AddBillingSheet open={addOpen} onOpenChange={setAddOpen} matterId={matterId} /> : null}
     </section>
+  );
+}
+
+/**
+ * 风代比例就地编辑（2026-11-22 P0-4）
+ *
+ * 为什么单独成组件而不是塞进表单：比例经常在合同录完之后才谈定。
+ * 硬要求"建合同时填"会导致为了先建档随便填一个数——那比不填更糟。
+ */
+function BillingContingencyInput({ billingId, percent }: { billingId: string; percent: number | null }) {
+  const router = useRouter();
+  const [value, setValue] = useState(percent === null ? "" : String(percent));
+  const [isPending, startTransition] = useTransition();
+  const save = () => {
+    const trimmed = value.trim();
+    const next = trimmed === "" ? null : Number(trimmed);
+    if (next !== null && (!Number.isFinite(next) || next < 0 || next > 100)) {
+      toast.error("风险代理比例须在 0–100 之间");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await setBillingContingency({ billingId, percent: next });
+        toast.success(next === null ? "已取消风代比例" : `风代比例已设为 ${next}%`);
+        router.refresh();
+      } catch (err) {
+        toast.error("保存失败", { description: actionErrorMessage(err) });
+      }
+    });
+  };
+  return (
+    <span className="flex items-center gap-1" title="风险代理比例（计提按实收 × 比例推算）">
+      <span className="t-xs t-mute">风代</span>
+      <input
+        className="input h-6 w-14 text-[11px]"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="—"
+        inputMode="decimal"
+        aria-label="风险代理比例"
+      />
+      <span className="t-xs t-mute">%</span>
+      <button type="button" className="btn btn-ghost btn-xs" disabled={isPending} onClick={save}>
+        保存
+      </button>
+    </span>
   );
 }
 

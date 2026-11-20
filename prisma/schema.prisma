@@ -1687,38 +1687,47 @@ model EvidenceItem {
 }
 
 model Billing {
-  timeEntries       TimeEntry[]
-  draftTerms        Json?
-  completedWork     String?
-  handoverWork      String?
-  amendmentType     BillingAmendmentType?
-  sourceBillingId   String?
-  sourceBilling     Billing?                @relation("BillingAmendments", fields: [sourceBillingId], references: [id], onDelete: Restrict)
-  amendments        Billing[]               @relation("BillingAmendments")
-  effectiveAt       DateTime?
-  endsAt            DateTime?
-  previousAmount    Decimal?                @db.Decimal(14, 2)
-  resultingAmount   Decimal?                @db.Decimal(14, 2)
-  terminationReason String?
-  receivables       Receivable[]
-  procedureScopes   BillingProcedureScope[]
-  attachments       BillingAttachment[]
-  sourceCorrection  FinanceCorrection?      @relation("BillingSourceCorrection")
-  moneyKind         MoneyKind
-  revision          Int                     @default(0)
-  id                String                  @id @default(cuid())
-  engagementId      String?
-  engagement        Engagement?             @relation(fields: [engagementId], references: [id])
-  matterId          String
-  matter            Matter                  @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  title             String
-  contractAmount    Decimal                 @db.Decimal(14, 2)
-  schedule          String?
-  status            BillingStatus           @default(DRAFT)
-  signedAt          DateTime?
-  feeEntries        FeeEntry[]
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  timeEntries        TimeEntry[]
+  draftTerms         Json?
+  completedWork      String?
+  handoverWork       String?
+  amendmentType      BillingAmendmentType?
+  sourceBillingId    String?
+  sourceBilling      Billing?                @relation("BillingAmendments", fields: [sourceBillingId], references: [id], onDelete: Restrict)
+  amendments         Billing[]               @relation("BillingAmendments")
+  effectiveAt        DateTime?
+  endsAt             DateTime?
+  previousAmount     Decimal?                @db.Decimal(14, 2)
+  resultingAmount    Decimal?                @db.Decimal(14, 2)
+  terminationReason  String?
+  receivables        Receivable[]
+  procedureScopes    BillingProcedureScope[]
+  attachments        BillingAttachment[]
+  sourceCorrection   FinanceCorrection?      @relation("BillingSourceCorrection")
+  moneyKind          MoneyKind
+  revision           Int                     @default(0)
+  id                 String                  @id @default(cuid())
+  engagementId       String?
+  engagement         Engagement?             @relation(fields: [engagementId], references: [id])
+  matterId           String
+  matter             Matter                  @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  title              String
+  contractAmount     Decimal                 @db.Decimal(14, 2)
+  /// 风险代理比例（2026-11-22 对标分析 P0-4）：0–100。
+  ///
+  /// 为什么比例落库、金额不落库：
+  /// 风代金额 = 实收 × 比例，会随回款变化。落库金额必然与实收打架，
+  /// 而「两个数不一致」是财务上最难解释的一类问题。故只存比例，金额读时派生。
+  ///
+  /// 计提基数是**回款**不是合同额（行业惯例；业主口径待确认，见对标方案 §八）。
+  /// Intake.contingencyTerms（自由文本）保留为收费方式说明，不做数据迁移。
+  contingencyPercent Decimal?                @db.Decimal(5, 2)
+  schedule           String?
+  status             BillingStatus           @default(DRAFT)
+  signedAt           DateTime?
+  feeEntries         FeeEntry[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@index([matterId, status])
 }

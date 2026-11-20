@@ -91,6 +91,52 @@ export async function createBilling(input: BillingCreateInput) {
   return { ok: true, id: created.id };
 }
 
+/**
+ * 设置风险代理比例（2026-11-22，对标分析 P0-4）
+ *
+ * 为什么单独一个动作而不是塞进 createBilling：
+ * 比例是**合同要素**，但经常是在合同已经录完之后才谈定（尤其风代）。
+ * 硬要求"建合同时填"会导致律师为了先建档随便填一个数——那比不填更糟。
+ *
+ * 传 null 表示清除（改回普通收费）。改动写审计，含新旧值——
+ * 比例直接决定能提多少钱，属于必须留痕的字段。
+ */
+export async function setBillingContingency(input: { billingId: string; percent: number | null }) {
+  const session = await requireSession("finance.write");
+  const billingId = String(input?.billingId ?? "").trim();
+  if (!billingId) throw new ActionError("缺少合同标识");
+
+  const percent = input.percent === null || input.percent === undefined ? null : Number(input.percent);
+  if (percent !== null && (!Number.isFinite(percent) || percent < 0 || percent > 100)) {
+    throw new ActionError("风险代理比例须在 0–100 之间");
+  }
+
+  const current = await prisma.billing.findUnique({
+    where: { id: billingId },
+    select: { matterId: true, title: true, contingencyPercent: true }
+  });
+  if (!current) throw new ActionError("合同不存在");
+  await assertMatterWritable(current.matterId, { allowFinanceRole: true });
+
+  await prisma.billing.update({
+    where: { id: billingId },
+    data: { contingencyPercent: percent === null ? null : new Prisma.Decimal(percent) }
+  });
+  await audit({
+    userId: session.user.id,
+    action: "BILLING_CONTINGENCY",
+    targetType: "Billing",
+    targetId: billingId,
+    detail: {
+      matterId: current.matterId,
+      before: current.contingencyPercent === null ? null : Number(current.contingencyPercent),
+      after: percent
+    }
+  });
+  await revalidateMatter(current.matterId);
+  return { ok: true as const };
+}
+
 export async function deleteBilling(id: string) {
   const session = await requireSession("finance.write");
   if(await financeLedgerReady(prisma)) {

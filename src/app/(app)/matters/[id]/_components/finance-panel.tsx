@@ -54,7 +54,12 @@ export function FinancePanel({
     ...(stats.commission > 0
       ? [{ label: "分成", value: stats.commission, tone: "neutral" as StatTone }]
       : [])
+    // 风代计提**不做成统计卡**：本组件在「委托与财务」页签恒以 hideStats 使用
+    // （同一批数字由上方 FinanceHero 展示），加在这里会是死 UI。
+    // 风代的信息量在「比例 / 基数 / 计提」三者的关系上，故放在下方明细块。
   ];
+
+  const contingencyPlans = finance.contingency.plans;
 
   return (
     <section className="card">
@@ -168,6 +173,23 @@ export function FinancePanel({
           userOptions={userOptions}
           currentPlans={(finance.plans ?? []) as never}
         />
+      ) : null}
+      {contingencyPlans.length > 0 ? (
+        <div className={compact ? "border-t border-border px-3 py-2" : "border-t border-[var(--bd-hair)] px-4 py-3"}>
+          <div className="mb-1 text-[11px] text-[var(--t-muted)]">
+            风险代理计提（按当前实收 × 比例推算，以结算单为准）
+          </div>
+          <div className="space-y-0.5">
+            {contingencyPlans.map((p) => (
+              <div key={p.billingId} className="flex flex-wrap items-center gap-x-3 text-[11px]">
+                <span className="min-w-0 flex-1 truncate" title={p.billingTitle}>{p.billingTitle}</span>
+                <span className="tabular text-[var(--t-muted)]">比例 {p.percent}%</span>
+                <span className="tabular text-[var(--t-muted)]">基数（实收）¥{p.basis.toLocaleString()}</span>
+                <span className="tabular font-medium">计提 ¥{p.accrued.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : null}
     </section>
   );
