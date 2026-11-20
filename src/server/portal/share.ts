@@ -155,7 +155,7 @@ export async function listPortalSharesForMatter(matterId: string) {
 
   const rows = await prisma.portalShare.findMany({
     // 材料与进度摘要一起管：律师需要在一个地方看到「客户到底能看到本案的什么」
-    where: { matterId, shareType: { in: ["DOCUMENT", "MATTER_SUMMARY"] } },
+    where: { matterId, shareType: { in: ["DOCUMENT", "MATTER_SUMMARY", "BILLING"] } },
     // nulls: "first" 是必须的：Postgres 的 ASC 默认把 NULL 排**最后**，
     // 直接 orderBy revokedAt: "asc" 会让「已撤销」全部排在生效中的前面——
     // 面板上律师第一眼看到的就是一堆收回记录。这是测试抓出来的，不是猜的。
@@ -244,6 +244,62 @@ export async function shareMatterSummaryToPortal(input: z.input<typeof shareMatt
     targetType: "PortalShare",
     targetId: created.id,
     detail: { clientId: matter.primaryClientId, matterId: matter.id, shareType: "MATTER_SUMMARY" }
+  });
+
+  revalidatePath(`/matters/${matter.id}`);
+  return { ok: true as const, shareId: created.id, alreadyShared: false };
+}
+
+const shareBillingSchema = z.object({
+  matterId: z.string().trim().min(1, "缺少案件标识")
+});
+
+/**
+ * 把某个案件的**账单摘要**分享给委托客户（2026-11-20，门户 S2）
+ *
+ * 与材料/进度同一套限制。金额口径受方案 §七 Q2 约束：
+ *   ① 显示状态 + 金额（不给工时明细——工时明细会引出「这一项为什么要 3 小时」的
+ *      逐条质疑，而承办律师无法逐项解释）
+ *   ② **金额必须与财务模块同一数据源**：见下方 `listPortalBillings` 的说明。
+ */
+export async function shareMatterBillingToPortal(input: z.input<typeof shareBillingSchema>) {
+  const session = await requireSession("matters.write");
+  const data = parseInput(shareBillingSchema, input);
+
+  const matter = await prisma.matter.findFirst({
+    where: { id: data.matterId, deletedAt: null },
+    select: { id: true, primaryClientId: true }
+  });
+  if (!matter) throw new ActionError("案件不存在或已删除");
+  if (!matter.primaryClientId) {
+    throw new ActionError("该案件未登记委托方客户，无法确定分享给谁；请先在案件档案补上委托方");
+  }
+
+  await assertCanHandleMatter(session.user, matter.id);
+  await assertMatterWritable(matter.id, { allowPrincipal: true });
+
+  const existing = await prisma.portalShare.findFirst({
+    where: { clientId: matter.primaryClientId, matterId: matter.id, shareType: "BILLING", revokedAt: null },
+    select: { id: true }
+  });
+  if (existing) return { ok: true as const, shareId: existing.id, alreadyShared: true };
+
+  const created = await prisma.portalShare.create({
+    data: {
+      clientId: matter.primaryClientId,
+      shareType: "BILLING",
+      matterId: matter.id,
+      sharedById: session.user.id
+    },
+    select: { id: true }
+  });
+
+  await audit({
+    userId: session.user.id,
+    action: "PORTAL_SHARE_CREATE",
+    targetType: "PortalShare",
+    targetId: created.id,
+    detail: { clientId: matter.primaryClientId, matterId: matter.id, shareType: "BILLING" }
   });
 
   revalidatePath(`/matters/${matter.id}`);

@@ -84,6 +84,10 @@ async function main() {
     data: { clientId: client.id, shareType: "MATTER_SUMMARY", matterId: matter.id, sharedById: staff.id },
     select: { id: true }
   });
+  const billingShare = await prisma.portalShare.create({
+    data: { clientId: client.id, shareType: "BILLING", matterId: matter.id, sharedById: staff.id },
+    select: { id: true }
+  });
 
   try {
     const cookie = signSession(user.id, user.sessionVersion, Math.floor(Date.now() / 1000) + 600);
@@ -91,12 +95,18 @@ async function main() {
     console.log(`  客户：${client.name} · 案件：${matter.internalCode}\n`);
 
     const pages: { path: string; mustHave: string[]; mustNotHave?: string[] }[] = [
-      { path: "/portal", mustHave: ["案件进度", "我的材料", "退出"] },
+      { path: "/portal", mustHave: ["案件进度", "我的材料", "账单", "退出"] },
       {
         path: "/portal/cases",
         mustHave: ["案件进度", matter.internalCode, "当前阶段", "主办律师"],
         // 方案 §七 Q1：不提供百分比。若这里出现「%」，说明有人顺手加了进度估算
         mustNotHave: ["进度百分比", "完成度", "%"]
+      },
+      {
+        path: "/portal/bills",
+        mustHave: ["账单", "合同金额", "应收", "已收", "待收"],
+        // Q2：不显示工时明细；也不该出现内部口径（成本/分成）
+        mustNotHave: ["工时明细", "分成", "成本"]
       },
       { path: "/portal/materials", mustHave: ["我的材料"] }
     ];
@@ -107,10 +117,26 @@ async function main() {
         redirect: "manual"
       });
       const html = await res.text();
+      // 禁止词检查要排除页面自己的「不含什么」说明段（data-portal-disclaimer）。
+      // 否则说明文字里的「工时明细」会把断言弄红，而为了过断言去改文案，
+      // 等于让这项检查失去意义。
+      //
+      // 排除两类「不算渲染内容」的东西：
+      //   ① data-portal-disclaimer 段落 —— 页面自己说明「不含什么」
+      //   ② <script> 块 —— Next 的 RSC flight 载荷把同一棵树再序列化一遍，
+      //      文本会第二次出现。它只是 DOM 的复述，不会独立泄露任何东西；
+      //      真实泄露必然同时出现在 DOM 里，排除它不会掩盖问题。
+      const body = html
+        .replace(/<p[^>]*data-portal-disclaimer[^>]*>[\s\S]*?<\/p>/g, "")
+        .replace(/<script[\s\S]*?<\/script>/g, "");
       check(`${p.path} 状态 200`, res.status === 200, `实际 ${res.status}`);
       check(`${p.path} 无错误标记`, !/Application error|Internal Server Error/.test(html));
       for (const kw of p.mustHave) check(`${p.path} 含「${kw}」`, html.includes(kw));
-      for (const kw of p.mustNotHave ?? []) check(`${p.path} 不含「${kw}」`, !html.includes(kw));
+      for (const kw of p.mustNotHave ?? []) {
+        const at = body.indexOf(kw);
+        // 失败时带上下文：只报「出现了」会让人再猜一遍是哪个组件渲染的
+        check(`${p.path} 不含「${kw}」`, at < 0, at >= 0 ? `…${body.slice(Math.max(0, at - 50), at + kw.length + 50)}…` : "");
+      }
     }
 
     // 未登录必须被弹到门户登录页（而非员工登录页）
@@ -119,6 +145,7 @@ async function main() {
     check("未登录跳门户登录页", anon.status === 307 && loc.includes("/portal/login"), `实际 ${anon.status} ${loc}`);
   } finally {
     await prisma.portalShare.delete({ where: { id: share.id } }).catch(() => {});
+    await prisma.portalShare.delete({ where: { id: billingShare.id } }).catch(() => {});
     await prisma.clientPortalUser.delete({ where: { id: user.id } }).catch(() => {});
     console.log(`\n  临时数据已清理（账号 ${email} 与本次分享记录）`);
   }

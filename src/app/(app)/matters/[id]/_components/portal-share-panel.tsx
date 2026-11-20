@@ -5,10 +5,10 @@ import { FormDialogBody } from "@/components/patterns/form-dialog";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Eye, Loader2, Undo2, ShieldCheck, Scale } from "lucide-react";
+import { Eye, Loader2, Undo2, ShieldCheck, Scale, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { listPortalSharesForMatter, revokePortalShare, shareMatterSummaryToPortal } from "@/server/portal/share";
+import { listPortalSharesForMatter, revokePortalShare, shareMatterSummaryToPortal, shareMatterBillingToPortal } from "@/server/portal/share";
 import { confirmDialog, promptDialog } from "@/components/patterns/confirm-dialog";
 import { actionErrorMessage } from "@/lib/action-error";
 import { formatDateTime } from "@/lib/utils";
@@ -77,6 +77,29 @@ export function PortalSharePanel({
   const active = (rows ?? []).filter((r) => !r.revokedAt);
   const revoked = (rows ?? []).filter((r) => r.revokedAt);
   const summaryShared = active.some((r) => r.shareType === "MATTER_SUMMARY");
+  const billingShared = active.some((r) => r.shareType === "BILLING");
+
+  const doShareBilling = async () => {
+    const ok = await confirmDialog({
+      title: "把本案账单开放给客户？",
+      description:
+        "客户将看到：合同金额、应收、已收、待收，以及已开发票的票号与金额。\n\n" +
+        "**金额与律所财务系统同一口径**（同一段计算，不是另算一遍）。" +
+        "**不显示**工时明细与内部成本。分享与收回都会留审计。",
+      confirmText: "开放账单"
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      try {
+        await shareMatterBillingToPortal({ matterId });
+        toast.success("已向客户开放账单");
+        router.refresh();
+        reload();
+      } catch (err) {
+        toast.error("分享失败", { description: actionErrorMessage(err) });
+      }
+    });
+  };
 
   const doShareSummary = async () => {
     const ok = await confirmDialog({
@@ -175,6 +198,25 @@ export function PortalSharePanel({
                 )}
               </div>
 
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2">
+                <Receipt className="h-3.5 w-3.5 shrink-0 text-[var(--t-muted)]" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium">本案账单</p>
+                  <p className="text-[10.5px] text-[var(--t-muted)]">
+                    {billingShared ? "已开放给客户" : "未开放"} · 合同额/应收/已收/待收/已开发票，不含工时明细
+                  </p>
+                </div>
+                {billingShared ? (
+                  <span className="badge b-green shrink-0" style={{ fontSize: 10 }}>
+                    已开放
+                  </span>
+                ) : (
+                  <button type="button" className="btn btn-ghost btn-sm shrink-0" disabled={isPending} onClick={doShareBilling}>
+                    开放
+                  </button>
+                )}
+              </div>
+
               {active.length === 0 ? (
                 <div className="rounded-md border border-[var(--line)] px-3 py-4 text-center">
                   <p className="text-[12px] text-[var(--t-muted)]">
@@ -190,7 +232,7 @@ export function PortalSharePanel({
                     <div key={r.id} className="flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2">
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[var(--green)]" />
                       <span className="min-w-0 flex-1 truncate text-xs" title={r.documentName ?? ""}>
-                        {r.shareType === "MATTER_SUMMARY" ? "案件进度摘要" : (r.documentName ?? "（材料已删除）")}
+                        {r.shareType === "MATTER_SUMMARY" ? "案件进度摘要" : r.shareType === "BILLING" ? "账单摘要" : (r.documentName ?? "（材料已删除）")}
                         {r.documentDeleted ? (
                           <span className="ml-1 text-[10px] text-[var(--amber)]">（材料已删除）</span>
                         ) : null}
@@ -224,7 +266,7 @@ export function PortalSharePanel({
                       {revoked.map((r) => (
                         <div key={r.id} className="flex items-center gap-2 rounded-md border border-dashed border-[var(--line)] px-3 py-1.5 opacity-70">
                           <span className="min-w-0 flex-1 truncate text-[11.5px] line-through" title={r.documentName ?? ""}>
-                            {r.shareType === "MATTER_SUMMARY" ? "案件进度摘要" : (r.documentName ?? "（材料已删除）")}
+                            {r.shareType === "MATTER_SUMMARY" ? "案件进度摘要" : r.shareType === "BILLING" ? "账单摘要" : (r.documentName ?? "（材料已删除）")}
                           </span>
                           <span className="shrink-0 text-[10px] text-[var(--t-muted)]">
                             收回于 {formatDateTime(r.revokedAt!)}

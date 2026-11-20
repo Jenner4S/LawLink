@@ -64,7 +64,7 @@ vi.mock("next/navigation", () => ({
   redirect: (u: string) => { throw Object.assign(new Error("NEXT_REDIRECT"), { digest: `NEXT_REDIRECT;${u}` }); }
 }));
 
-const { shareDocumentToPortal, revokePortalShare, listPortalSharesForMatter, shareMatterSummaryToPortal } = await import("@/server/portal/share");
+const { shareDocumentToPortal, revokePortalShare, listPortalSharesForMatter, shareMatterSummaryToPortal, shareMatterBillingToPortal } = await import("@/server/portal/share");
 const { projectMatterSummary } = await import("@/lib/portal/matter-summary");
 const { portalCanReadDocument, assertPortalCanDownload } = await import("@/lib/portal/access");
 
@@ -325,5 +325,47 @@ describe("案件进度摘要（方案 §七 Q1：给阶段名，不给百分比�
     const rows = await listPortalSharesForMatter(matter.id);
     const types = rows.map((r) => r.shareType).sort();
     expect(types).toEqual(["DOCUMENT", "MATTER_SUMMARY"]);
+  });
+});
+
+describe("账单摘要（方案 §七 Q2：金额必须与财务模块同一数据源）", () => {
+  it("门户读取不自己查财务表——只调用财务模块的核心计算（结构性断言）", async () => {
+    // 这条是 Q2 的落地守卫：门户若自己 sum 一遍 FeeEntry，两处金额迟早漂移，
+    // 客户拿门户截图对账时就是信任崩塌。断言方式：源码里不得出现财务表的直接查询。
+    const src = (await import("node:fs")).readFileSync(
+      "src/server/portal/portal-reads.ts",
+      "utf8"
+    );
+    for (const forbidden of ["feeEntry.", "billing.", "invoiceRequest.", "invoiceAdjustment."]) {
+      expect(src, `portal-reads 不得直接查 ${forbidden}——金额必须走 computeMatterFinanceFacts`).not.toContain(forbidden);
+    }
+    expect(src).toContain("computeMatterFinanceFacts");
+  });
+
+  it("分享账单后可按 matterId 收起，撤销立即失效", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+    const res = await shareMatterBillingToPortal({ matterId: matter.id });
+    expect(res.ok).toBe(true);
+    const rows = await listPortalSharesForMatter(matter.id);
+    expect(rows.filter((r) => r.shareType === "BILLING" && !r.revokedAt)).toHaveLength(1);
+
+    await revokePortalShare({ shareId: res.shareId });
+    const after = await listPortalSharesForMatter(matter.id);
+    expect(after.filter((r) => r.shareType === "BILLING" && !r.revokedAt)).toHaveLength(0);
+  });
+
+  it("重复分享账单不新增行", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+    const a = await shareMatterBillingToPortal({ matterId: matter.id });
+    const b = await shareMatterBillingToPortal({ matterId: matter.id });
+    expect(b.alreadyShared).toBe(true);
+    expect(b.shareId).toBe(a.shareId);
+  });
+
+  it("无委托方的案件不能开放账单", async () => {
+    const matter = await seedMatter(null);
+    await expect(shareMatterBillingToPortal({ matterId: matter.id })).rejects.toThrow("未登记委托方");
   });
 });
