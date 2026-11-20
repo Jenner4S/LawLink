@@ -2,6 +2,7 @@
 import type { ProcedureStatus } from "@prisma/client";
 import { parseInput } from "@/lib/parse-input";
 import {assertMatterReviewCurrent} from "@/server/conflicts/matter-review";
+import { findHearingConflicts } from "./hearing-conflicts";
 import {assertProcedureCovered} from "@/server/finance/ledger-contracts";
 import { approvalTransaction } from "@/lib/approvals/service";
 import { changeWorkTx,readWorkRows,responsibilityReady } from "@/server/reminders/responsibility";
@@ -655,7 +656,19 @@ export async function addHearing(input: HearingCreateInput) {
   }
 
   await refreshScheduleReminderAfterSave("Hearing", created.id);
-  return { ok: true, id: created.id };
+
+  // 2026-11-21（产品计划 阶段 1 · D09 排期冲突）：**只警告，不阻断**。
+  // 开庭时间是法院定的，拒绝录入只会让人把真实开庭记到便签里，反而更危险。
+  const conflicts = procedure
+    ? await findHearingConflicts({
+        lawyerId: (await prisma.matter.findUnique({ where: { id: procedure.matterId }, select: { ownerId: true } }))?.ownerId ?? "",
+        startsAt: data.startsAt,
+        endsAt: data.endsAt ?? null,
+        excludeHearingId: created.id
+      }).catch(() => [])
+    : [];
+
+  return { ok: true, id: created.id, conflicts };
 }
 
 export async function deleteHearing(id: string) {

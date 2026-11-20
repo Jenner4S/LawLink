@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { deadlineCategoryLabel } from "@/lib/enums";
+import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
   addDeadline,
@@ -208,7 +209,7 @@ export function ImportantItemDialog({
     }
     startTransition(async () => {
       try {
-        await addHearing({
+        const created = await addHearing({
           procedureId: hearingProcedureId,
           title: hearingTitle.trim(),
           startsAt,
@@ -219,7 +220,18 @@ export function ImportantItemDialog({
           contact: hearingContact.trim(),
           notes: hearingNotes.trim()
         });
-        toast.success("开庭安排已添加");
+        // 2026-11-21 排期冲突：**警告但不拦截**——开庭时间由法院定。
+        // 用 warning 而不是 error：录入是成功的，只是提示律师核对行程。
+        if (created.conflicts.length > 0) {
+          const first = created.conflicts[0];
+          const more = created.conflicts.length > 1 ? `等 ${created.conflicts.length} 项` : "";
+          toast.warning("该时段已有其他开庭", {
+            duration: 8000,
+            description: `${formatDateTime(first.startsAt)}–${formatDateTime(first.endsAt)}${first.estimated ? "（结束时间为估算）" : ""} · ${first.matterCode} ${first.title}${more}。开庭时间由法院确定，请自行核对行程与路程。`
+          });
+        } else {
+          toast.success("开庭安排已添加");
+        }
         onOpenChange(false);
         router.refresh();
       } catch (err) {
