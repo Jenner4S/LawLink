@@ -16,6 +16,7 @@ import { addLeadActivity, assignLeadLawyer, convertLeadToIntake, createLead, mar
 import { createLeadChannel, toggleLeadChannel } from "@/server/leads/channels-actions";
 import { updateLeadFinancePolicy } from "@/server/settings/lead-finance-policy-actions";
 import type { LeadFinancePolicy } from "@/server/settings/lead-finance-policy";
+import type { LeadToCash } from "@/server/leads/lead-to-cash";
 import type { LeadFunnel } from "@/server/leads/analytics";
 import type { ChannelNode } from "@/server/leads/channels";
 
@@ -45,7 +46,8 @@ export function LeadsView({
   channels,
   lawyers,
   assigneeView = "ALL",
-  financePolicy
+  financePolicy,
+  leadToCash
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -59,6 +61,8 @@ export function LeadsView({
   assigneeView?: "ALL" | "PENDING_ASSIGN" | "PENDING_ACCEPT";
   /** 业务口径（2026-11-22）：风代计提基数、券金额归属 */
   financePolicy: LeadFinancePolicy;
+  /** 线索到回款闭环（本月）：补上漏斗与财务之间缺失的那一段连接 */
+  leadToCash: LeadToCash;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -204,6 +208,30 @@ export function LeadsView({
               <div className="text-[9.5px] text-[var(--t-muted)]">{k.sub}</div>
             </div>
           ))}
+        </div>
+
+        {/* 2026-11-22：线索到回款的闭环。放在 total>0 门之外——
+            本月没有线索时也要显示「线索 0 → … 回款率 —」，
+            否则空白会被读成"功能没做"，而真实情况是"本月还没线索"。 */}
+        <div className="mt-3">
+            <div>
+              <div className="mb-1 text-[11px] text-[var(--t-muted)]">本月线索 → 回款（只算本月新增线索）</div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                <span>线索 {leadToCash.leadCount}</span>
+                <span className="text-[var(--t-muted)]">→</span>
+                <span>转收案 {leadToCash.convertedCount}</span>
+                <span className="text-[var(--t-muted)]">→</span>
+                <span>已签约 {leadToCash.signedMatterCount}</span>
+                <span className="text-[var(--t-muted)]">→</span>
+                <span>已回款 {leadToCash.paidMatterCount}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px]">
+                <span className="tabular text-[var(--t-muted)]">签约额 ¥{leadToCash.contractAmount.toLocaleString()}</span>
+                <span className="tabular">实收 ¥{leadToCash.receivedAmount.toLocaleString()}</span>
+                <span className="tabular text-[var(--t-muted)]">回款率 {pct(leadToCash.collectionRate)}</span>
+                <span className="tabular text-[var(--t-muted)]">线索→回款 {pct(leadToCash.leadToCashRate)}</span>
+              </div>
+            </div>
         </div>
 
         {funnel.total > 0 ? (

@@ -3,6 +3,7 @@ import { listLeadOwners, listLeads } from "@/server/leads/actions";
 import { listLeadChannels } from "@/server/leads/channels";
 import { listLawyerOptions } from "@/server/leads/owners";
 import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
+import { getLeadToCash } from "@/server/leads/lead-to-cash";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
 import { LeadsView } from "./_components/leads-view";
@@ -23,7 +24,10 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   await requireSession("clients.read");
   // 首次进入自动预置常用渠道（幂等）：空表意味着没人建，等于没这个功能
   await ensureDefaultChannels().catch(() => ({ created: 0 }));
-  const [leads, funnel, owners, channels, lawyers, financePolicy] = await Promise.all([
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash] = await Promise.all([
     listLeads({ stage: "ALL", assignee: assigneeView }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
@@ -33,7 +37,9 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-22 P1-2：可派单的律师清单
     listLawyerOptions(),
     // 2026-11-22：业务口径（可配置，默认按回款 / 券金额=成本）
-    getLeadFinancePolicy()
+    getLeadFinancePolicy(),
+    // 2026-11-22：线索到回款的闭环（本月口径）
+    getLeadToCash({ start: monthStart, end: nextMonth })
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} />;
 }
