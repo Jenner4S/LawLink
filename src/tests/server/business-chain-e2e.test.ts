@@ -35,11 +35,10 @@
  *
  * 前置：lawlink-db 容器可用（55432），`.env` 提供 STORAGE_ENCRYPTION_KEY。
  */
-import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
-import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 
 // ---------------------------------------------------------------------------
 // 临时库 / 临时存储：必须在 @/lib/prisma 与 @/lib/storage 初始化之前落盘
@@ -97,10 +96,8 @@ import { saveArchivePolicy } from "@/server/archive/policy";
 import { saveClosure } from "@/server/archive/closure-actions";
 import { archiveMatter, approveArchiveRecord } from "@/server/archive/actions";
 
-const urlFor = (database: string) =>
-  `postgresql://${HOLDER.user}:${HOLDER.password}@${HOLDER.host}/${database}?schema=public`;
 
-let admin: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 
 // ── 身份 ──
 type Actor = { id: string; name: string; role: "LAWYER" | "PRINCIPAL_LAWYER" | "FINANCE"; systemRole?: string | null };
@@ -162,29 +159,9 @@ beforeAll(async () => {
   }
   mkdirSync(HOLDER.storageDir, { recursive: true });
 
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  // 并发 CREATE DATABASE 会撞模板库占用（「source database is being accessed by
-  // other users」），表现为「重跑就过」的偶发红。这里退避重试；
-  // 与 src/tests/helpers/temp-db.ts 同一处理（那 19 个文件已迁到 helper）。
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
-      lastErr = undefined;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (/already exists/i.test(String(err))) { lastErr = undefined; break; }
-      if (!/being accessed by other users|template/i.test(String(err))) break;
-      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
-    }
-  }
-  if (lastErr) throw new Error(`临时库创建失败，需先启动 lawlink-db：${String(lastErr)}`);
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: HOLDER.url },
-    stdio: "pipe"
-  });
+  // 建库 + 迁移统一交给 helper（退避重试 + 强制清理，见 src/tests/helpers/temp-db.ts）
+  const temp = await createTempDatabase(HOLDER.name);
+  dropDb = temp.drop;
 
   // 身份夹具：岗位（role）决定业务规则，系统管理员只额外用于配置归档制度
   lawyer = await prisma.user.create({
@@ -245,11 +222,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.$disconnect().catch(() => undefined);
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${HOLDER.name}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[business-chain] 已 DROP 临时库：${HOLDER.name}`);
-  }
+  await dropDb?.();
   rmSync(HOLDER.storageDir, { recursive: true, force: true });
   if (HOLDER.originalUrl === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = HOLDER.originalUrl;

@@ -27,10 +27,9 @@
  * 而夹具 `civil()` 用的是正午载体（避免 UTC 偏移一天），二者不能混用
  * `toEqual(civil(...))` —— 续保**之后**的日期一律用 `dayStart(...)` 断言。
  */
-import { execFileSync } from "node:child_process";
-import path from "node:path";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 
 const HOLDER = vi.hoisted(() => {
   const host = process.env.PRES_TEST_PG_HOST ?? "localhost:55432";
@@ -70,35 +69,13 @@ import {
   updateProperty
 } from "@/server/preservations/actions-v2";
 
-const urlFor = (database: string) =>
-  `postgresql://${HOLDER.user}:${HOLDER.password}@${HOLDER.host}/${database}?schema=public`;
 
-let admin: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 
 beforeAll(async () => {
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  // 并发 CREATE DATABASE 会撞模板库占用（「source database is being accessed by
-  // other users」），表现为「重跑就过」的偶发红。这里退避重试；
-  // 与 src/tests/helpers/temp-db.ts 同一处理（那 19 个文件已迁到 helper）。
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      await admin.$executeRawUnsafe(`CREATE DATABASE "${HOLDER.name}"`);
-      lastErr = undefined;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (/already exists/i.test(String(err))) { lastErr = undefined; break; }
-      if (!/being accessed by other users|template/i.test(String(err))) break;
-      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
-    }
-  }
-  if (lastErr) throw new Error(`临时库创建失败，需先启动 lawlink-db：${String(lastErr)}`);
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: HOLDER.url },
-    stdio: "pipe"
-  });
+  // 建库 + 迁移统一交给 helper（退避重试 + 强制清理，见 src/tests/helpers/temp-db.ts）
+  const temp = await createTempDatabase(HOLDER.name);
+  dropDb = temp.drop;
   // ⚠️ 已知迁移缺口（不在本文件修复范围；按任务约束未改迁移文件，问题已列入报告）：
   // prisma/migrations/20261119000005_renewal_unit/migration.sql 是 0 字节空迁移，
   // 但在 _prisma_migrations 里被登记为「已应用」。后果是 `migrate deploy` 建出的库
@@ -124,11 +101,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${HOLDER.name}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[preservation-crud] 已 DROP 临时库：${HOLDER.name}`);
-  }
+  await dropDb?.();
   // 还原环境变量，避免影响同 worker 后续测试文件
   if (HOLDER.originalUrl === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = HOLDER.originalUrl;

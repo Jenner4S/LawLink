@@ -19,11 +19,11 @@
  *
  * 前置条件：lawlink-db 容器可用（docker compose 的 55432 端口）。
  */
-import { execFileSync } from "node:child_process";
 import { promises as fsp, rmSync } from "node:fs";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 
 // ---------------------------------------------------------------------------
 // 测试库持有者：Proxy 让被测模块的 `prisma` 始终指向本次临时库
@@ -89,15 +89,10 @@ import {
   verifyArchiveSnapshotDocuments
 } from "@/server/archive/verification";
 
-const PG_HOST = process.env.ARCH_TEST_PG_HOST ?? "localhost:55432";
-const PG_USER = process.env.ARCH_TEST_PG_USER ?? "lawlink";
-const PG_PASSWORD = process.env.ARCH_TEST_PG_PASSWORD ?? "lawlink_dev_2026";
 const DB_NAME = `lawlink_arch_verify_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-const urlFor = (database: string) =>
-  `postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}/${database}?schema=public`;
 
 let db: PrismaClient;
-let admin: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 let storageRoot: string;
 
 beforeAll(async () => {
@@ -107,41 +102,17 @@ beforeAll(async () => {
   }
   storageRoot = (await import("@/lib/storage") as unknown as { __storageRoot: string }).__storageRoot;
 
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  // 并发 CREATE DATABASE 会撞模板库占用（「source database is being accessed by
-  // other users」），表现为「重跑就过」的偶发红。这里退避重试；
-  // 与 src/tests/helpers/temp-db.ts 同一处理（那 19 个文件已迁到 helper）。
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      await admin.$executeRawUnsafe(`CREATE DATABASE "${DB_NAME}"`);
-      lastErr = undefined;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (/already exists/i.test(String(err))) { lastErr = undefined; break; }
-      if (!/being accessed by other users|template/i.test(String(err))) break;
-      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
-    }
-  }
-  if (lastErr) throw new Error(`临时库创建失败，需先启动 lawlink-db：${String(lastErr)}`);
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: urlFor(DB_NAME) },
-    stdio: "pipe"
-  });
-  db = new PrismaClient({ datasourceUrl: urlFor(DB_NAME) });
+  // 建库 + 迁移统一交给 helper（退避重试 + 强制清理，见 src/tests/helpers/temp-db.ts）
+  const temp = await createTempDatabase(DB_NAME);
+  dropDb = temp.drop;
+  db = temp.prisma;
   holder.db = db;
   console.info(`[archive-verification] 临时库：${DB_NAME}`);
 }, 240_000);
 
 afterAll(async () => {
   await db?.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${DB_NAME}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[archive-verification] 已 DROP 临时库：${DB_NAME}`);
-  }
+  await dropDb?.();
   if (storageRoot) rmSync(storageRoot, { recursive: true, force: true });
 }, 60_000);
 

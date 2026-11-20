@@ -11,61 +11,30 @@
  * `prisma migrate deploy` 建结构，结束 DROP。**绝不写主库 lawlink。**
  * 前置条件：lawlink-db 容器可用（docker compose 的 55432 端口），否则本文件显式失败。
  */
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createTempDatabase } from "@/tests/helpers/temp-db";
 
 import { allocateLedgerTx } from "@/server/finance/ledger-mutations";
 import { financeLedgerReady } from "@/server/finance/ledger-storage";
 
-const PG_HOST = process.env.FIN_TEST_PG_HOST ?? "localhost:55432";
-const PG_USER = process.env.FIN_TEST_PG_USER ?? "lawlink";
-const PG_PASSWORD = process.env.FIN_TEST_PG_PASSWORD ?? "lawlink_dev_2026";
 const DB_NAME = `lawlink_fin_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
-const urlFor = (database: string) =>
-  `postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}/${database}?schema=public`;
 
-let admin: PrismaClient;
+let dropDb: (() => Promise<void>) | undefined;
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  admin = new PrismaClient({ datasourceUrl: urlFor("postgres") });
-  // 并发 CREATE DATABASE 会撞模板库占用（「source database is being accessed by
-  // other users」），表现为「重跑就过」的偶发红。这里退避重试；
-  // 与 src/tests/helpers/temp-db.ts 同一处理（那 19 个文件已迁到 helper）。
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      await admin.$executeRawUnsafe(`CREATE DATABASE "${DB_NAME}"`);
-      lastErr = undefined;
-      break;
-    } catch (err) {
-      lastErr = err;
-      if (/already exists/i.test(String(err))) { lastErr = undefined; break; }
-      if (!/being accessed by other users|template/i.test(String(err))) break;
-      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
-    }
-  }
-  if (lastErr) throw new Error(`临时库创建失败，需先启动 lawlink-db：${String(lastErr)}`);
-  // 只建结构：0_init 基线 + 增量迁移，与全新安装同一路径（含财务余额约束与审计触发器）
-  execFileSync(path.join(process.cwd(), "node_modules", ".bin", "prisma"), ["migrate", "deploy"], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: urlFor(DB_NAME) },
-    stdio: "pipe"
-  });
-  prisma = new PrismaClient({ datasourceUrl: urlFor(DB_NAME) });
+  // 建库 + 迁移统一交给 helper（退避重试 + 强制清理，见 src/tests/helpers/temp-db.ts）
+  const temp = await createTempDatabase(DB_NAME);
+  dropDb = temp.drop;
+  prisma = temp.prisma;
   console.info(`[finance-ledger-allocation] 临时库：${DB_NAME}`);
 }, 180_000);
 
 afterAll(async () => {
   await prisma?.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${DB_NAME}" WITH (FORCE)`);
-    await admin.$disconnect();
-    console.info(`[finance-ledger-allocation] 已 DROP 临时库：${DB_NAME}`);
-  }
+  await dropDb?.();
 }, 60_000);
 
 /* ------------------------------------------------------------------ *
