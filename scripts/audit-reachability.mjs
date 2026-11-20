@@ -146,8 +146,8 @@ const BASELINE = new Set([
 
 const VERDICT = {
   // ── 有意：AGENTS 明确规定服务轴 UI 已整体移除 ──
-  completeMatterService: ["intentional", "AGENTS：服务轴 UI 已整体移除，字段与动作保留，无入口即不生效"],
-  activateMatterService: ["intentional", "同上"],
+  completeMatterService: ["intentional", "服务轴 UI 已整体移除；字段恒为 SERVICE_ACTIVE 且全仓无读者（见 service-status-is-inert.test.ts 守卫）"],
+  activateMatterService: ["intentional", "同上：与 completeMatterService 成对，均为惰性字段的唯一写入方"],
 
   // ── 有意：财务页明示「已入账记录不可直接删除」，更正走冲正/退回 ──
   deleteFeeEntry: ["intentional", "财务页明示已入账不可直接删除；更正走 rejectFeeEntry / 冲正"],

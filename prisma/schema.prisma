@@ -789,8 +789,22 @@ model Matter {
   title                String
   category             MatterCategory @default(CIVIL_COMMERCIAL)
   status               MatterStatus   @default(IN_PROGRESS)
-  // v1.x P2 状态轴分离（报告 §6.4）：服务轴独立于程序轴 status；
-  // 程序结束不自动推进服务状态，服务完成是显式动作（completeMatterService）。
+  // v1.x P2 状态轴分离（报告 §6.4）：服务轴独立于程序轴 status。
+  //
+  // ⚠️ 当前**不启用**（2026-11-20 核实）：
+  //   · `completeMatterService` / `activateMatterService` 无任何 UI 入口，
+  //     本字段因此**恒为默认值 SERVICE_ACTIVE**（主库 7 个案件实测全为该值）；
+  //   · 除这两个动作自身外，**全仓无任何读者**——结案、归档、报表、工作台都不读它。
+  // 也就是说：它不是"状态轴"，而是一个**永远不变的常量**。
+  //
+  // 因此不要把 `where: { serviceStatus: ... }` 写进查询或统计：
+  // 过滤 SERVICE_ACTIVE 等于不过滤（恒真），过滤 SERVICE_COMPLETED 永远为空，
+  // 两种写法都会让代码**看起来在按服务状态筛选，实际什么也没筛**。
+  //
+  // 要真正启用，必须同时做两件事，缺一不可：
+  //   ① 恢复「服务完成/恢复」入口（服务轴 UI 于 2026-09-20 整体移除，见 AGENTS.md）；
+  //   ② 让下游真正消费它（结案门禁、报表口径或工作台筛选至少有一处读它）。
+  // 只做 ① 会让字段开始变化但仍无人读取；只做 ② 会拿一个恒真值去过滤。
   serviceStatus        MatterServiceStatus @default(SERVICE_ACTIVE)
   // v1.x 制度决策 4.1（选项 A）: 受限事项——不进入团队汇总视图，
   // 限制优先于团队授权；撤权复核提示沿用既有审计。
