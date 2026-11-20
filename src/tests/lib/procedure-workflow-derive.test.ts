@@ -74,6 +74,38 @@ describe("buildActionItems", () => {
     expect(items.map((i) => i.title)).toEqual(["未完成任务"]);
   });
 
+  it("经办记录带回编辑所需的原值（作者/渠道/相对人/标签）——只对作者本人显示改删", () => {
+    // 2026-11-22：updateNote / deleteNote 补了界面入口。
+    // 编辑表单必须原样拿到 channel / withWhom / tags —— updateNote 收全量，
+    // 缺项会被覆盖成默认值（与任务编辑的 assigneeId 是同一类风险）。
+    const p = procedure({ deadlines: [], memos: [] });
+    const items = buildLogItems({
+      procedure: p,
+      stages: [],
+      notes: [
+        {
+          id: "n1",
+          channel: "PHONE",
+          withWhom: "对方代理人",
+          occurredAt: new Date("2026-11-01T10:00:00+08:00"),
+          content: "电话沟通调解方案",
+          tags: ["环节:庭前准备"],
+          author: { id: "u-author", name: "张律师" }
+        }
+      ],
+      events: [],
+      users: [],
+      expresses: []
+    });
+    const note = items.find((i) => i.noteId === "n1");
+    expect(note).toBeDefined();
+    expect(note!.noteAuthorId).toBe("u-author");
+    expect(note!.noteChannel).toBe("PHONE");
+    expect(note!.noteWithWhom).toBe("对方代理人");
+    expect(note!.noteTags).toEqual(["环节:庭前准备"]);
+    expect(note!.body).toBe("电话沟通调解方案");
+  });
+
   it("任务卡片带回编辑所需的原值（责任人/说明/环节）——编辑对话框靠它回填", () => {
     // 2026-11-22：updateTask 补了界面入口。编辑表单必须原样拿到这四个字段，
     // 尤其 assigneeId —— updateTask 会比对它，缺失或改动都会抛

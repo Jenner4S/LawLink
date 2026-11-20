@@ -121,7 +121,6 @@ const BASELINE = new Set([
   "deleteFeeEntry",
   "deleteFolder",
   "deleteHoliday",
-  "deleteNote",
   "deleteProperty",
   "deleteTarget",
   "deleteTask",
@@ -164,7 +163,6 @@ const BASELINE = new Set([
   "triggerAuditCleanupNow",
   "unbindPartyEnterprise",
   "updateFirmFile",
-  "updateNote",
   "updatePreservationCase",
   "updateProperty",
   "updateTarget",
@@ -234,7 +232,9 @@ const VERDICT = {
   //       所以 deleteTask 第一句就抛「请在事项责任面板取消任务并填写原因，原记录保留」。
   //       取消任务要走责任面板的 CANCEL 动作。**不要给它补按钮**（会是一个永远失败的按钮），
   //       真正的处理是删掉这个函数或让它退役。
-  //   · updateNote / deleteNote —— 记录写了不能改不能删
+  //   · updateNote / deleteNote —— **2026-11-22 已补入口**（经办记录行的「改/删除」，
+  //       只对作者本人显示；见 note-edit-dialog.tsx）。
+  //       已从 BASELINE 移除，将来 UI 被删会重新报警。
   //   · updateFirmFile / getFirmFileVersionHistory —— 律所文书只能新增与删除，不能更新、看不到版本历史
   //   · bindPartyToEnterprise / unbindPartyEnterprise / getEnterpriseSummaryByParty —— 工商绑定只写在服务层
   //   · updatePreservationCase / updateTarget / deleteTarget / updateProperty / deleteProperty

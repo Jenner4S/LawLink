@@ -187,6 +187,7 @@ export function MatterDetailTabs({
   preservationCases,
   evidenceItems,
   notes,
+  viewerId,
   reviewNode, responsibilityNode, closureNode, conflictNode, timeNode, signalNode, engagements,
   capabilities = { aiReview: false, caseSearch: false }
 }: {
@@ -229,6 +230,7 @@ export function MatterDetailTabs({
   preservationCases: WorkflowPreservationCase[];
   evidenceItems: EvidenceItemRow[];
   notes: WorkflowNote[];
+  viewerId?: string;
   /** AI 审查总览（服务端渲染节点），归入「信息总览」 */
   reviewNode?: React.ReactNode;
   /** 墨案 04 ② 信号条：最近期限 / 下次开庭 / 收费进度 / 本环节任务。
@@ -560,6 +562,7 @@ export function MatterDetailTabs({
         users={colleagues}
         canManage={canAssociateThisMatter && !isArchived}
         notes={notes}
+        viewerId={viewerId}
         timelineEvents={matter.timelineEvents}
         onWriteNote={({ judgment, stageName }) => setProgress({ mode: judgment ? "judgment" : "record", stage: stageName, stageNames: workflowApi.current?.stageNames ?? [] })}
         view={view}

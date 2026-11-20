@@ -239,7 +239,12 @@ export function buildLogItems({
       title: judgment ? "研判笔记" : `${NOTE_CHANNEL_LABEL[note.channel] ?? "办案记录"}${note.withWhom ? ` · ${note.withWhom}` : ""}`,
       body: note.content,
       meta: `${note.author.name} · ${formatDateTimeShort(at)}`,
-      stageTag: noteStage(note)
+      stageTag: noteStage(note),
+      noteId: note.id,
+      noteAuthorId: note.author.id,
+      noteChannel: note.channel,
+      noteWithWhom: note.withWhom,
+      noteTags: note.tags
     });
   }
   for (const stage of stages) {

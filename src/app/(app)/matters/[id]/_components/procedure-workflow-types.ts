@@ -276,6 +276,14 @@ export type LogItem = {
   channelTone?: "court" | "talk";
   stageTag?: string | null;
   eventType?: string;
+  // 2026-11-22：经办记录需要「改/删」入口（updateNote/deleteNote 此前零引用）。
+  // 只显示给作者本人 —— 服务端同样只允许本人（"只能编辑/删除自己的沟通记录"）。
+  noteId?: string;
+  noteAuthorId?: string | null;
+  /** updateNote 收全量：只改内容时必须把这些原值一并回传，否则会被覆盖成默认值 */
+  noteChannel?: string;
+  noteWithWhom?: string | null;
+  noteTags?: string[];
   memo?: { id: string; done: boolean };
   express?: { id: string; outbound: boolean };
 };

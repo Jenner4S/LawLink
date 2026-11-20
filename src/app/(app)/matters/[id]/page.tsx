@@ -274,6 +274,7 @@ export default async function MatterDetailPage({ params }: PageProps) {
         preservationCases={preservationCasesForClient}
         evidenceItems={evidenceItems}
         notes={notes}
+        viewerId={session?.user?.id}
         capabilities={{
           aiReview: (await getAiSettings().catch(() => null))?.configured ?? false,
           caseSearch: (await getYuandianSettings().catch(() => null))?.configured ?? false

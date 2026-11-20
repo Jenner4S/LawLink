@@ -58,6 +58,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { uploadDocument } from "@/server/documents/actions";
 import { createTask, toggleTaskCompleted } from "@/server/tasks/actions";
 import { TaskEditDialog, type EditableTask } from "./task-edit-dialog";
+import { NoteEditDialog, type EditableNote } from "./note-edit-dialog";
+import { deleteNote } from "@/server/notes/actions";
 import { createProcedureStage, deleteProcedureMemo, ensureProcedureStage, removeProcedureStage, toggleDeadlineCompleted, toggleProcedureMemo } from "@/server/procedures/actions";
 import { deleteExpress } from "@/server/express/actions";
 import type { ExpressItem } from "./info-extras";
@@ -175,6 +177,7 @@ export function ProcedureWorkflowPanel({
   canManage,
   notes,
   timelineEvents,
+  viewerId,
   onWriteNote,
   apiRef,
   view,
@@ -226,6 +229,8 @@ export function ProcedureWorkflowPanel({
   emailNode?: React.ReactNode;
   sealNode?: React.ReactNode;
   waiting?: WaitingItem[];
+  /** 当前登录用户 id：经办记录的改/删只对作者本人显示（服务端同口径） */
+  viewerId?: string;
 }) {
   const router = useRouter();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -236,6 +241,8 @@ export function ProcedureWorkflowPanel({
   const [uploadSignal, setUploadSignal] = useState(0);
   // 任务编辑（2026-11-22）：updateTask 此前零界面入口
   const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
+  // 经办记录编辑（2026-11-22）：updateNote 此前零界面入口
+  const [editingNote, setEditingNote] = useState<EditableNote | null>(null);
   const [, startStageRemovalTransition] = useTransition();
 
   const stages = useMemo(
@@ -397,6 +404,18 @@ export function ProcedureWorkflowPanel({
                 onWriteJudgment={() => onWriteNote({ judgment: true, stageName: selectedStage?.name })}
                 onAddLedger={canManage && onAddLedger ? () => onAddLedger("express") : undefined}
                 onCaseSearch={onCaseSearch}
+                viewerId={viewerId}
+                onEditNote={(item) =>
+                  setEditingNote({
+                    id: item.noteId!,
+                    matterId: matter.id,
+                    content: item.body ?? "",
+                    occurredAt: item.at,
+                    channel: item.noteChannel ?? "OTHER",
+                    withWhom: item.noteWithWhom ?? null,
+                    tags: item.noteTags ?? []
+                  })
+                }
               />
             </div>
           </div>
@@ -505,6 +524,12 @@ export function ProcedureWorkflowPanel({
         open={editingTask !== null}
         onOpenChange={(o) => { if (!o) setEditingTask(null); }}
         task={editingTask}
+      />
+      {/* 经办记录编辑（2026-11-22）：updateNote 此前零界面入口 */}
+      <NoteEditDialog
+        open={editingNote !== null}
+        onOpenChange={(o) => { if (!o) setEditingNote(null); }}
+        note={editingNote}
       />
     </>
   );
@@ -1110,7 +1135,17 @@ const LOG_FILTERS: { key: "all" | LogKind; label: string }[] = [
   { key: "sys", label: "系统" }
 ];
 
-function LogRow({ item, canManage }: { item: LogItem; canManage?: boolean }) {
+function LogRow({
+  item,
+  canManage,
+  viewerId,
+  onEditNote
+}: {
+  item: LogItem;
+  canManage?: boolean;
+  viewerId?: string;
+  onEditNote?: (item: LogItem) => void;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   function run(fn: () => Promise<unknown>, ok: string) {
@@ -1124,6 +1159,35 @@ function LogRow({ item, canManage }: { item: LogItem; canManage?: boolean }) {
       }
     });
   }
+  // 经办记录：只有作者本人能改/删（服务端同口径："只能编辑/删除自己的沟通记录"）
+  const noteOwned = Boolean(item.noteId && viewerId && item.noteAuthorId === viewerId);
+  const noteOps = noteOwned ? (
+    <div className="dos-log-ops">
+      <button type="button" className="btn btn-ghost btn-sm" disabled={pending} onClick={() => onEditNote?.(item)}>
+        改
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm text-[var(--t-muted)]"
+        disabled={pending}
+        onClick={async () => {
+          if (
+            !(await confirmDialog({
+              title: "删除这条记录？",
+              description: "记录删除后不再出现在卷宗里，操作会写入审计。",
+              confirmText: "删除",
+              danger: true
+            }))
+          )
+            return;
+          run(() => deleteNote(item.noteId!), "记录已删除");
+        }}
+      >
+        删除
+      </button>
+    </div>
+  ) : null;
+
   const ledgerOps =
     canManage && (item.memo || item.express) ? (
       <div className="dos-log-ops">
@@ -1160,6 +1224,7 @@ function LogRow({ item, canManage }: { item: LogItem; canManage?: boolean }) {
           <div className="rec-note whitespace-pre-wrap">{item.body}</div>
           <div className="rec-meta">{item.meta}</div>
         </div>
+        {noteOps}
       </div>
     );
   }
@@ -1186,6 +1251,7 @@ function LogRow({ item, canManage }: { item: LogItem; canManage?: boolean }) {
         {item.body ? <div className={cn("dos-note-text whitespace-pre-wrap", item.memo?.done && "line-through text-[var(--t-muted)]")}>{item.body}</div> : null}
         <div className="rec-meta">{item.meta}</div>
       </div>
+      {noteOps}
       {ledgerOps}
     </div>
   );
@@ -1200,8 +1266,12 @@ function CaseLog({
   onWriteRecord,
   onWriteJudgment,
   onAddLedger,
-  onCaseSearch
+  onCaseSearch,
+  viewerId,
+  onEditNote
 }: {
+  viewerId?: string;
+  onEditNote?: (item: LogItem) => void;
   onAddLedger?: (type: "express") => void;
   onCaseSearch?: () => void;
   items: LogItem[];
@@ -1287,7 +1357,7 @@ function CaseLog({
                 <span className="pd">{seg.items.length} 条</span>
               </div>
               {seg.items.map((e) => (
-                <LogRow key={e.key} item={e} canManage={canManage} />
+                <LogRow key={e.key} item={e} canManage={canManage} viewerId={viewerId} onEditNote={onEditNote} />
               ))}
             </div>
           );
