@@ -20,6 +20,7 @@
 #   ./scripts/release-check.sh --fast       # 只跑静态检查（提交前用）
 #   ./scripts/release-check.sh --no-build   # 全量但跳过 next build
 #   ./scripts/release-check.sh --deploy     # 全量通过后再部署（8 分钟，需显式开启）
+#   ./scripts/release-check.sh --archive    # 通过后把证据摘要归档进 docs/（入 git）
 #
 # 退出码：0 全部通过；1 有失败；2 用法错误。
 set -uo pipefail
@@ -30,11 +31,13 @@ cd "$ROOT"
 FAST=0
 NO_BUILD=0
 DEPLOY=0
+ARCHIVE=0
 for arg in "$@"; do
   case "$arg" in
     --fast) FAST=1 ;;
     --no-build) NO_BUILD=1 ;;
     --deploy) DEPLOY=1 ;;
+    --archive) ARCHIVE=1 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "未知参数：${arg}（用 --help 查看用法）" >&2; exit 2 ;;
   esac
@@ -192,6 +195,20 @@ done
     printf '| %s | %s | %s |\n' "${NAMES[$i]}" "$mark" "${DETAILS[$i]}"
   done
 } > "$EVIDENCE_DIR/$STAMP.md"
+
+# 归档：outputs/ 被 .gitignore 覆盖，属工作产物；需要入库时显式 --archive
+if [[ $ARCHIVE -eq 1 ]]; then
+  ARCHIVE_FILE="docs/交付证据-$(date +%Y%m%d).md"
+  {
+    echo
+    echo "---"
+    echo
+    echo "## 发布门槛执行记录（${STAMP}）"
+    echo
+    sed -n '/^| 步骤 | 结果 | 摘要 |/,$p' "$EVIDENCE_DIR/$STAMP.md"
+  } >> "$ARCHIVE_FILE"
+  echo "📌 已归档到 ${ARCHIVE_FILE}"
+fi
 
 echo
 if [[ $FAILED -eq 0 ]]; then
