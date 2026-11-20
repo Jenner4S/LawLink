@@ -49,7 +49,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }
 const { canReadDocument } = await import("@/lib/approvals/documents");
 const { assertCanReadMatter } = await import("@/lib/permissions/index");
 const { createArchiveBorrow, decideArchiveBorrow, returnArchiveBorrow } = await import("@/server/archive/borrow");
-const { getArchiveMaterialPolicy } = await import("@/server/archive/borrow-policy");
+const { getArchiveMaterialPolicy, needsBorrowToReadMaterials } = await import("@/server/archive/borrow-policy");
 
 let seq = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(++seq).toString(36)}`;
@@ -164,5 +164,42 @@ describe("归档材料取阅策略", () => {
     });
     expect(readable).toBe(true);
     expect(rec.archivedById).toBe(approver.id);
+  });
+});
+
+describe("被拒时的可操作提示（不能对知情人说「材料不存在」）", () => {
+  /**
+   * 下载路由对无权者统一 404「材料不存在」是为了防枚举（2026-11-20 安全探针）。
+   * 但归档收紧之后，看得见案件的主办点下载也会收到这句 —— 材料明明存在。
+   * 所以对「看得见该案」的人区分出 403 + 需借阅，对无关者仍 404。
+   */
+  it("主办 + 已归档 + 无借阅 → 判定为「需借阅」（路由据此返回 403 而非 404）", async () => {
+    const { owner, matter } = await seed();
+    expect(await needsBorrowToReadMaterials(owner.id, matter.id)).toBe(true);
+  });
+
+  it("与该案无关的人 → 不判定为「需借阅」（仍走 404，枚举面不变）", async () => {
+    const { matter } = await seed();
+    const stranger = await prisma.user.create({
+      data: { email: `${uid("e")}@t.local`, name: "路人", role: "LAWYER", passwordHash: "x", active: true }
+    });
+    expect(await needsBorrowToReadMaterials(stranger.id, matter.id)).toBe(false);
+  });
+
+  it("已获批借阅 → 不再判定为「需借阅」", async () => {
+    const { owner, matter, rec } = await seed();
+    await prisma.archiveBorrowRequest.create({
+      data: {
+        archiveRecordId: rec.id, applicantId: owner.id, reason: "复核材料",
+        status: "APPROVED", accessUntil: new Date(Date.now() + 86_400_000)
+      }
+    });
+    expect(await needsBorrowToReadMaterials(owner.id, matter.id)).toBe(false);
+  });
+
+  it("策略切 OPEN → 不判定为「需借阅」，且返回 200 走正常下载", async () => {
+    const { owner, matter } = await seed();
+    await prisma.systemSetting.create({ data: { key: "archive.materialAccessPolicy", value: { policy: "OPEN" } } });
+    expect(await needsBorrowToReadMaterials(owner.id, matter.id)).toBe(false);
   });
 });

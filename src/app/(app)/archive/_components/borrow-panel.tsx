@@ -32,7 +32,8 @@ export function BorrowPanel({ mine, pending, canApply }: { mine: BorrowRow[]; pe
   const active = mine.filter((r) => r.status === "APPROVED" && r.accessUntil && r.accessUntil.getTime() > Date.now());
 
   return (
-    <div className="card">
+    // id="borrow"：案件详情页「已归档」提示直接锚到这里
+    <div className="card" id="borrow">
       <div className="panel-head">
         <div className="panel-title" style={{ fontSize: 13 }}>
           <BookOpen className="ic" strokeWidth={1.8} />

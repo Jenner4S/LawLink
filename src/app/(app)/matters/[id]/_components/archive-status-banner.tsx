@@ -22,7 +22,28 @@ interface Props {
 }
 
 export function ArchiveStatusBanner({ record, onReArchive }: Props) {
-  if (!record || record.status === "APPROVED") return null;
+  // 2026-11-21：已归档也要有提示。
+  //
+  // 归档材料收紧之后（归档取阅需借阅），用户在材料区点下载会被拒；
+  // 若页面一句解释都没有，他只会以为"系统坏了"。
+  // 这条 banner 就是那条可走的路：告诉他为什么、去哪儿申请。
+  if (record && record.status === "APPROVED") {
+    return (
+      <div className="flex items-start gap-3 rounded-[10px] border border-[var(--line)] bg-[var(--surface-sunken,rgba(0,0,0,.02))] px-4 py-3">
+        <Archive className="mt-0.5 h-4 w-4 shrink-0 text-[var(--t-muted)]" />
+        <div className="min-w-0 text-[12px] leading-relaxed">
+          <span className="font-medium">本案已归档（{record.archiveNo}）· 只读</span>
+          <span className="ml-1 text-[var(--t-muted)]">
+            材料取阅需申请借阅（限时、留痕、可归还）。
+          </span>
+          <a className="ml-1 underline" href="/archive#borrow">
+            去「案卷借阅」申请
+          </a>
+        </div>
+      </div>
+    );
+  }
+  if (!record) return null;
 
   const isRejected = record.status === "REJECTED";
 

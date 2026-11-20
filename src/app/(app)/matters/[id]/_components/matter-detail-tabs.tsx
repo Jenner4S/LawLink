@@ -542,7 +542,9 @@ export function MatterDetailTabs({
         </div>
       ) : null}
 
-      {latestArchive && latestArchive.status !== "APPROVED" ? (
+      {/* 2026-11-21：已归档也要渲染 —— 归档材料取阅需借阅，页面必须告知这条路径。
+          此前条件写着 status !== "APPROVED"，APPROVED 分支成了死代码。 */}
+      {latestArchive ? (
         <div style={{ margin: "14px 0 0" }}>
           <ArchiveStatusBanner
             record={latestArchive}

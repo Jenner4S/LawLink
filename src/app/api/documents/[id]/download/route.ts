@@ -1,4 +1,5 @@
 import { canReadDocument } from "@/lib/approvals/documents";
+import { needsBorrowToReadMaterials } from "@/server/archive/borrow-policy";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
@@ -29,6 +30,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // 原先无权返回 403「无权访问」、不存在返回 404「材料不存在」，两者可区分
   // → 可用来枚举「这个材料 id 是否存在」。改为统一 404 同一句文案。
   if (!await canReadDocument(session.user.id, doc)) {
+    // 2026-11-21：归档材料收紧后，对**看得见该案**的人区分出「需借阅」。
+    //
+    // 为什么这里可以不说 404：这类人本来就看得见这个案件（主办/成员），
+    // 「需借阅」不泄露任何新信息；而对与该案无关的人仍返回 404 同一文案，
+    // 2026-11-20 安全探针要求的「不可枚举」面不变。
+    //
+    // 若不区分：材料明明存在却告诉他「材料不存在」——对知情人说假话，
+    // 而且他无从知道该去申请借阅，整条借阅链在体验上是断的。
+    if (doc.matterId && await needsBorrowToReadMaterials(session.user.id, doc.matterId)) {
+      return NextResponse.json(
+        { error: "该案已归档，取阅材料需先申请借阅", code: "ARCHIVE_BORROW_REQUIRED" },
+        { status: 403 }
+      );
+    }
     return NextResponse.json({ error: "材料不存在" }, { status: 404 });
   }
 

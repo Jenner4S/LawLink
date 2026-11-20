@@ -59,3 +59,34 @@ export async function hasActiveArchiveBorrowGrant(userId: string, matterId: stri
   });
   return Boolean(row);
 }
+
+/**
+ * 该用户对某归档案件是否「可见但取阅材料需要借阅」（2026-11-21）
+ *
+ * 用于下载/预览被拒时给出**可操作的**提示。
+ *
+ * 为什么不能一律 404：`/api/documents/[id]/download` 对无权者统一返回 404
+ * 「材料不存在」，目的是防止通过状态码枚举材料是否存在（2026-11-20 安全探针）。
+ * 但归档材料收紧之后，一个**本来就看得见这个案件**的律师点下载也会收到
+ * 「材料不存在」——材料明明存在，这是对知情人说假话，且他无从知道该去申请借阅。
+ *
+ * 判据：本人对该案有常规关系（主办/成员）+ 案件已归档 + 无有效借阅。
+ * 这类人已经知道案件存在，告诉他「需借阅」不泄露任何额外信息；
+ * 与该案无关的人仍走 404，枚举面不变。
+ */
+export async function needsBorrowToReadMaterials(userId: string, matterId: string): Promise<boolean> {
+  const matter = await prisma.matter.findUnique({
+    where: { id: matterId },
+    select: {
+      deletedAt: true,
+      status: true,
+      ownerId: true,
+      members: { where: { userId }, select: { userId: true } }
+    }
+  });
+  if (!matter || matter.deletedAt || matter.status !== "ARCHIVED") return false;
+  const related = matter.ownerId === userId || matter.members.length > 0;
+  if (!related) return false;
+  if (await getArchiveMaterialPolicy() === "OPEN") return false;
+  return !(await hasActiveArchiveBorrowGrant(userId, matterId));
+}
