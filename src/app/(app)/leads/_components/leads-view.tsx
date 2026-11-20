@@ -94,7 +94,7 @@ export function LeadsView({
     });
   };
 
-  const record = (lead: LeadRow, type: "CONTACT" | "INVITE" | "VISIT" | "CONSULT") => {
+  const record = (lead: LeadRow, type: "CONTACT" | "INVITE" | "VISIT" | "NO_SHOW" | "CONSULT") => {
     setBusyId(lead.id);
     startTransition(async () => {
       try {
@@ -166,6 +166,7 @@ export function LeadsView({
             { label: "已邀约", value: String(funnel.invited), sub: `邀约率 ${pct(funnel.inviteRate)}` },
             { label: "已到店", value: String(funnel.visited), sub: `到店率 ${pct(funnel.visitRate)}` },
             { label: "已谈案", value: String(funnel.consulted), sub: "由动作记录统计" },
+            { label: "爽约", value: String(funnel.noShow), sub: `爽约率 ${pct(funnel.noShowRate)}` },
             { label: "已转收案", value: String(funnel.converted), sub: `转化率 ${pct(funnel.conversionRate)}` },
             { label: "转化天数", value: funnel.medianDaysToConvert === null ? "—" : `${funnel.medianDaysToConvert} 天`, sub: "中位数" }
           ].map((k) => (
@@ -305,7 +306,14 @@ export function LeadsView({
                     {SOURCE_CN[l.source] ?? l.source}
                     {l.sourceDetail ? <div className="text-[10px] text-[var(--t-muted)]">{l.sourceDetail}</div> : null}
                   </td>
-                  <td><span className={`badge ${STAGE_CLS[l.stage] ?? "b-slate"}`} style={{ fontSize: 10 }}>{STAGE_CN[l.stage] ?? l.stage}</span></td>
+                  <td>
+                    <span className={`badge ${STAGE_CLS[l.stage] ?? "b-slate"}`} style={{ fontSize: 10 }}>{STAGE_CN[l.stage] ?? l.stage}</span>
+                    {l.visitOutcome === "NO_SHOW" ? (
+                      <span className="ml-1 rounded bg-[var(--red-bg,rgba(185,28,28,.12))] px-1 text-[9.5px] text-[var(--red,#b91c1c)]" title="约定时间已过但未到店">
+                        爽约
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="text-[11px]">
                     <button
                       type="button"
@@ -331,6 +339,10 @@ export function LeadsView({
                       ) : null}
                       {l.stage === "VISITED" ? (
                         <Button size="sm" variant="ghost" disabled={isPending || busyId === l.id} onClick={() => record(l, "CONSULT")}>谈案完成</Button>
+                      ) : null}
+                      {/* 2026-11-22 P0-3：约了没来要能单独记——「没约」和「约了没来」是两个问题 */}
+                      {l.stage === "INVITED" && l.visitOutcome !== "ARRIVED" ? (
+                        <Button size="sm" variant="ghost" disabled={isPending || busyId === l.id} onClick={() => record(l, "NO_SHOW")}>未到店</Button>
                       ) : null}
                       {l.stage === "CONSULTED" ? (
                         <Button size="sm" disabled={isPending || busyId === l.id} onClick={() => convert(l)}>转收案</Button>

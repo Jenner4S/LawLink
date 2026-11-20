@@ -48,6 +48,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }
 
 const { createLead, listLeads, addLeadActivity, markLeadLost, convertLeadToIntake, listLeadTimeline, listLeadOwners } =
   await import("@/server/leads/actions");
+const { getLeadFunnel } = await import("@/server/leads/analytics");
 
 let seq = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(++seq).toString(36)}`;
@@ -305,5 +306,75 @@ describe("收口审查：作废提醒必须走失败隔离封装", () => {
     // 封装本身必须存在且被三处使用
     expect(src).toContain("retireLeadRemindersSafely");
     expect((src.match(/await\s+retireLeadRemindersSafely\(/g) ?? []).length).toBe(3);
+  });
+});
+
+describe("到店三态（P0-3）", () => {
+  /**
+   * 客户现行系统里「到店来访」是状态单选（多行为「未曾来访」）。
+   * 他区分「没约」与「约了没来」——没约是跟进没推进，爽约是邀约质量或客户意愿问题。
+   * 现在只有 stage=INVITED，两者分不开。
+   */
+  it("邀约 → visitOutcome=PENDING；到店 → ARRIVED 且阶段 VISITED", async () => {
+    const { id } = await createLead({ name: uid("到店三态"), phone: "13900000050" });
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id } })).visitOutcome).toBe("PENDING");
+
+    await addLeadActivity({ leadId: id, type: "INVITE" });
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id } })).visitOutcome).toBe("PENDING");
+
+    await addLeadActivity({ leadId: id, type: "VISIT" });
+    const after = await prisma.lead.findUniqueOrThrow({ where: { id } });
+    expect(after.visitOutcome).toBe("ARRIVED");
+    expect(after.stage).toBe("VISITED");
+  });
+
+  it("**爽约不改阶段**（改了会让漏斗倒挂，且爽约后仍可再约）", async () => {
+    const { id } = await createLead({ name: uid("爽约"), phone: "13900000051" });
+    await addLeadActivity({ leadId: id, type: "INVITE" });
+
+    const res = await addLeadActivity({ leadId: id, type: "NO_SHOW" });
+    const after = await prisma.lead.findUniqueOrThrow({ where: { id } });
+    expect(after.stage).toBe("INVITED");
+    expect(after.visitOutcome).toBe("NO_SHOW");
+    expect(res.stage).toBe("INVITED");
+    // invitedAt 必须保留——1/3/7 天追问要靠它算逾期
+    expect(after.invitedAt).not.toBeNull();
+  });
+
+  it("爽约后再次邀约 → visitOutcome 回到 PENDING（可以再约）", async () => {
+    const { id } = await createLead({ name: uid("再约"), phone: "13900000052" });
+    await addLeadActivity({ leadId: id, type: "INVITE" });
+    await addLeadActivity({ leadId: id, type: "NO_SHOW" });
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id } })).visitOutcome).toBe("NO_SHOW");
+
+    await addLeadActivity({ leadId: id, type: "INVITE", happenedAt: new Date() });
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id } })).visitOutcome).toBe("PENDING");
+  });
+
+  it("漏斗统计爽约数，爽约率分母是「到过邀约环节的人」（不是总线索数）", async () => {
+    const own = new Date("2029-02-10T10:00:00+08:00");
+    const start = new Date("2029-02-01T00:00:00+08:00");
+    const end = new Date("2029-02-28T23:59:59+08:00");
+    // 2 条爽约 + 1 条到店 + 1 条纯线索（没约）
+    for (const [outcome, acts] of [
+      ["NO_SHOW", ["INVITE", "NO_SHOW"]],
+      ["NO_SHOW", ["INVITE", "NO_SHOW"]],
+      ["ARRIVED", ["INVITE", "VISIT"]]
+    ] as [string, ("INVITE" | "NO_SHOW" | "VISIT")[]][]) {
+      const lead = await prisma.lead.create({
+        data: { name: uid("漏斗"), phone: "13900000060", ownerId: STAFF.id, createdAt: own, invitedAt: own }
+      });
+      for (const t of acts) {
+        await prisma.leadActivity.create({ data: { leadId: lead.id, type: t, happenedAt: own, createdById: STAFF.id } });
+      }
+      await prisma.lead.update({ where: { id: lead.id }, data: { visitOutcome: outcome as never, stage: outcome === "ARRIVED" ? "VISITED" : "INVITED" } });
+    }
+    await prisma.lead.create({ data: { name: uid("没约"), phone: "13900000061", ownerId: STAFF.id, createdAt: own } });
+
+    const f = await getLeadFunnel({ start, end });
+    expect(f.total).toBe(4);
+    expect(f.noShow).toBe(2);
+    // 2 爽约 / (2 爽约 + 1 到店) = 66.7%；若误用总线索数会是 50%
+    expect(f.noShowRate).toBe(66.7);
   });
 });

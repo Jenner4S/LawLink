@@ -114,6 +114,8 @@ const words: Record<string, string> = {
   // LEAD_REMINDER_RECIPIENT_DISABLED（2026-11-21 收口审查）
   // REMINDER / RECIPIENT 已在通用词表里，这里只补缺的 DISABLED
   DISABLED: "已停用", RETIRE: "作废", DUPLICATE: "重复", WARNED: "已提示",
+  // 到店结果（2026-11-22 P0-3）
+  SHOW: "到店",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

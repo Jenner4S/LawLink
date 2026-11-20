@@ -41,11 +41,15 @@ export type LeadFunnel = {
   /** 期间新增线索中已转收案的 */
   converted: number;
   lost: number;
+  /** 期间内发生爽约的线索数（2026-11-22 P0-3） */
+  noShow: number;
   /** 比率（分母为 0 时为 null，不显示 0%——0% 会被误读成「一个都没成」） */
   inviteRate: number | null;
   visitRate: number | null;
   consultRate: number | null;
   conversionRate: number | null;
+  /** 爽约率 = 爽约 / 到过邀约的（含爽约）。分母为 0 时为 null */
+  noShowRate: number | null;
   /** 转化天数中位数（天）；无可算样本为 null */
   medianDaysToConvert: number | null;
   /** 期间新增线索的预计金额合计 */
@@ -68,7 +72,7 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
     select: {
       id: true, stage: true, source: true, ownerId: true,
       owner: { select: { name: true } },
-      expectedAmount: true, convertedAt: true, createdAt: true, lostReason: true,
+      expectedAmount: true, convertedAt: true, createdAt: true, lostReason: true, visitOutcome: true,
       activities: { select: { type: true } }
     }
   });
@@ -79,6 +83,7 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
   let consulted = 0;
   let converted = 0;
   let lost = 0;
+  let noShow = 0;
   let expectedAmount = 0;
   let convertedAmount = 0;
   const daysToConvert: number[] = [];
@@ -102,6 +107,8 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
         daysToConvert.push((lead.convertedAt.getTime() - lead.createdAt.getTime()) / 86_400_000);
       }
     }
+    // 爽约：以结果字段为准（不靠 stage 反推——爽约后仍可能是 INVITED）
+    if (lead.visitOutcome === "NO_SHOW") noShow += 1;
     if (lead.stage === "LOST") {
       lost += 1;
       const reason = lead.lostReason?.trim() || "（未填写）";
@@ -138,10 +145,15 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
     consulted,
     converted,
     lost,
+    noShow,
     inviteRate: rate(invited, total),
     visitRate: rate(visited, invited),
     consultRate: rate(converted, consulted),
     conversionRate: rate(converted, total),
+    // 爽约率的分母是「曾到过邀约环节的人」（到过 INVITE = 邀约过），
+    // 用它才能回答「约了的人里有多少没来」；用总线索数会把没约的也算成分母，
+    // 会让爽约率看起来很低，掩盖真实的邀约质量问题。
+    noShowRate: rate(noShow, noShow + visited),
     medianDaysToConvert,
     expectedAmount: Math.round(expectedAmount * 100) / 100,
     convertedAmount: Math.round(convertedAmount * 100) / 100,

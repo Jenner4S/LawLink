@@ -3654,48 +3654,65 @@ enum LeadSource {
 }
 
 /// 跟进动作类型——「获客 → 邀约 → 到店 → 谈案」四段各记一笔
+/// 到店结果（2026-11-22 对标分析 P0-3）
+///
+/// 为什么用独立字段而不是新增 stage：
+/// 「爽约」之后仍可再约，若做成 stage 会来回跳（INVITED→NO_SHOW→INVITED），
+/// 阶段统计就乱了。到店结果是**一次邀约的结果**，属于事件属性。
+///
+/// 客户现行系统里「到店来访」是状态单选（截图中多行为「未曾来访」），
+/// 说明他区分「没约」与「约了没来」——这是两个完全不同的管理问题。
+enum LeadVisitOutcome {
+  PENDING // 约了，还没到时间
+  ARRIVED // 到店了
+  NO_SHOW // 约了没来（爽约）
+}
+
 enum LeadActivityType {
   CONTACT // 联系（电话/微信沟通）
   INVITE // 邀约（约定到店时间）
-  VISIT // 到店
+  VISIT // 到店（并置 visitOutcome=ARRIVED）
+  NO_SHOW // 爽约（约定时间已过但未到店；阶段不变，仍可再约）
   CONSULT // 谈案（面谈纪要、报价）
   NOTE // 备注
 }
 
 model Lead {
-  id                String         @id @default(cuid())
+  id                String           @id @default(cuid())
   /// 线索人姓名（不是客户名——此时还不是客户）
   name              String
   phone             String?
   wechat            String?
   /// 单位/公司（若为企业线索）
   organization      String?
-  source            LeadSource     @default(OTHER)
+  source            LeadSource       @default(OTHER)
   /// 来源细节（谁介绍的、哪个平台、哪场活动）
   sourceDetail      String?
-  stage             LeadStage      @default(LEAD)
+  stage             LeadStage        @default(LEAD)
   /// 意向业务类别，与 MatterCategory 同枚举，便于按类别算转化率
-  category          MatterCategory @default(CIVIL_COMMERCIAL)
+  category          MatterCategory   @default(CIVIL_COMMERCIAL)
   /// 预计标的/预计收费（获客看板用它算预期收入，不影响财务）
-  expectedAmount    Decimal?       @db.Decimal(14, 2)
+  expectedAmount    Decimal?         @db.Decimal(14, 2)
   /// 负责人（跟进人）
   ownerId           String
-  owner             User           @relation("LeadOwner", fields: [ownerId], references: [id])
+  owner             User             @relation("LeadOwner", fields: [ownerId], references: [id])
   /// 邀约时间（约定到店/线上谈的时间）
   invitedAt         DateTime?
   /// 实际到店时间
   visitedAt         DateTime?
+  /// 到店结果（2026-11-22 P0-3）：区分「没约」「约了没来」「到了」
+  visitOutcome      LeadVisitOutcome @default(PENDING)
   /// 谈案完成时间
   consultedAt       DateTime?
   lostReason        String?
   lostAt            DateTime?
   /// 转化后的收案（唯一）。转收案时回填，用于算转化率与回看
-  convertedIntakeId String?        @unique
-  convertedIntake   Intake?        @relation(fields: [convertedIntakeId], references: [id])
+  convertedIntakeId String?          @unique
+  convertedIntake   Intake?          @relation(fields: [convertedIntakeId], references: [id])
   convertedAt       DateTime?
   notes             String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   activities LeadActivity[]
 

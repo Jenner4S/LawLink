@@ -187,7 +187,7 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
       id: true, name: true, phone: true, wechat: true, organization: true,
       source: true, sourceDetail: true, stage: true, category: true,
       expectedAmount: true, invitedAt: true, visitedAt: true, consultedAt: true,
-      lostReason: true, convertedIntakeId: true, convertedAt: true, notes: true,
+      lostReason: true, convertedIntakeId: true, convertedAt: true, notes: true, visitOutcome: true,
       ownerId: true, owner: { select: { name: true } }, updatedAt: true,
       _count: { select: { activities: true } }
     }
@@ -217,7 +217,7 @@ export async function listLeads(filter: { stage?: LeadStage | "ALL"; ownerId?: s
 
 const activitySchema = z.object({
   leadId: z.string().trim().min(1),
-  type: z.enum(["CONTACT", "INVITE", "VISIT", "CONSULT", "NOTE"]),
+  type: z.enum(["CONTACT", "INVITE", "VISIT", "NO_SHOW", "CONSULT", "NOTE"]),
   happenedAt: z.coerce.date().optional(),
   channel: z.string().trim().max(40).optional().or(z.literal("")),
   note: z.string().trim().max(1000).optional().or(z.literal(""))
@@ -229,6 +229,9 @@ const STAGE_AFTER: Record<LeadActivityType, LeadStage | null> = {
   NOTE: null,
   INVITE: "INVITED",
   VISIT: "VISITED",
+  // 爽约**不改变阶段**：爽约后仍可再约，阶段回退会让漏斗倒挂；
+  // 到店结果由 Lead.visitOutcome 单独承载（见 schema 注释）。
+  NO_SHOW: null,
   CONSULT: "CONSULTED"
 };
 
@@ -271,8 +274,10 @@ export async function addLeadActivity(input: z.input<typeof activitySchema>) {
       where: { id: lead.id },
       data: {
         ...(advance ? { stage: advance } : {}),
-        ...(data.type === "INVITE" ? { invitedAt: happenedAt } : {}),
-        ...(data.type === "VISIT" ? { visitedAt: happenedAt } : {}),
+        ...(data.type === "INVITE" ? { invitedAt: happenedAt, visitOutcome: "PENDING" as const } : {}),
+        ...(data.type === "VISIT" ? { visitedAt: happenedAt, visitOutcome: "ARRIVED" as const } : {}),
+        // 爽约：记结果但不改阶段，也不清 invitedAt（1/3/7 天追问要靠它算逾期）
+        ...(data.type === "NO_SHOW" ? { visitOutcome: "NO_SHOW" as const } : {}),
         ...(data.type === "CONSULT" ? { consultedAt: happenedAt } : {})
       }
     });
