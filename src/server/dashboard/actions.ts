@@ -1,13 +1,13 @@
 "use server";
 import {closedHearingIds} from "@/server/reminders/responsibility";
 import { agingFromFacts } from "@/server/finance/facts-aging";
-import { getFinanceFacts, periodReceipts, sumAmounts, shMonthStart, financeTrend } from "@/server/finance/facts";
+import { getFinanceFacts, shMonthStart, financeTrend } from "@/server/finance/facts";
 import { Prisma } from "@prisma/client";
 
 import { customMatterFilter } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/session";
-import { matterFinanceVisibilityFilter, matterReadVisibilityFilter, intakeReadVisibilityFilter } from "@/lib/permissions";
+import { matterFinanceVisibilityFilter, matterReadVisibilityFilter } from "@/lib/permissions";
 import { matterCategoryColor, matterCategoryLabel, matterCategoryShort, procedureTypeLabel } from "@/lib/enums";
 import { shDayKey, shParts as shPartsOf } from "@/lib/ui/sh-time";
 import { matterHref } from "@/lib/matters/route";
@@ -54,93 +54,6 @@ export type HeroData = {
     href: string;
   } | null;
 };
-
-// ============ KPIs ============
-
-export async function getDashboardKpis(): Promise<KpiItem[]> {
-  const session = await requireSession("personal");
-  const userId = session.user.id;
-  const role = session.user.role;
-
-  const mVis = matterReadVisibilityFilter(userId, role, session.user.rolePermissions);
-  const iVis = intakeReadVisibilityFilter(userId, role, session.user.rolePermissions);
-  const sVis = role === "CUSTOM" ? { AND: [mVis, customMatterFilter(userId, session.user.rolePermissions, "schedule.read", true)] } : mVis;
-
-  const now = new Date();
-  const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  // 2026-09-20 第五轮审计时区修复：facts 缺失时的回退窗口此前本地取月（UTC 容器
-  // 漏掉每月 1 日 0-8 点实收），统一上海月首
-  const monthStart = shMonthStart(now);
-
-  const [inProgress, pending, deadlines, received] = await Promise.all([
-    prisma.matter.count({
-      where: { status: "IN_PROGRESS", deletedAt: null, ...mVis }
-    }),
-    prisma.intake.count({
-      where: { status: "PENDING_CONFIRMATION", ...iVis }
-    }),
-    prisma.deadline.count({
-      where: {
-        dueAt: { gte: now, lte: in7d },
-        completed: false,
-        procedure: {
-          engagement: "ENGAGED",
-          matter: { deletedAt: null, ...sVis }
-        }
-      }
-    }),
-    prisma.feeEntry.aggregate({
-      where: {
-        type: "RECEIVED",
-        confirmState: "CONFIRMED",
-        occurredAt: { gte: monthStart },
-        matter: { deletedAt: null, ...matterFinanceVisibilityFilter(userId, role, session.user.rolePermissions) }
-      },
-      _sum: { amount: true }
-    })
-  ]);
-
-  const facts=await getFinanceFacts({deletedAt:null,...matterFinanceVisibilityFilter(userId,role,session.user.rolePermissions)});
-  const receivedTotal = facts ? sumAmounts(periodReceipts(facts,shMonthStart(now))) : Number(received._sum.amount ?? 0);
-
-  // Trend text is derived from raw counts
-  // Sparkline is a flat representation of the single value (no historical series yet)
-  const spark = (v: number) => Array(14).fill(v);
-
-  return [
-    {
-      key: "in_progress",
-      label: "办理中案件",
-      value: inProgress,
-      trend: { direction: "up", text: `${inProgress} 件` },
-      sparkline: spark(inProgress)
-    },
-    {
-      key: "pending",
-      label: "待确认收案",
-      value: pending,
-      trend: { direction: "warn", text: `${pending} 待处理` },
-      sparkline: spark(pending)
-    },
-    {
-      key: "deadline",
-      label: "近 7 天期限",
-      value: deadlines,
-      trend: { direction: "warn", text: `${deadlines} 项` },
-      sparkline: spark(deadlines)
-    },
-    {
-      key: "received",
-      // ledger 模式下 periodReceipts 只统计律师费（moneyKind==='LAWYER_FEE'），
-      // 标签随数据切换口径（与财务页 finance-view-v4 一致），避免把律师费实收标成「本月实收」
-      label: facts ? "本月律师费实收" : "本月实收",
-      value: receivedTotal,
-      valueFormat: "currency",
-      trend: { direction: "up", text: `¥${(receivedTotal / 10000).toFixed(1)}万` },
-      sparkline: spark(Math.round(receivedTotal / 1000))
-    }
-  ];
-}
 
 // ============ Revenue Trend ============
 

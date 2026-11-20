@@ -33,7 +33,7 @@ vi.mock("@/lib/permissions", () => ({
   matterReadVisibilityFilter: (uid: string) => ({ ownerId: uid })
 }));
 
-import { createArchiveBorrow, decideArchiveBorrow, returnArchiveBorrow, hasActiveBorrowGrant } from "@/server/archive/borrow";
+import { createArchiveBorrow, decideArchiveBorrow, returnArchiveBorrow } from "@/server/archive/borrow";
 import { deliverPendingReminders } from "@/server/reminders/delivery";
 
 const session = vi.hoisted(() => ({ user: { id: "clawyer0000000000000000001", role: "LAWYER", rolePermissions: undefined } }));
@@ -114,12 +114,6 @@ describe("归还与读取资格", () => {
     await returnArchiveBorrow("cborrow000000000000000001");
     expect(scheduleRegister.voidPendingDeliveries).toHaveBeenCalledWith("ARCHIVE_BORROW", ["cborrow000000000000000001"], "CANCELLED", "BORROW_RETURNED");
     expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({ action: "ARCHIVE_BORROW_RETURN" }));
-  });
-  it("读取资格实时校验：有效 APPROVED 单通过，过期不通过", async () => {
-    db.archiveBorrowRequest.findFirst.mockResolvedValueOnce({ id: "cborrow000000000000000001" });
-    await expect(hasActiveBorrowGrant(APPLICANT, RECORD)).resolves.toBe(true);
-    db.archiveBorrowRequest.findFirst.mockResolvedValueOnce(null);
-    await expect(hasActiveBorrowGrant(APPLICANT, RECORD)).resolves.toBe(false);
   });
 });
 

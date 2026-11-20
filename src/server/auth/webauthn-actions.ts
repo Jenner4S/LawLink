@@ -17,8 +17,6 @@ import {
   beginRegistration,
   deleteCredential,
   finishRegistration,
-  listCredentials,
-  type PasskeyCredentialView,
   type WebAuthnActor
 } from "./webauthn-service";
 
@@ -38,12 +36,6 @@ export async function completePasskeyRegistration(input: unknown): Promise<{ id:
   const result = await finishRegistration(actorOf(session), input);
   revalidatePath("/settings/profile");
   return result;
-}
-
-/** 当前账号已绑定的通行密钥 */
-export async function listMyPasskeys(): Promise<PasskeyCredentialView[]> {
-  const session = await requireSession("personal");
-  return listCredentials(actorOf(session));
 }
 
 /** 删除一台设备的通行密钥（保留至少一种登录方式） */

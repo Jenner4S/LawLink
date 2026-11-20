@@ -16,55 +16,11 @@ import { readDecryptedBlob } from "@/lib/storage/read-decrypted";
 import { buildContext, renderDocxBuffer, detectMissing, extractDocxVariables } from "@/lib/template-engine";
 import { suggestFolderByTemplateCategory } from "@/lib/default-folders";
 import {
-  templateListFilterSchema,
   templateToggleSchema,
   templateRenderSchema
 } from "./schemas";
 import { revalidateMatter } from "@/server/matters/route";
 import { ActionError } from "@/lib/action-error";
-
-export async function listTemplates(input?: z.input<typeof templateListFilterSchema>) {
-  await requireSession("personal");
-  const filter = parseInput(templateListFilterSchema, input ?? {});
-
-  const where: Prisma.DocumentTemplateWhereInput = {};
-  if (filter.onlyEnabled) where.enabled = true;
-  if (filter.category) where.category = filter.category;
-  if (filter.matterCategory) {
-    // applicableCategories 为空数组 = 全适用；包含目标也匹配
-    where.OR = [
-      { applicableCategories: { isEmpty: true } },
-      { applicableCategories: { has: filter.matterCategory } }
-    ];
-  }
-
-  return prisma.documentTemplate.findMany({
-    where,
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      category: true,
-      description: true,
-      applicableCategories: true,
-      variables: true,
-      isBuiltIn: true,
-      enabled: true,
-      updatedAt: true
-    }
-  });
-}
-
-export async function getTemplate(id: string) {
-  await requireSession("personal");
-  return prisma.documentTemplate.findUnique({
-    where: { id },
-    include: {
-      docxBlob: { select: { id: true, name: true, size: true } },
-      createdBy: { select: { id: true, name: true } }
-    }
-  });
-}
 
 export async function toggleTemplate(input: z.infer<typeof templateToggleSchema>) {
   const session = await requireSystemAdmin();

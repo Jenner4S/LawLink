@@ -30,22 +30,6 @@ const decisionInput = z.object({
   note: z.string().trim().max(500).optional()
 });
 
-/** 建议清单（收件人本人或案件经办可读） */
-export async function listSmsSuggestions(smsId: string) {
-  const session = await requireSession("matters.write");
-  const sms = await prisma.smsMessage.findUnique({ where: { id: smsId }, select: { receivedById: true, matchedMatterId: true } });
-  if (!sms) throw new ActionError("来件不存在");
-  if (sms.receivedById !== session.user.id) {
-    if (!sms.matchedMatterId) throw new ActionError("只能处理本人收到的来件");
-    await assertCanAssociateMatter(session.user.id, sms.matchedMatterId);
-  }
-  return prisma.smsSuggestion.findMany({
-    where: { smsId },
-    orderBy: [{ status: "asc" }, { createdAt: "asc" }],
-    include: { file: { select: { originalName: true, displayName: true, docType: true, analysisState: true } } }
-  });
-}
-
 /** 分析触发入口（取件后手动/队列调用共用；对象级权限与列表一致） */
 export async function analyzeSmsInboundFiles(input: { smsId: string; fileIds?: string[] }) {
   const session = await requireSession("matters.write");

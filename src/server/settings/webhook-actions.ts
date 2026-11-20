@@ -8,7 +8,6 @@ import { requireSession } from "@/lib/auth/session";
 import { isSystemAdmin } from "@/lib/auth/system-role";
 import { audit } from "@/server/audit";
 import {
-  getWebhookSettings,
   saveWebhookSettings,
   sendWebhookText
 } from "./webhook";
@@ -29,11 +28,6 @@ async function requireManager() {
     throw new ActionError("仅系统超级管理员 / 主任律师可配置提醒推送");
   }
   return session;
-}
-
-export async function getWebhookSettingsAction() {
-  await requireManager();
-  return getWebhookSettings();
 }
 
 export async function saveWebhookSettingsAction(input: z.infer<typeof saveSchema>) {

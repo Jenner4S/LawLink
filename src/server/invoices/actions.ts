@@ -15,7 +15,6 @@ import { shMonthStart } from "@/server/finance/facts";
 import { requireSession } from "@/lib/auth/session";
 import { assertMatterWritable } from "@/lib/archive/guard";
 import {
-  assertCanAccessMatterFinance,
   assertCanAssociateMatter,
   assertCanLeadMatter,
   isManager,
@@ -24,7 +23,6 @@ import {
 import { storage } from "@/lib/storage";
 import { validateUploadedFile } from "@/lib/storage/file-validator";
 import { encryptBuffer, sha256 } from "@/lib/storage/crypto";
-import { serializeDecimals } from "@/lib/decimal";
 import { revalidateMatter } from "@/server/matters/route";
 import { ActionError } from "@/lib/action-error";
 
@@ -127,22 +125,6 @@ export async function listInvoiceRequests(filter?: { status?: "PENDING" | "ISSUE
       .map((id) => docMap.get(id))
       .filter((doc): doc is (typeof docs)[number] => Boolean(doc))
   }));
-}
-
-export async function listInvoiceRequestsByMatter(matterId: string) {
-  const session = await requireSession("approval");
-  await assertCanAccessMatterFinance(session.user.id, session.user.role, matterId, session.user.rolePermissions);
-  const rows = await prisma.invoiceRequest.findMany({
-    where: { matterId },
-    orderBy: { requestedAt: "desc" },
-    include: {
-      requestedBy: { select: { id: true, name: true } },
-      processedBy: { select: { id: true, name: true } },
-      contractScan: { select: { id: true, name: true } },
-      invoiceFile: { select: { id: true, name: true } }
-    }
-  });
-  return serializeDecimals(rows);
 }
 
 /**

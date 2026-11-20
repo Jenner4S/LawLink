@@ -68,18 +68,6 @@ export async function listExpress(input?: z.input<typeof expressListFilterSchema
   });
 }
 
-export async function getExpress(id: string) {
-  const session = await requireSession("express.manage");
-  await assertCanAccessExpressRecord(session.user.id, id, session.user);
-  return prisma.expressTracking.findUnique({
-    where: { id },
-    include: {
-      matter: { select: { id: true, internalCode: true, title: true } },
-      createdBy: { select: { id: true, name: true } }
-    }
-  });
-}
-
 async function assertCanAccessExpressRecord(userId: string, id: string, user?: RoleUser) {
   const record = await prisma.expressTracking.findUnique({
     where: { id },

@@ -65,7 +65,6 @@ import {
   deleteProperty,
   deleteTarget,
   liftProperty,
-  listExpiringProperties,
   listPreservationCases,
   renewProperty,
   updateProperty
@@ -772,93 +771,12 @@ describe("财产生命周期（真库）", () => {
     await prisma.matter.delete({ where: { id: matter.id } });
 
     expect((await listPreservationCases({})).some(row => row.id === pcase.id)).toBe(false);
-    expect((await listExpiringProperties(60)).some(row => row.id === property.id)).toBe(false);
     // 但财产仍是 ACTIVE、到期日在即
     const stillActive = await prisma.preservationProperty.findUniqueOrThrow({ where: { id: property.id } });
     expect(stillActive.status).toBe("ACTIVE");
   });
 });
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// C. 到期预警 listExpiringProperties
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-describe("listExpiringProperties（到期预警边界，真库）", () => {
-  it("C1 恰好 daysAhead 天到期 → 命中；再多 1 分钟 → 不命中", async () => {
-    const lawyer = await seedUser("LAWYER");
-    const matter = await seedMatter(lawyer.id);
-    const pcase = await seedCase({ matterId: matter.id });
-    const target = await seedTarget(pcase.id);
-    as(lawyer);
-    const daysAhead = 30;
-    const now = Date.now();
-
-    const exact = await seedProperty(target.id, { expiryDate: new Date(now + daysAhead * DAY) });
-    const justPast = await seedProperty(target.id, { expiryDate: new Date(now + daysAhead * DAY + 60_000) });
-
-    const rows = await listExpiringProperties(daysAhead);
-    const ids = rows.map(row => row.id);
-    expect(ids).toContain(exact.id);
-    expect(ids).not.toContain(justPast.id);
-  });
-
-  it("C2 已过期的 ACTIVE 财产仍出现在预警里（无下界，属逾期未处理提示）", async () => {
-    const lawyer = await seedUser("LAWYER");
-    const matter = await seedMatter(lawyer.id);
-    const pcase = await seedCase({ matterId: matter.id });
-    const target = await seedTarget(pcase.id);
-    as(lawyer);
-    const overdue = await seedProperty(target.id, { expiryDate: new Date(Date.now() - 45 * DAY) });
-
-    const rows = await listExpiringProperties(60);
-    expect(rows.map(row => row.id)).toContain(overdue.id);
-  });
-
-  it("C3 状态过滤：ACTIVE/RENEWED 在列；LIFTED、EXPIRED 不在列（即使到期日落在窗口内）", async () => {
-    const lawyer = await seedUser("LAWYER");
-    const matter = await seedMatter(lawyer.id);
-    const pcase = await seedCase({ matterId: matter.id });
-    const target = await seedTarget(pcase.id);
-    as(lawyer);
-    const soon = () => new Date(Date.now() + 10 * DAY);
-    const active = await seedProperty(target.id, { status: "ACTIVE", expiryDate: soon() });
-    const renewed = await seedProperty(target.id, { status: "RENEWED", expiryDate: soon() });
-    const lifted = await seedProperty(target.id, { status: "LIFTED", expiryDate: soon() });
-    const expired = await seedProperty(target.id, { status: "EXPIRED", expiryDate: soon() });
-
-    const ids = (await listExpiringProperties(60)).map(row => row.id);
-    expect(ids).toContain(active.id);
-    expect(ids).toContain(renewed.id);
-    expect(ids).not.toContain(lifted.id);
-    expect(ids).not.toContain(expired.id);
-  });
-
-  it("C4 跨用户隔离：他人案件下的临期财产不出现在我的预警里", async () => {
-    const me = await seedUser("LAWYER", "我");
-    const other = await seedUser("LAWYER", "同事");
-    const myCase = await seedCase({ matterId: (await seedMatter(me.id)).id });
-    const otherCase = await seedCase({ matterId: (await seedMatter(other.id)).id });
-    const mine = await seedProperty((await seedTarget(myCase.id)).id, { expiryDate: new Date(Date.now() + 10 * DAY) });
-    const theirs = await seedProperty((await seedTarget(otherCase.id)).id, { expiryDate: new Date(Date.now() + 10 * DAY) });
-
-    as(me);
-    const ids = (await listExpiringProperties(60)).map(row => row.id);
-    expect(ids).toContain(mine.id);
-    expect(ids).not.toContain(theirs.id);
-  });
-
-  it("C5 排序：按到期日升序（最先到期的排最前）", async () => {
-    const lawyer = await seedUser("LAWYER");
-    const pcase = await seedCase({ matterId: (await seedMatter(lawyer.id)).id });
-    const target = await seedTarget(pcase.id);
-    as(lawyer);
-    const later = await seedProperty(target.id, { expiryDate: new Date(Date.now() + 20 * DAY) });
-    const sooner = await seedProperty(target.id, { expiryDate: new Date(Date.now() + 2 * DAY) });
-
-    const ids = (await listExpiringProperties(60)).map(row => row.id).filter(id => [later.id, sooner.id].includes(id));
-    expect(ids).toEqual([sooner.id, later.id]);
-  });
-});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // D. 权限 / 隔离 / 边界

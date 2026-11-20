@@ -220,7 +220,7 @@ const VERDICT = {
   listInvoiceRequestsByMatter: ["dead", "案件开票上下文走 getMatterInvoiceContext（可达）"],
   hasActiveBorrowGrant: ["dead", "借阅资格判定已内联进 borrow.ts 的读取路径"],
   parseDateString: ["dead", "短信日期解析改走结构化管线，旧工具函数无调用方"],
-  triggerAuditCleanupNow: ["dead", "审计清理仅由 cron 调度；手动触发入口只对归档扫描与周报开放"],
+  triggerAuditCleanupNow: ["intentional", "刻意不开放手动入口：审计清理只由 cron 调度，手动触发入口仅对归档扫描与周报开放"],
   createFolder: ["intentional", "卷宗文件夹由 default-folders 自动创建（结案/归档等），不开放手动建"],
   renameFolder: ["intentional", "同上：默认卷宗不允许改名"],
   deleteFolder: ["intentional", "同上：默认卷宗不允许删除"],

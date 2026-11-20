@@ -694,23 +694,6 @@ export async function getLatestArchiveRecord(matterId: string) {
 }
 
 /**
- * v0.20: 批量审批 —— 通过
- *
- * 单条独立处理（不强求原子），逐条复用 approveArchiveRecord 的事务。
- * 返回 { succeeded, failed }，failed 含失败原因，前端展示部分失败的情况。
- */
-export async function batchApproveArchiveRecords(input: {
-  archiveIds: string[];
-  note?: string;
-}): Promise<{
-  succeeded: string[];
-  failed: { id: string; error: string }[];
-}> {
-  void input;
-  throw new ActionError("归档申请必须逐件核对制度、材料和人工核验事项，不能批量通过");
-}
-
-/**
  * v0.20: 批量审批 —— 驳回（统一原因）
  */
 export async function batchRejectArchiveRecords(input: {

@@ -18,15 +18,6 @@ import {
 import { ActionError } from "@/lib/action-error";
 import { parseInput } from "@/lib/parse-input";
 
-/** 登录页预检：该账号是否已开启双步验证（仅返回布尔，防枚举只暴露 TOTP 开关） */
-export async function checkLoginRequiresTotp(email: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { email: email.trim().toLowerCase() },
-    select: { totpEnabled: true }
-  });
-  return user?.totpEnabled ?? false;
-}
-
 /**
  * 登录页预检（收尾 c）：账号是否被管理员强制双步验证且尚未绑定。
  * 为 true 时登录将被拒绝，登录页应提示"该账号已被要求开启双步验证，请先完成绑定"。

@@ -37,20 +37,6 @@ const decideSchema = z.object({
   days: z.number().int().min(1).max(180).optional()
 });
 
-/** 有效借阅资格：已批准、未归还、未到期（读取路径实时调用） */
-export async function hasActiveBorrowGrant(userId: string, archiveRecordId: string): Promise<boolean> {
-  const row = await prisma.archiveBorrowRequest.findFirst({
-    where: {
-      archiveRecordId,
-      applicantId: userId,
-      status: "APPROVED",
-      accessUntil: { gte: new Date() }
-    },
-    select: { id: true }
-  });
-  return Boolean(row);
-}
-
 /** 到期自动失效（读取入口顺带收敛，无需独立 cron） */
 async function expireOverdue(): Promise<number> {
   const r = await prisma.archiveBorrowRequest.updateMany({

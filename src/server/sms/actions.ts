@@ -11,8 +11,8 @@ import { refreshScheduleReminderAfterSave } from "@/server/reminders/schedule";
 import { audit } from "@/server/audit";
 import { createNotification } from "@/server/notifications/create";
 import { assertMatterWritable } from "@/lib/archive/guard";
-import { assertCanAccessMatter, assertCanHandleMatter, isManager } from "@/lib/permissions";
-import { parseSms, splitSmsBatch, toDate, type ParsedSms } from "@/lib/sms-parser";
+import { assertCanHandleMatter, isManager } from "@/lib/permissions";
+import { parseSms, splitSmsBatch, type ParsedSms } from "@/lib/sms-parser";
 import { enrichWithAi } from "@/lib/sms-parser-ai";
 import { normalizeStoredParsed as normalizeStoredParsedCore, tryExtractAttachments, runSmsAttachmentExtraction, mergeAttachmentResults, needsManualFromResults } from "./extract-core";
 import { fileSmsInboundFilesToMatter } from "./inbound-filing";
@@ -246,34 +246,6 @@ export async function listSmsMessages(input?: z.input<typeof smsListFilterSchema
         orderBy: [{ status: "asc" }, { createdAt: "asc" }],
         select: { id: true, kind: true, fieldKey: true, currentValue: true, suggestedValue: true, sourcePage: true, sourceExcerpt: true, status: true, fileId: true, payload: true }
       },
-      matchedMatter: {
-        select: {
-          id: true,
-          internalCode: true,
-          title: true,
-          procedures: {
-            where: { engagement: "ENGAGED" },
-            orderBy: { order: "asc" },
-            select: { id: true, type: true, customLabel: true, caseNumber: true }
-          }
-        }
-      }
-    }
-  });
-}
-
-export async function getSmsMessage(id: string) {
-  const session = await requireSession("matters.write");
-  const row = await prisma.smsMessage.findUnique({ where: { id }, select: { receivedById: true, matchedMatterId: true } });
-  if (row && row.receivedById !== session.user.id) {
-    // 他人短信只有在已挂案件且本人可见该案时才可读（与 extractSmsAttachments 同口径）
-    if (!row.matchedMatterId) throw new ActionError("无权查看他人收到的短信");
-    await assertCanAccessMatter(session.user.id, session.user.role, row.matchedMatterId, session.user.rolePermissions);
-  }
-  return prisma.smsMessage.findUnique({
-    where: { id },
-    include: {
-      receivedBy: { select: { id: true, name: true } },
       matchedMatter: {
         select: {
           id: true,
@@ -599,13 +571,6 @@ export async function deleteSms(input: z.infer<typeof smsIdSchema>) {
 
   revalidatePath("/inbox");
   return { ok: true };
-}
-
-// 把解析出的字符串日期尽量转 JS Date（UI 预填用）
-export async function parseDateString(s: string) {
-  await requireSession("matters.write");
-  const d = toDate(s);
-  return d ? d.toISOString() : null;
 }
 
 /**

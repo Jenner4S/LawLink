@@ -139,25 +139,3 @@ export async function searchCauses(params: {
   });
   return list.map(flatten);
 }
-
-export async function getCauseById(id: string) {
-  await requireSession("personal");
-  const c = await prisma.causeOfAction.findUnique({
-    where: { id },
-    select: { ...CAUSE_SELECT, category: true }
-  });
-  if (!c) return null;
-  return { ...flatten(c), category: c.category };
-}
-
-/**
- * v0.13: 列出某 category 下所有二级分类（用于级联第一步）
- */
-export async function listCauseL2(category: MatterCategory) {
-  await requireSession("personal");
-  return prisma.causeOfAction.findMany({
-    where: { category, active: true, level: 2 },
-    orderBy: { code: "asc" },
-    select: { id: true, code: true, name: true, parentId: true }
-  });
-}
