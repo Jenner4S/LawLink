@@ -132,7 +132,7 @@ describe("逐笔冲抵", () => {
     await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") });
     await expect(
       requestWriteOff({ matterId: m.id, amount: 300, reason: "WAIVED" })
-    ).rejects.toThrow(/超过.*未收合计/);
+    ).rejects.toThrow(/超过.*可用未收额度/);
   });
 
   it("**指定 billingId 时只看该合同的条目**", async () => {
@@ -170,7 +170,7 @@ describe("逐笔冲抵", () => {
     await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") });
     await expect(
       requestWriteOff({ matterId: m.id, amount: 300, reason: "WAIVED" })
-    ).rejects.toThrow(/超过.*未收合计/);
+    ).rejects.toThrow(/超过.*可用未收额度/);
   });
 
   it("明细随坏账删除级联清理（onDelete: Cascade）", async () => {
@@ -179,5 +179,108 @@ describe("逐笔冲抵", () => {
     const res = await requestWriteOff({ matterId: m.id, amount: 100, reason: "WAIVED" });
     await prisma.receivableWriteOff.delete({ where: { id: res.id } });
     expect(await prisma.receivableWriteOffItem.count()).toBe(0);
+  });
+
+  it("**已有在途坏账占用的额度要扣掉**（两笔各 60，未收 100 → 第二笔被拒）", async () => {
+    // 这是并发/重复申报的现实形态：坏账不改 settledAmount，
+    // 若不把在途坏账算进占用，两笔各 ≤ 未收合计的申报会合起来超额。
+    const m = await seedMatter();
+    await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") });
+
+    await requestWriteOff({ matterId: m.id, amount: 60, reason: "WAIVED" });
+    await expect(
+      requestWriteOff({ matterId: m.id, amount: 60, reason: "WAIVED" })
+    ).rejects.toThrow(/超过.*可用未收额度/);
+
+    // 剩余 40 仍然可报
+    const ok = await requestWriteOff({ matterId: m.id, amount: 40, reason: "WAIVED" });
+    const items = await prisma.receivableWriteOffItem.findMany({ where: { writeOffId: ok.id } });
+    expect(items.reduce((n, i) => n + Number(i.amount), 0)).toBe(40);
+  });
+
+  it("**合同级旧坏账（无明细）也占额度**", async () => {
+    const m = await seedMatter();
+    const r = await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") });
+    // 直接写一条无明细的 PENDING 坏账，模拟历史数据
+    await prisma.receivableWriteOff.create({
+      data: {
+        matterId: m.id, amount: new Prisma.Decimal(70), reason: "OTHER",
+        requestedById: STAFF.id
+      }
+    });
+    await expect(
+      requestWriteOff({ matterId: m.id, amount: 50, reason: "WAIVED" })
+    ).rejects.toThrow(/可用未收额度/);
+    // 剩 30 可报，且明细只冲该条目
+    const ok = await requestWriteOff({ matterId: m.id, amount: 30, reason: "WAIVED" });
+    const items = await prisma.receivableWriteOffItem.findMany({ where: { writeOffId: ok.id } });
+    expect(items).toHaveLength(1);
+    expect(items[0].receivableId).toBe(r.id);
+  });
+
+  it("**并发两笔各 60（未收 100）→ 只能成功一笔**（行锁 + 在途占用）", async () => {
+    // 这条用例是唯一能证明 FOR UPDATE 有作用的：
+    // 顺序用例里第二笔能读到第一笔已提交的占用，所以去掉行锁也照样绿；
+    // 只有真并发（两个事务都还没提交）才能暴露「双双通过、合计超额」。
+    const m = await seedMatter();
+    await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") });
+
+    const results = await Promise.allSettled([
+      requestWriteOff({ matterId: m.id, amount: 60, reason: "WAIVED" }),
+      requestWriteOff({ matterId: m.id, amount: 60, reason: "WAIVED" })
+    ]);
+    const ok = results.filter((r) => r.status === "fulfilled").length;
+    expect(ok).toBe(1);
+
+    // 且落库的明细合计不超过未收
+    const items = await prisma.receivableWriteOffItem.findMany({ where: { writeOff: { matterId: m.id } } });
+    const sum = items.reduce((n, i) => n + Number(i.amount), 0);
+    expect(sum).toBeLessThanOrEqual(100);
+  });
+
+  it("**金额最多两位小数**（1.005 被拒，不静默舍入）", async () => {
+    // 独立复核实测：Math.round(1.005*100)/100 = 1，若允许三位小数，
+    // 会出现「明细合计 1.00、坏账落库 1.01」的跨表不一致。
+    const m = await seedMatter();
+    await addReceivable(m.id, 2, { dueDate: new Date("2026-01-01") });
+    await expect(
+      requestWriteOff({ matterId: m.id, amount: 1.005, reason: "WAIVED" })
+    ).rejects.toThrow(/两位小数/);
+  });
+
+  it("**作废应收不参与**（100 未收 + 200 作废 → 报 300 被拒）", async () => {
+    const m = await seedMatter();
+    await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") });
+    const cancelled = await addReceivable(m.id, 200, { dueDate: new Date("2025-01-01") });
+    await prisma.receivable.update({ where: { id: cancelled.id }, data: { status: "CANCELLED" } });
+
+    await expect(
+      requestWriteOff({ matterId: m.id, amount: 300, reason: "WAIVED" })
+    ).rejects.toThrow(/可用未收额度/);
+    // 100 仍可报，且明细不含作废条目
+    const ok = await requestWriteOff({ matterId: m.id, amount: 100, reason: "WAIVED" });
+    const items = await prisma.receivableWriteOffItem.findMany({ where: { writeOffId: ok.id } });
+    expect(items).toHaveLength(1);
+    expect(items[0].receivableId).not.toBe(cancelled.id);
+  });
+
+  it("**应收已全部结清时拒绝登记坏账**（不让账目说谎）", async () => {
+    const m = await seedMatter();
+    await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01"), settled: 100 });
+    await expect(
+      requestWriteOff({ matterId: m.id, amount: 10, reason: "WAIVED" })
+    ).rejects.toThrow(/已全部结清或作废/);
+  });
+
+  it("**指定合同下无未收条目时拒绝**，提示改按整案申报", async () => {
+    const m = await seedMatter();
+    const b = await prisma.billing.create({
+      data: { matterId: m.id, title: "空合同", contractAmount: new Prisma.Decimal(1000), status: "ACTIVE", moneyKind: "LAWYER_FEE" }
+    });
+    await addReceivable(m.id, 100, { dueDate: new Date("2026-01-01") }); // 不带 billingId
+
+    await expect(
+      requestWriteOff({ matterId: m.id, billingId: b.id, amount: 50, reason: "WAIVED" })
+    ).rejects.toThrow(/该合同下没有未收应收条目/);
   });
 });

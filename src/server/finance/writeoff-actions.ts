@@ -36,6 +36,7 @@ import { parseInput } from "@/lib/parse-input";
 import { ActionError } from "@/lib/action-error";
 import { requireSession } from "@/lib/auth/session";
 import { canExecuteFinance } from "@/lib/roles/catalog";
+import { roleMutation } from "@/lib/roles/service";
 import { audit } from "@/server/audit";
 import { revalidatePath } from "next/cache";
 import { assertMatterWritable } from "@/lib/archive/guard";
@@ -43,7 +44,10 @@ import { assertMatterWritable } from "@/lib/archive/guard";
 const requestSchema = z.object({
   matterId: z.string().trim().min(1),
   billingId: z.string().trim().optional().or(z.literal("")),
-  amount: z.coerce.number().positive("坏账金额须大于 0").max(1_000_000_000),
+  // 只接受两位小数：否则 1.005 这类值会「校验用原始值、落库被 numeric(14,2) 舍入」，
+  // 导致明细合计 ≠ 坏账总额（独立复核指出，已实测 Math.round(1.005*100)/100 = 1）。
+  amount: z.coerce.number().positive("坏账金额须大于 0").max(1_000_000_000)
+    .multipleOf(0.01, "金额最多两位小数"),
   reason: z.enum(["CUSTOMER_UNREACHABLE", "INABILITY_TO_PAY", "WAIVED", "IN_DISPUTE", "OTHER"]),
   note: z.string().trim().max(500).optional().or(z.literal(""))
 });
@@ -61,51 +65,101 @@ const requestSchema = z.object({
  *   · 总额超过可选未收合计 → 拒绝（不能凭空多冲）。
  */
 async function allocateWriteOffItems(
+  db: Prisma.TransactionClient,
   matterId: string,
   billingId: string | null,
   total: number
 ): Promise<{ receivableId: string; amount: number }[]> {
-  const rows = await prisma.receivable.findMany({
+  // 行锁：把同一案（或同一合同）的应收条目锁住，避免并发申报各自都"看起来够"，
+  // 合起来却超过未收合计。FOR UPDATE 必须在事务内，故本函数只接受事务客户端。
+  const locked = await db.$queryRaw<
+    { id: string; amount: string; settledAmount: string; adjustmentAmount: string }[]
+  >`
+    SELECT id, amount::text AS amount, "settledAmount"::text AS "settledAmount",
+           "adjustmentAmount"::text AS "adjustmentAmount"
+    FROM "Receivable"
+    WHERE "matterId" = ${matterId}
+      AND "moneyKind" = 'LAWYER_FEE'
+      -- 作废应收不参与：案页 outstanding 与核销路径都把 CANCELLED 剔除，
+      -- 这里若算进来就是「超额却放行」（独立复核给出过 100 + 作废200 → available 300 的复现）
+      AND "status" <> 'CANCELLED'
+      AND (${billingId}::text IS NULL OR "billingId" = ${billingId})
+    ORDER BY "dueDate" ASC NULLS LAST, "createdAt" ASC
+    FOR UPDATE
+  `;
+
+  // 注意：这里**不能**直接 `if (locked.length === 0) return []`。
+  // 早返回会让「指定合同下无未收条目」「该案应收已全部结清」两种情况
+  // 静默按合同级申报成功（独立复核抓到过），三态判断必须走完。
+
+  // 已被"在途/已批"坏账占用的额度必须扣掉：坏账不改 settledAmount，
+  // 若不扣，两笔各 ≤ 未收合计的申报会合起来超额。
+  const ids = locked.map((r) => r.id);
+  const used = await db.receivableWriteOffItem.groupBy({
+    by: ["receivableId"],
+    where: { receivableId: { in: ids }, writeOff: { status: { in: ["PENDING", "APPROVED"] } } },
+    _sum: { amount: true }
+  });
+  const usedMap = new Map(used.map((u) => [u.receivableId, Number(u._sum.amount ?? 0)]));
+
+  // 合同级（无明细）的旧数据也要占额度：按总额从可分摊额度里扣
+  const legacyAgg = await db.receivableWriteOff.aggregate({
     where: {
       matterId,
       ...(billingId ? { billingId } : {}),
-      moneyKind: "LAWYER_FEE"
+      status: { in: ["PENDING", "APPROVED"] },
+      items: { none: {} }
     },
-    select: { id: true, amount: true, settledAmount: true, adjustmentAmount: true, dueDate: true, createdAt: true },
-    orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }]
+    _sum: { amount: true }
   });
+  let legacyLeft = Math.round(Number(legacyAgg._sum.amount ?? 0) * 100) / 100;
 
-  const open = rows
-    .map((r) => ({
-      id: r.id,
-      // 未收余额 = 应收 + 调整 − 已核销；负数按 0（超额核销的条目不再参与坏账）
-      open: Math.max(
-        0,
-        Math.round((Number(r.amount) + Number(r.adjustmentAmount) - Number(r.settledAmount)) * 100) / 100
-      )
-    }))
+  const open = locked
+    .map((r) => {
+      const raw = Number(r.amount) + Number(r.adjustmentAmount) - Number(r.settledAmount);
+      const reserved = (usedMap.get(r.id) ?? 0) + 0;
+      return { id: r.id, open: Math.max(0, Math.round((raw - reserved) * 100) / 100) };
+    })
     .filter((r) => r.open > 0);
 
-  const available = Math.round(open.reduce((n, r) => n + r.open, 0) * 100) / 100;
+  // 合同级旧坏账优先占用最早到期的条目
+  const usable = open.map((r) => {
+    if (legacyLeft <= 0) return r;
+    const take = Math.min(r.open, legacyLeft);
+    legacyLeft = Math.round((legacyLeft - take) * 100) / 100;
+    return { id: r.id, open: Math.round((r.open - take) * 100) / 100 };
+  }).filter((r) => r.open > 0);
+
+  const available = Math.round(usable.reduce((n, r) => n + r.open, 0) * 100) / 100;
 
   /**
-   * 该案（或该合同）**完全没有应收条目**时，允许按合同级申报、不落明细。
+   * 三种"没有可分摊条目"的情形必须分开（独立复核指出原实现把它们压成同一个静默结果）：
    *
-   * 为什么不做成一律报错：财务常见"先报坏账、后补应收"，此时条目尚未生成。
-   * 一律拒绝会把一个合法的早报场景变成"系统不让报"。
-   * 但只要**有**条目且金额超了，就一定拒绝——那才是真的多冲。
+   * ① **该案根本没有应收条目** → 允许按合同级申报（财务常见"先报坏账、后补应收"）；
+   * ② **有应收但全部已结清/作废** → **拒绝**。否则已全额收款的案件可登记任意金额坏账，
+   *    报表「已批坏账」凭空增加而余额早已钳零，等于让账目说谎；
+   * ③ **指定了合同，但该合同下无未收条目** → **拒绝**并提示改按整案申报。
    */
-  if (open.length === 0) return [];
+  if (usable.length === 0) {
+    const matterLevel = await db.receivable.count({
+      where: { matterId, moneyKind: "LAWYER_FEE", status: { not: "CANCELLED" } }
+    });
+    if (matterLevel === 0) return []; // ① 真的没有应收
+    if (billingId) {
+      throw new ActionError("该合同下没有未收应收条目，请改按整案申报坏账");
+    }
+    throw new ActionError("该案应收已全部结清或作废，无需登记坏账");
+  }
 
   if (total > available) {
     throw new ActionError(
-      `坏账金额 ${total} 超过该${billingId ? "合同" : "案"}未收合计 ${available}，请先核对金额`
+      `坏账金额 ${total} 超过该${billingId ? "合同" : "案"}可用未收额度 ${available}（已扣除在途/已批坏账），请先核对金额`
     );
   }
 
   const items: { receivableId: string; amount: number }[] = [];
   let left = Math.round(total * 100) / 100;
-  for (const r of open) {
+  for (const r of usable) {
     if (left <= 0) break;
     const take = Math.min(r.open, left);
     items.push({ receivableId: r.id, amount: Math.round(take * 100) / 100 });
@@ -121,22 +175,35 @@ export async function requestWriteOff(input: z.input<typeof requestSchema>) {
   await assertMatterWritable(data.matterId, { allowFinanceRole: true });
 
   const billingId = data.billingId?.trim() || null;
-  const items = await allocateWriteOffItems(data.matterId, billingId, data.amount);
+  // 归一成两位小数：校验、分摊、落库、审计必须用同一个数，
+  // 否则会出现「明细合计 1.00、坏账 1.01」这种跨表不一致。
+  const total = Math.round(data.amount * 100) / 100;
 
-  const created = await prisma.receivableWriteOff.create({
-    data: {
-      matterId: data.matterId,
-      billingId,
-      amount: new Prisma.Decimal(data.amount),
-      reason: data.reason,
-      note: data.note || null,
-      requestedById: session.user.id,
-      items: {
-        create: items.map((i) => ({ receivableId: i.receivableId, amount: new Prisma.Decimal(i.amount) }))
-      }
+  // 分摊与写入必须在**同一事务**里，且分摊时已对条目加行锁（见 allocateWriteOffItems）。
+  // 否则并发两笔各自"看起来够"，合起来超额，且明细与总额会不一致。
+  const { created, items } = await roleMutation(
+    session.user,
+    "finance.write",
+    async (db) => {
+      const allocated = await allocateWriteOffItems(db, data.matterId, billingId, total);
+      const row = await db.receivableWriteOff.create({
+        data: {
+          matterId: data.matterId,
+          billingId,
+          amount: new Prisma.Decimal(total),
+          reason: data.reason,
+          note: data.note || null,
+          requestedById: session.user.id,
+          items: {
+            create: allocated.map((i) => ({ receivableId: i.receivableId, amount: new Prisma.Decimal(i.amount) }))
+          }
+        },
+        select: { id: true }
+      });
+      return { created: row, items: allocated };
     },
-    select: { id: true }
-  });
+    { atomic: true }
+  );
 
   await audit({
     userId: session.user.id,
@@ -145,7 +212,7 @@ export async function requestWriteOff(input: z.input<typeof requestSchema>) {
     targetId: created.id,
     detail: {
       matterId: data.matterId,
-      amount: data.amount,
+      amount: total,
       reason: data.reason,
       // 逐笔冲抵明细进审计：事后核对「这笔坏账冲了哪几笔」不必再查库
       items: items.map((i) => ({ receivableId: i.receivableId, amount: i.amount }))

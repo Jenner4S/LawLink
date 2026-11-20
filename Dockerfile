@@ -30,6 +30,10 @@ RUN apk add --no-cache libc6-compat openssl
 COPY package*.json ./
 COPY prisma ./prisma
 ARG NPM_REGISTRY
+# 国内网络常连不上 binaries.prisma.sh（实测 TLS 连接被重置），
+# 引擎下载改走 npmmirror 镜像；官方源可达时该变量指向的镜像同样可用。
+ARG PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
+ENV PRISMA_ENGINES_MIRROR=${PRISMA_ENGINES_MIRROR}
 RUN npm ci --registry="${NPM_REGISTRY}"
 
 FROM node:22-alpine AS builder
@@ -42,6 +46,8 @@ RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
 ARG BUILD_ID=dev
 ENV NEXT_PUBLIC_BUILD_ID=${BUILD_ID}
 WORKDIR /app
+ARG PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
+ENV PRISMA_ENGINES_MIRROR=${PRISMA_ENGINES_MIRROR}
 # 同 deps：prisma generate 同样按探测到的 OpenSSL 版本选引擎
 RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
