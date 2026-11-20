@@ -68,11 +68,15 @@ run_step() {
 
   printf '→ %s ... ' "$name"
   start=$(date +%s)
+  # 只统计**本步**输出：日志是累积的，若不限定范围，
+  # detail 命令会把前面所有步骤的行也算进去（曾出现「检查项 123」这种假数字）。
+  export STEP_START
+  STEP_START=$(wc -l < "$LOG" | tr -d ' ')
   # 输出同时进日志与终端（终端只留末几行，避免刷屏）
   if "$@" >>"$LOG" 2>&1; then rc=0; else rc=$?; fi
   end=$(date +%s); dur=$((end - start))
 
-  detail="$(eval "$detail_cmd" 2>/dev/null | tail -1)"
+  detail="$(tail -n +$((STEP_START + 1)) "$LOG" 2>/dev/null | eval "$detail_cmd" 2>/dev/null | tail -1)"
   NAMES+=("$name"); STATUSES+=("$rc"); DETAILS+=("$detail")
 
   if [[ $rc -eq 0 ]]; then
@@ -95,7 +99,7 @@ echo
 
 # ---------- 1. 快速静态检查 ----------
 run_step "类型检查 tsc" \
-  'grep -c "error TS" "$LOG" | sed "s/^/TS 错误 /"' \
+  'grep -c "error TS" | sed "s/^/TS 错误 /"' \
   npx tsc --noEmit
 
 run_step "代码规范 eslint" \
@@ -103,15 +107,15 @@ run_step "代码规范 eslint" \
   npx eslint src
 
 run_step "文档与库一致性" \
-  'grep -E "迁移数|schema 漂移" "$LOG" | tail -1' \
+  'grep -E "迁移数|schema 漂移" | tail -1' \
   node scripts/check-doc-numbers.mjs
 
 run_step "服务端动作可达性" \
-  'grep -E "^不可达" "$LOG" | tail -1' \
+  'grep -E "^不可达" | tail -1' \
   node scripts/audit-reachability.mjs
 
 run_step "写操作状态守卫" \
-  'grep -E "无状态守卫" "$LOG" | tail -1' \
+  'grep -E "无状态守卫" | tail -1' \
   node scripts/audit-write-guards.mjs
 
 # ---------- 2. 测试 / 界面 / 变异 / 金线 ----------
@@ -122,20 +126,30 @@ if [[ $FAST -eq 1 ]]; then
   skip_step "真机金线 acceptance-walkthrough" "--fast"
 else
   run_step "自动化测试 vitest" \
-    'grep -E "^ *Tests " "$LOG" | tail -1' \
+    'grep -E "^ *Tests " | tail -1' \
     npx vitest run
 
   run_step "界面验证 verify-ui" \
-    'grep -E "^合计" "$LOG" | tail -1' \
+    'grep -E "^合计" | tail -1' \
     node scripts/verify-ui.mjs all
 
   run_step "变异探针 mutation-check" \
-    'grep -E "结果：通过" "$LOG" | tail -1' \
+    'grep -E "结果：通过" | tail -1' \
     ./scripts/mutation-check.sh
 
   run_step "真机金线 acceptance-walkthrough" \
-    'grep -E "^  实测：" "$LOG" | tail -1' \
+    'grep -E "^  实测：" | tail -1' \
     node scripts/acceptance-walkthrough.mjs
+fi
+
+# 数据库不变量（2026-11-22 补）：此前只有 deploy.sh 跑它，发布门槛不含该步，
+# 导致"不变量全过"这句话在证据文件里查不到。补进来，让数字有出处。
+if [[ $FAST -eq 1 ]]; then
+  skip_step "数据库不变量" "--fast"
+else
+  run_step "数据库不变量" \
+    'grep -cE "^  (✅|❌)" | sed "s/^/检查项 /"' \
+    npx tsx scripts/verify-db-invariants.ts
 fi
 
 # ---------- 3. 构建 ----------
@@ -144,7 +158,7 @@ if [[ $NO_BUILD -eq 1 || $FAST -eq 1 ]]; then
 else
   rm -rf .next-build
   run_step "生产构建 next build" \
-    'grep -E "Compiled successfully|Build error" "$LOG" | tail -1' \
+    'grep -E "Compiled successfully|Build error" | tail -1' \
     env NEXT_DIST_DIR=.next-build npx next build
   # next build 会改写这两个文件（本项目已知特性）
   git checkout -- next-env.d.ts tsconfig.json 2>/dev/null || true
@@ -156,7 +170,7 @@ if [[ $DEPLOY -eq 1 ]]; then
   if [[ $FAILED -ne 0 ]]; then
     skip_step "部署" "前置步骤有失败，拒绝部署"
   else
-    run_step "部署" 'grep -E "部署完成" "$LOG" | tail -1' ./scripts/deploy.sh --skip-tests
+    run_step "部署" 'grep -E "部署完成" | tail -1' ./scripts/deploy.sh --skip-tests
   fi
 else
   skip_step "部署" "未指定 --deploy"
