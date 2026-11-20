@@ -151,7 +151,6 @@ const BASELINE = new Set([
   "recordFinanceCorrection",
   "renameFolder",
   "reorderFolders",
-  "setCommissionPlan",
   "softDeleteMatter",
   "triggerAuditCleanupNow",
   "unbindPartyEnterprise",
@@ -176,6 +175,13 @@ const VERDICT = {
   // dedup.ts:85 由可达的 mergeClientsByCode 在同一事务内调用（注释即写明「页面入口用」），
   // 客户详情页已有「按客户编号合并」入口。之前挂在待定是因为只看了它自身零 UI 引用。
   mergeClients: ["intentional", "由可达的 mergeClientsByCode 内部调用（dedup.ts:85），页面入口已存在"],
+  // 2026-11-20 核实：这两条**不是缺口**，是刻意的兼容层。
+  // allocatePayment 在账本就绪时直接转调可达的 allocateLedger（allocation.ts:45-48），
+  // 只在「旧库（账本未就绪）」或「旧客户端未传 revision」时走自身旧实现。
+  allocatePayment: ["intentional", "账本就绪时转调可达的 allocateLedger；仅旧库/旧客户端未传 revision 时走自身路径"],
+  // recordFinanceCorrection 在账本就绪时**主动抛错并指引**去「退款与账务更正区」提交申请
+  // （allocation.ts:144），即「旧入口不直接更改余额」——留着只为老库降级可用。
+  recordFinanceCorrection: ["intentional", "旧入口：账本就绪时主动拒绝并指引新路径，保留供老库降级"],
 
   // ── 死代码：确认无任何引用，且无产品依据要求保留 ──
   hasActiveBorrowGrant: ["dead", "借阅资格的内部判定，未被任何调用方使用"],

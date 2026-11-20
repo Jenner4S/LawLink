@@ -630,7 +630,15 @@ export function MatterDetailTabs({
               />
             ) : null}
             {allowed("finance.read") ? (
-              <FinancePanel matterId={matter.id} finance={finance} userOptions={userOptions} canRequestInvoice={canAssociateThisMatter} hideStats />
+              <FinancePanel
+                matterId={matter.id}
+                finance={finance}
+                userOptions={userOptions}
+                canRequestInvoice={canAssociateThisMatter}
+                // 分成方案的可见性：需 finance.write 且案件未归档（服务端另校验主办/协办）
+                canManageCommission={allowed("finance.write") && matter.status !== "ARCHIVED"}
+                hideStats
+              />
             ) : null}
           </div>
         }

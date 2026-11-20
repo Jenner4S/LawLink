@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Wallet, Receipt } from "lucide-react";
+import { Wallet, Receipt, PieChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/patterns/moan";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { InvoiceRequestSheet } from "./invoice-request-sheet";
+import { CommissionPlanDialog } from "./commission-plan-dialog";
 import type { FinancePayload, UserOption } from "./matter-detail-tabs";
 
 /**
@@ -17,7 +18,9 @@ import type { FinancePayload, UserOption } from "./matter-detail-tabs";
 export function FinancePanel({
   matterId,
   finance,
+  userOptions,
   canRequestInvoice,
+  canManageCommission = false,
   compact = false,
   hideStats = false
 }: {
@@ -25,11 +28,14 @@ export function FinancePanel({
   finance: FinancePayload;
   userOptions: UserOption[];
   canRequestInvoice: boolean;
+  /** 2026-11-20：分成方案设置入口（需 finance.write；服务端另校验主办/协办） */
+  canManageCommission?: boolean;
   compact?: boolean;
   /** 上方已有收费概览时隐藏指标网格 */
   hideStats?: boolean;
 }) {
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [commissionOpen, setCommissionOpen] = useState(false);
 
   const received = finance.entries
     .filter((e) => e.type === "RECEIVED")
@@ -66,6 +72,17 @@ export function FinancePanel({
             >
               <Receipt className="h-2.5 w-2.5" />
               申请开票
+            </Button>
+          )}
+          {canManageCommission && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCommissionOpen(true)}
+              className="h-6 gap-0.5 px-2 text-[11px]"
+            >
+              <PieChart className="h-2.5 w-2.5" />
+              分成方案
             </Button>
           )}
         </div>
@@ -143,6 +160,15 @@ export function FinancePanel({
           matterId={matterId}
         />
       )}
+      {canManageCommission ? (
+        <CommissionPlanDialog
+          open={commissionOpen}
+          onOpenChange={setCommissionOpen}
+          matterId={matterId}
+          userOptions={userOptions}
+          currentPlans={(finance.plans ?? []) as never}
+        />
+      ) : null}
     </section>
   );
 }
