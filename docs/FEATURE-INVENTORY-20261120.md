@@ -1,0 +1,265 @@
+# LawLink 功能清单（2026-11-20）
+
+代码基准：`23dfc71`　适用版本：v2.0.1 之后
+配套：[操作手册](./USER-MANUAL-20261120.md)（怎么用）｜ [能力评估](./PRODUCT-GAP-ANALYSIS-20261120.md)（缺什么）
+
+> 本清单从代码里枚举，不是凭印象整理。每条都标了**入口路径**与**权限键**——
+> 权限键是判断「为什么我点不到」的唯一依据。
+
+---
+
+## 〇、规模总览
+
+| 维度 | 数量 |
+|---|---|
+| 主应用页面 | **26** |
+| 管理后台页面 | **17** |
+| 登录页 | 1（`/login`） |
+| API 路由 | **20** |
+| 服务层模块 | **47** |
+| 权限键 | **29** |
+| 内置角色 | **6** |
+| 审计动作 | **194** |
+| 数据模型 | **92** |
+| 数据库迁移 | **15** |
+
+---
+
+## 一、主应用（26 个页面）
+
+### 1.1 工作台与总览
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/` | 工作台：待办、今日开庭、逾期应收、快到期常顾、通知 | 登录即可 |
+| `/notifications` | 通知列表 | 登录即可 |
+| `/announcements` | 公告列表 | 登录即可 |
+
+### 1.2 案件（核心）
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/matters` | 案件列表，页签：办理中 / 收案中 / 收案待补正 / 已归档 | `matters.read` |
+| `/matters/[id]` | **案卷工作台**：案卷头 + 程序栏 + 四页签（案件档案 / 办案进程 / 委托与财务 / 审批用印）+ 侧栏（承办团队 / 最近待办 / 最近记录） | `matters.read` |
+| `/intakes` | 收案列表 | `matters.read` |
+| `/intakes/[id]` | 收案详情：主体、冲突检索结论、转案 | `matters.read` |
+| `/conflicts` | 冲突预检（**不出结论**，仅自查） | `matters.read` |
+
+**案卷工作台的四页签明细**
+
+| 页签 | 内容 | 关键约束 |
+|---|---|---|
+| 案件档案 | 基本信息、当事人（我方/对方上下排列）、自定义字段、当前程序字段 | 当事人区「诉/辩」圆标分隔 |
+| 办案进程 | 左列环节竖排（末尾「＋添加环节」）+ 环节操作条 + 待办 + 材料 + 经办记录 | **同一数据只在一处出现** |
+| 委托与财务 | 委托合同、补充协议、收费约定、财务摘要 | 合同额合计、调减须指定应收 |
+| 审批用印 | 该案件的审批申请与用章记录 | — |
+
+### 1.3 客户
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/clients` | 客户列表（企业/个人），查重 | `clients.read` |
+| `/clients/[id]` | 客户详情：联系人、关联案件、沟通记录、洞察 | `clients.read` |
+| `/contacts` | 外部联系人（跨客户），审核流程 | `contacts.manage` / `contacts.review` |
+
+### 1.4 日程与事项
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/schedule` | 日程：开庭、期限、任务；事项责任面板；日历订阅入口 | `schedule.read` |
+
+### 1.5 财务
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/finance` | 财务总览：待确认实收、应收账款、账龄、开票管理、分成 | `finance.read` |
+| `/finance/reconciliation` | 对账（四页签：总览与登记 / 应收与收款 / 发票关联 / 合同与更正） | `finance.read` |
+
+### 1.6 归档与保全
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/archive` | 归档台账 + **借阅面板**（借阅中查阅/归还、待我审批、检索申请） | `archive.read`（登录可进，台账表限权） |
+| `/preservation` | 保全案件、被保全人、财产、续封 | `matters.read` |
+
+### 1.7 行政与工具
+
+| 路径 | 功能 | 权限 |
+|---|---|---|
+| `/express` | 快递登记与跟踪（填单号后由接口更新状态） | `express.manage` |
+| `/seals` | 用章申请与执行 | `seals.request` |
+| `/approvals` | 审批工作台（各类待办申请） | 按事项授权 |
+| `/approvals/seals` | 用章审批 | 按事项授权 |
+| `/inbox` | 法院短信收件箱：来件、整理建议、文件清单 | 登录即可 |
+| `/firm-resources` | 律所公共资料（全所共享） | `firm-files.manage` 管理 |
+| `/reports` | 报表：营收、案件结构、律师绩效、账龄 | `reports.read` |
+| `/policy` | 制度与政策展示 | 登录即可 |
+| `/tools` | 工具集（含桌面端取件等） | 登录即可 |
+| `/settings/profile` | 个人资料：改密码、改姓名、日历订阅重置 | 登录即可 |
+
+---
+
+## 二、管理后台（17 个页面，需系统管理员）
+
+| 路径 | 管什么 | 关键点 |
+|---|---|---|
+| `/admin` | 后台首页：配置缺口警示 | 无 `finance.confirm` 持有者且有款待确认＝红 |
+| `/admin/users` | 用户与账号：建号、停用、重置密码、系统角色 | **系统角色 ≠ 业务权限** |
+| `/admin/roles` | 岗位角色：自定义角色 + 权限矩阵 | 内置角色只能改名称/介绍，不能改权限 |
+| `/admin/teams` | 团队：建团队、加成员 | 团队影响 `TEAM` 范围可见性 |
+| `/admin/approval-permissions` | 审批权限组：每类事项谁能批 | 默认禁止批自己 |
+| `/admin/archive-policy` | 归档制度 | **不配不能正式归档** |
+| `/admin/reminders` | 提醒维护：期限规则 / 法定放假安排 / 送达台账 / 周报 / 立即推送 | 期限规则库 16 条预置 |
+| `/admin/custom-fields` | 自定义字段 | 作用域：MATTER / CLIENT |
+| `/admin/document-templates` | 文书模板 | docxtemplater 变量替换 |
+| `/admin/templates` | 环节模板（StageTemplate） | 按业务线预置环节 |
+| `/admin/ethical-walls` | 隔离墙 | 读、写两侧都拦；**通知不过滤（已知限制）** |
+| `/admin/audit` | 审计日志：查询、链式完整性卡片、SIEM 导出（CEF / Syslog / JSON） | 管理员也改不了 |
+| `/admin/ai` | AI 与元典：视觉模型、OCR provider、元典开放平台 | 未配置则相关能力降级可见 |
+| `/admin/emails` | 邮件归档与 SMTP | 需 IMAP 凭据 |
+| `/admin/express` | 快递接入 | 快递平台对接 |
+| `/admin/firm-profile` | 律所信息：名称、副标题、Logo | 侧栏品牌来源 |
+| `/admin/import` | 批量导入：案件、收案 | 提供模板下载；**客户导入未实现** |
+
+---
+
+## 三、API 路由（20 个）
+
+| 路径 | 用途 |
+|---|---|
+| `/api/auth/[...nextauth]` | NextAuth 入口 |
+| `/api/auth/webauthn/login/options` · `/verify` | Passkey 登录 |
+| `/api/health` | 健康检查 |
+| `/api/version` | 版本号（供部署后核对） |
+| `/api/documents/[id]/download` · `/preview` | 材料下载/预览（鉴权 + 加密解密） |
+| `/api/firm-files/[id]/download` | 律所资料下载 |
+| `/api/users/[userId]/identity-documents/[fileId]` | 身份证明文件 |
+| `/api/matters/export` | 案件列表导出 |
+| `/api/matters/[id]/export-bundle` | **单案卷宗打包**（manifest + 材料 + 记录 + 财务摘要） |
+| `/api/archive/[matterId]/export` | 归档材料导出 |
+| `/api/audit/export` | 审计导出（三格式） |
+| `/api/audit/verify` | 审计链校验 |
+| `/api/finance/export` | 财务导出 |
+| `/api/reports/export` | 报表导出 |
+| `/api/calendar/[token]` | **日历订阅**（iCal，单向） |
+| `/api/imports/matters/template` | 导入模板下载 |
+| `/api/desktop/checkout` · `/file` | 桌面端取件 |
+
+---
+
+## 四、权限模型
+
+### 4.1 三层资格（互不替代）
+
+```
+系统管理员  ── 配系统、管账号，但看不到案件与财务
+业务岗位    ── 自定义角色 + 权限键 + 范围（OWN / TEAM / ALL）
+审批权限组  ── 某类事项谁能批，默认排除本人
+```
+
+### 4.2 六个内置角色的默认授权
+
+| 角色 | 授予的权限键 | 范围 |
+|---|---|---|
+| **合伙人** | 13 项（案件/客户/材料/日程/归档/用章） | `matters.read`＝ALL，其余 OWN |
+| **独立律师** | 同上 13 项 | 全 OWN |
+| **授薪律师** | 同上 13 项 | 全 OWN |
+| **律师助理** | 同上 13 项 | 全 OWN |
+| **财务** | 6 项：`finance.read/write/confirm/correct/settle` + `invoices.process` | **全 ALL** |
+| **行政** | 4 项：`announcements.manage`、`express.manage`、`contacts.manage`、`seals.request` | ALL |
+
+**13 项通用授权**：`matters.read`、`intakes.create`、`matters.write`、`clients.read`、`clients.write`、`documents.read`、`documents.write`、`documents.download`、`schedule.read`、`schedule.write`、`archive.read`、`archive.submit`、`seals.request`
+
+### 4.3 三个范围的含义
+
+| 范围 | 含义 |
+|---|---|
+| `OWN` | 本人经办 / 本人记录 |
+| `TEAM` | 本人及已有团队查看授权 |
+| `ALL` | 全所 |
+
+### 4.4 特殊组合
+
+| 组合 | 用途 |
+|---|---|
+| `MANAGER_GRANTS` | 授予「管理岗」（`managerAuthorized`），会话中合成 |
+| `SOLE_PRACTICE_GRANTS` | **独立执业（律师＋财务）** 单人组合模板，管理员显式授予 |
+
+> **单人执业注意**：需要显式设置「本人审批例外」，否则自己提交的申请永远批不了。
+
+---
+
+## 五、29 个权限键全表
+
+| 键 | 标签 | 组 | 可选范围 |
+|---|---|---|---|
+| `matters.read` | 查看案件与收案 | 案件 | OWN / TEAM / ALL |
+| `matters.write` | 办理案件与收案 | 案件 | OWN |
+| `intakes.create` | 收案登记 | 案件 | OWN |
+| `matters.transfer` | 应急接管与责任交接 | 案件 | ALL |
+| `clients.read` | 查看客户 | 客户 | OWN / ALL |
+| `clients.write` | 维护客户 | 客户 | OWN / ALL |
+| `documents.read` | 查看材料目录 | 材料 | OWN |
+| `documents.write` | 上传及维护材料 | 材料 | OWN |
+| `documents.download` | 下载及预览材料 | 材料 | OWN |
+| `schedule.read` | 查看案件日程 | 日程 | OWN / TEAM |
+| `schedule.write` | 维护案件日程与记录 | 日程 | OWN |
+| `finance.read` | 查看财务 | 财务 | OWN / ALL |
+| `finance.write` | 维护收付款 | 财务 | OWN / ALL |
+| `finance.confirm` | 确认实收到账 | 财务 | ALL |
+| `finance.correct` | 确认财务更正 | 财务 | ALL |
+| `finance.settle` | 登记分成支付及扣回 | 财务 | ALL |
+| `finance.tail` | 归档后财务收尾 | 财务 | ALL |
+| `invoices.process` | 执行开票 | 财务 | OWN / ALL |
+| `archive.read` | 查看归档 | 归档与导出 | OWN / TEAM / ALL |
+| `archive.submit` | 提交归档 | 归档与导出 | OWN |
+| `archive.supplement` | 追加归档材料及补充归档 | 归档与导出 | OWN |
+| `matters.export` | 导出案件及归档材料 | 归档与导出 | OWN |
+| `reports.read` | 查看报表 | 归档与导出 | OWN / ALL |
+| `reports.export` | 导出报表 | 归档与导出 | OWN / ALL |
+| `announcements.manage` | 管理公告 | 行政事务 | ALL |
+| `firm-files.manage` | 管理律所公共资料 | 行政事务 | ALL |
+| `express.manage` | 登记及维护快递 | 行政事务 | OWN / ALL |
+| `contacts.manage` | 录入及维护外部联系人 | 行政事务 | OWN / ALL |
+| `contacts.review` | 审核外部联系人 | 行政事务 | ALL |
+| `seals.request` | 发起用章申请 | 行政事务 | OWN |
+
+---
+
+## 六、关键业务规则（系统的「硬门禁」清单）
+
+这些不是提示，是**阻止操作**。知道它们存在，才不会以为系统坏了。
+
+| 门禁 | 触发时机 | 拦什么 |
+|---|---|---|
+| **冲突阻断收案** | 转正式案件 | 红色命中未解除 → 不能立案 |
+| **动态复核** | 新增程序 / 新增委托合同 / 补充协议生效 | 主体或代理范围变了 → 须先重新检索 |
+| **两步实收** | 登记实收 | 一律先「待确认」；不生成实收、不派生分成、不计报表 |
+| **核销不超额** | 核销 | 超过实收未核销余额 / 应收未核销余额 → 拒绝 |
+| **分成不超基数** | 派生分成 | 比例合计 ≤ 100%，由系统保证 |
+| **结案门禁** | 提交归档 | 程序未结 / 事项未处置 / 保全生效 / 交接待承接 / 待确认款 / 待审批 → 逐项拦 |
+| **归档即冻结** | 归档后 | 不可写、不可增删关联、不可加证据项、不可再分享给客户 |
+| **责任人变更** | 改任务责任人 | 必须走事项责任面板交接，接收方接受后生效 |
+| **隔离墙** | 被点名用户 | 读侧看不见、写侧改不了 |
+| **默认不批自己** | 审批 | 本人提交的申请不能自己批（单人执业需显式开例外） |
+| **归档制度未配** | 提交归档 | 未配置 → 不能正式归档 |
+
+---
+
+## 七、这个清单**没有**的东西（避免照着找）
+
+以下在《功能全景清单》里有、本系统**没有实现**，不在本文档任何位置出现：
+
+- 客户门户（规划中，见 [架构方案](./PORTAL-ARCHITECTURE-20261120.md)）
+- 案源管道看板 / 市场获客 / 渠道 ROI / 转介绍管理
+- 客户分级 A/B/C、生命周期状态、关系图谱、价值评分
+- 信托 / IOLTA 账户、LEDES 账单
+- NPS / CSAT 满意度调查
+- 移动端 App / 小程序
+- 日历双向同步（只有单向 iCal 订阅）
+- 电子签（合同确认是留痕降级）
+- 法院 / 立案平台对接、企微/微信集成
+- 客户批量导入（案件/收案可导入）
+- 计时器（工时只能手动录入）
+- 排期冲突检测、法院/法官主数据
+- 全文检索（现在是 `ILIKE contains`）
