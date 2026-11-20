@@ -154,13 +154,15 @@ export async function listPortalSharesForMatter(matterId: string) {
   await assertCanHandleMatter(session.user, matterId);
 
   const rows = await prisma.portalShare.findMany({
-    where: { matterId, shareType: "DOCUMENT" },
+    // 材料与进度摘要一起管：律师需要在一个地方看到「客户到底能看到本案的什么」
+    where: { matterId, shareType: { in: ["DOCUMENT", "MATTER_SUMMARY"] } },
     // nulls: "first" 是必须的：Postgres 的 ASC 默认把 NULL 排**最后**，
     // 直接 orderBy revokedAt: "asc" 会让「已撤销」全部排在生效中的前面——
     // 面板上律师第一眼看到的就是一堆收回记录。这是测试抓出来的，不是猜的。
     orderBy: [{ revokedAt: { sort: "asc", nulls: "first" } }, { sharedAt: "desc" }],
     select: {
       id: true,
+      shareType: true,
       documentId: true,
       sharedAt: true,
       revokedAt: true,
@@ -187,4 +189,63 @@ export async function listPortalSharesForMatter(matterId: string) {
       documentDeleted: Boolean(doc?.deletedAt)
     };
   });
+}
+
+const shareMatterSummarySchema = z.object({
+  matterId: z.string().trim().min(1, "缺少案件标识"),
+  note: z.string().trim().max(200).optional().or(z.literal(""))
+});
+
+/**
+ * 把某个案件的**进度摘要**分享给委托客户（2026-11-20，门户 S2）
+ *
+ * 与材料分享同一套限制：必须有 primaryClientId、走员工写断言、
+ * 已归档案件不可新增披露（归档即冻结）、重复分享不新增行。
+ *
+ * 摘要的内容由 `lib/portal/matter-summary.ts` 的**白名单投影**决定：
+ * 只给阶段名与关键日期，不给百分比、不给内部分析、不给涉案金额。
+ */
+export async function shareMatterSummaryToPortal(input: z.input<typeof shareMatterSummarySchema>) {
+  const session = await requireSession("matters.write");
+  const data = parseInput(shareMatterSummarySchema, input);
+
+  const matter = await prisma.matter.findFirst({
+    where: { id: data.matterId, deletedAt: null },
+    select: { id: true, title: true, primaryClientId: true }
+  });
+  if (!matter) throw new ActionError("案件不存在或已删除");
+  if (!matter.primaryClientId) {
+    throw new ActionError("该案件未登记委托方客户，无法确定分享给谁；请先在案件档案补上委托方");
+  }
+
+  await assertCanHandleMatter(session.user, matter.id);
+  await assertMatterWritable(matter.id, { allowPrincipal: true });
+
+  const existing = await prisma.portalShare.findFirst({
+    where: { clientId: matter.primaryClientId, matterId: matter.id, shareType: "MATTER_SUMMARY", revokedAt: null },
+    select: { id: true }
+  });
+  if (existing) return { ok: true as const, shareId: existing.id, alreadyShared: true };
+
+  const created = await prisma.portalShare.create({
+    data: {
+      clientId: matter.primaryClientId,
+      shareType: "MATTER_SUMMARY",
+      matterId: matter.id,
+      sharedById: session.user.id,
+      note: data.note?.trim() || null
+    },
+    select: { id: true }
+  });
+
+  await audit({
+    userId: session.user.id,
+    action: "PORTAL_SHARE_CREATE",
+    targetType: "PortalShare",
+    targetId: created.id,
+    detail: { clientId: matter.primaryClientId, matterId: matter.id, shareType: "MATTER_SUMMARY" }
+  });
+
+  revalidatePath(`/matters/${matter.id}`);
+  return { ok: true as const, shareId: created.id, alreadyShared: false };
 }

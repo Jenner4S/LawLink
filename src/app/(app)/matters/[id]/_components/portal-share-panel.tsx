@@ -5,16 +5,17 @@ import { FormDialogBody } from "@/components/patterns/form-dialog";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Eye, Loader2, Undo2, ShieldCheck } from "lucide-react";
+import { Eye, Loader2, Undo2, ShieldCheck, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { listPortalSharesForMatter, revokePortalShare } from "@/server/portal/share";
-import { promptDialog } from "@/components/patterns/confirm-dialog";
+import { listPortalSharesForMatter, revokePortalShare, shareMatterSummaryToPortal } from "@/server/portal/share";
+import { confirmDialog, promptDialog } from "@/components/patterns/confirm-dialog";
 import { actionErrorMessage } from "@/lib/action-error";
 import { formatDateTime } from "@/lib/utils";
 
 type ShareRow = {
   id: string;
+  shareType: "DOCUMENT" | "MATTER_SUMMARY" | "INVOICE" | "BILLING";
   documentId: string | null;
   documentName: string | null;
   sharedAt: Date | string;
@@ -75,6 +76,29 @@ export function PortalSharePanel({
 
   const active = (rows ?? []).filter((r) => !r.revokedAt);
   const revoked = (rows ?? []).filter((r) => r.revokedAt);
+  const summaryShared = active.some((r) => r.shareType === "MATTER_SUMMARY");
+
+  const doShareSummary = async () => {
+    const ok = await confirmDialog({
+      title: "把本案进度分享给客户？",
+      description:
+        "客户将在门户里看到：案号、案名、案件类别、状态、**当前阶段名**、受理日、结案日与主办律师。\n\n" +
+        "**不会**显示进度百分比（案件进度取决于法院排期，估出来的数字解释不了）、" +
+        "内部分析、办案记录与费用明细。分享与收回都会留审计。",
+      confirmText: "分享进度"
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      try {
+        await shareMatterSummaryToPortal({ matterId });
+        toast.success("已向客户开放本案进度");
+        router.refresh();
+        reload();
+      } catch (err) {
+        toast.error("分享失败", { description: actionErrorMessage(err) });
+      }
+    });
+  };
 
   const doRevoke = async (r: ShareRow) => {
     const reason = await promptDialog({
@@ -127,6 +151,30 @@ export function PortalSharePanel({
             </div>
           ) : (
             <>
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2">
+                <Scale className="h-3.5 w-3.5 shrink-0 text-[var(--t-muted)]" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium">本案进度摘要</p>
+                  <p className="text-[10.5px] text-[var(--t-muted)]">
+                    {summaryShared ? "已开放给客户" : "未开放"} · 只含阶段名与关键日期，不含百分比与内部记录
+                  </p>
+                </div>
+                {summaryShared ? (
+                  <span className="badge b-green shrink-0" style={{ fontSize: 10 }}>
+                    已开放
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm shrink-0"
+                    disabled={isPending}
+                    onClick={doShareSummary}
+                  >
+                    开放
+                  </button>
+                )}
+              </div>
+
               {active.length === 0 ? (
                 <div className="rounded-md border border-[var(--line)] px-3 py-4 text-center">
                   <p className="text-[12px] text-[var(--t-muted)]">
@@ -142,7 +190,7 @@ export function PortalSharePanel({
                     <div key={r.id} className="flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2">
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[var(--green)]" />
                       <span className="min-w-0 flex-1 truncate text-xs" title={r.documentName ?? ""}>
-                        {r.documentName ?? "（材料已删除）"}
+                        {r.shareType === "MATTER_SUMMARY" ? "案件进度摘要" : (r.documentName ?? "（材料已删除）")}
                         {r.documentDeleted ? (
                           <span className="ml-1 text-[10px] text-[var(--amber)]">（材料已删除）</span>
                         ) : null}
@@ -176,7 +224,7 @@ export function PortalSharePanel({
                       {revoked.map((r) => (
                         <div key={r.id} className="flex items-center gap-2 rounded-md border border-dashed border-[var(--line)] px-3 py-1.5 opacity-70">
                           <span className="min-w-0 flex-1 truncate text-[11.5px] line-through" title={r.documentName ?? ""}>
-                            {r.documentName ?? "（材料已删除）"}
+                            {r.shareType === "MATTER_SUMMARY" ? "案件进度摘要" : (r.documentName ?? "（材料已删除）")}
                           </span>
                           <span className="shrink-0 text-[10px] text-[var(--t-muted)]">
                             收回于 {formatDateTime(r.revokedAt!)}

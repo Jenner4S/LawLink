@@ -64,7 +64,8 @@ vi.mock("next/navigation", () => ({
   redirect: (u: string) => { throw Object.assign(new Error("NEXT_REDIRECT"), { digest: `NEXT_REDIRECT;${u}` }); }
 }));
 
-const { shareDocumentToPortal, revokePortalShare, listPortalSharesForMatter } = await import("@/server/portal/share");
+const { shareDocumentToPortal, revokePortalShare, listPortalSharesForMatter, shareMatterSummaryToPortal } = await import("@/server/portal/share");
+const { projectMatterSummary } = await import("@/lib/portal/matter-summary");
 const { portalCanReadDocument, assertPortalCanDownload } = await import("@/lib/portal/access");
 
 let seq = 0;
@@ -270,5 +271,59 @@ describe("员工侧清单（撤销的前提：看不到就撤不了）", () => {
 
     expect(await listPortalSharesForMatter(m1.id)).toHaveLength(1);
     expect(await listPortalSharesForMatter(m2.id)).toHaveLength(0);
+  });
+});
+
+describe("案件进度摘要（方案 §七 Q1：给阶段名，不给百分比）", () => {
+  it("投影只含白名单字段——将来 Matter 加内部字段也不会默认泄露", () => {
+    const keys = Object.keys(
+      projectMatterSummary({
+        id: "m1", internalCode: "LL-1", title: "某案", categoryLabel: "民商事",
+        statusLabel: "办理中", stageName: "一审", stageStartedAt: null,
+        acceptedAt: null, closedAt: null, leadLawyer: "张律师"
+      })
+    ).sort();
+    expect(keys).toEqual(
+      ["acceptedAt", "categoryLabel", "closedAt", "internalCode", "leadLawyer", "matterId", "stageName", "stageStartedAt", "statusLabel", "title"].sort()
+    );
+    // 明确禁止项
+    for (const forbidden of ["progress", "percent", "percentComplete", "narrative", "notes", "amount", "fee", "todos", "documents"]) {
+      expect(keys).not.toContain(forbidden);
+    }
+  });
+
+  it("分享进度摘要后可按 matterId 收起，撤销立即失效", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+
+    const res = await shareMatterSummaryToPortal({ matterId: matter.id });
+    expect(res.ok).toBe(true);
+    const rows = await listPortalSharesForMatter(matter.id);
+    expect(rows.filter((r) => r.shareType === "MATTER_SUMMARY")).toHaveLength(1);
+
+    await revokePortalShare({ shareId: res.shareId });
+    const after = await listPortalSharesForMatter(matter.id);
+    expect(after.filter((r) => r.shareType === "MATTER_SUMMARY" && !r.revokedAt)).toHaveLength(0);
+  });
+
+  it("重复分享摘要不新增行", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+    const a = await shareMatterSummaryToPortal({ matterId: matter.id });
+    const b = await shareMatterSummaryToPortal({ matterId: matter.id });
+    expect(b.alreadyShared).toBe(true);
+    expect(b.shareId).toBe(a.shareId);
+  });
+
+  it("摘要与材料清单在同一面板可见（律师要能一处看全客户能看到什么）", async () => {
+    const client = await seedClient();
+    const matter = await seedMatter(client.id);
+    const doc = await seedDoc(matter.id);
+    await shareDocumentToPortal({ documentId: doc.id });
+    await shareMatterSummaryToPortal({ matterId: matter.id });
+
+    const rows = await listPortalSharesForMatter(matter.id);
+    const types = rows.map((r) => r.shareType).sort();
+    expect(types).toEqual(["DOCUMENT", "MATTER_SUMMARY"]);
   });
 });
