@@ -5,6 +5,7 @@
  * 基本信息 → 当事人完整卡片 → 本程序信息 → 委托与收费 → 承办团队 → 自定义字段。
  */
 import Link from "next/link";
+import { useState } from "react";
 import { FileText, Landmark, Pencil, UserRound, Users, Wallet } from "lucide-react";
 import { FieldGrid, FieldItem, InitialAvatar } from "@/components/patterns/moan";
 import { avatarTone } from "@/lib/ui/moan-tones";
@@ -18,6 +19,7 @@ import type { MatterPayload } from "./matter-detail-tabs";
 
 type Procedure = MatterPayload["procedures"][number];
 type PartyRow = MatterPayload["parties"][number];
+import { PartyEnterpriseDialog, UnbindEnterpriseButton } from "./party-enterprise-panel";
 
 const ROLE_LABEL: Record<string, string> = {
   CLIENT_PARTY: "委托方",
@@ -63,6 +65,7 @@ function standingTone(standing: string | null) {
  * 头像 + 名称 + 主体类型 / 证件 / 法定代表人标签，第二行联系人、电话、地址，右侧诉讼地位。
  */
 function PartyBlock({ party, standings, clientHref }: { party: PartyRow; standings: string[]; clientHref: string | null }) {
+  const [entOpen, setEntOpen] = useState(false);
   const isOrg = party.partyType !== "NATURAL_PERSON";
   const idValue = isOrg ? party.enterpriseSocialCode : party.idNumber;
   const idLabel = isOrg ? "信用代码" : party.idType && party.idType !== "ID_CARD" ? clientIdTypeLabel[party.idType] : "身份证";
@@ -98,6 +101,22 @@ function PartyBlock({ party, standings, clientHref }: { party: PartyRow; standin
               <span className="min-w-0 truncate">{party.enterpriseName}</span>
             </span>
           )}
+          {/* 2026-11-20：bindPartyToEnterprise / unbindPartyEnterprise 此前零引用——
+              建档后补绑、或匹配错了要改绑/解绑，界面上没有入口。
+              未绑定且是单位时给「绑定工商」；已绑定给「改绑 / 解绑」。 */}
+          {isOrg ? (
+            <span className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                className="link-inline text-[11px]"
+                onClick={() => setEntOpen(true)}
+                title={party.enterpriseSocialCode ? "改绑其他工商主体" : "搜索并绑定工商信息（搜索按元典计费）"}
+              >
+                {party.enterpriseSocialCode ? "改绑" : "绑定工商"}
+              </button>
+              {party.enterpriseSocialCode ? <UnbindEnterpriseButton partyId={party.id} /> : null}
+            </span>
+          ) : null}
           {clientHref ? (
             <Link href={clientHref} className="link-inline text-[11px]">
               客户档案
@@ -118,9 +137,18 @@ function PartyBlock({ party, standings, clientHref }: { party: PartyRow; standin
           <span className="dos-pb-st tone-slate">未设置地位</span>
         )}
       </div>
+      {entOpen ? (
+        <PartyEnterpriseDialog
+          open={entOpen}
+          onOpenChange={setEntOpen}
+          partyId={party.id}
+          partyName={party.name}
+        />
+      ) : null}
     </div>
   );
 }
+
 
 export function MatterArchive({
   matter,

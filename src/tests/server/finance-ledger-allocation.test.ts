@@ -482,14 +482,26 @@ describe("allocateLedgerTx · 票据关联分支（kind=INVOICE，真库）", ()
 });
 
 describe("allocateLedgerTx · 并发与锁顺序（真库）", () => {
-  /** 轮询 pg_locks，等另一事务真正拿到本模块共用的授权锁（不靠 sleep 猜时序） */
-  async function waitForAdvisoryLock(timeoutMs = 5000) {
+  /**
+   * 轮询 pg_locks，等**本次 holder** 真正拿到授权锁。
+   *
+   * 2026-11-20 修 flaky：原实现只判「库里有这个 advisory lock 且 granted」，
+   * 而锁键 72606101 是模块共用常量 —— `setCommissionPlan` 等**其他测试文件**
+   * 也取同一把锁。全量并行时若别处正持锁，本函数会**误判为 holder 已就绪**
+   * 而提前返回，随后 attempt 可能真的拿到锁 → `rejects.toThrow` 间歇性失败。
+   *
+   * 现在按 holder 自己的 backend pid 过滤，只认「我这一个连接拿到了锁」。
+   */
+  async function waitForAdvisoryLock(holderPid: () => number, timeoutMs = 10000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const [row] = await prisma.$queryRaw<{ n: number }[]>`
-        SELECT count(*)::int AS n FROM pg_locks
-        WHERE locktype = 'advisory' AND granted AND objid = 72606101`;
-      if (row.n > 0) return;
+      const pid = holderPid();
+      if (pid > 0) {
+        const [row] = await prisma.$queryRaw<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM pg_locks
+          WHERE locktype = 'advisory' AND granted AND objid = 72606101 AND pid = ${pid}`;
+        if (row.n > 0) return;
+      }
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     throw new Error("等待授权锁超时：并发夹具未能取得 pg_advisory_xact_lock");
@@ -503,13 +515,17 @@ describe("allocateLedgerTx · 并发与锁顺序（真库）", () => {
 
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
+    // holder 的 backend pid：用来确认「是这条连接拿到了锁」，而不是别处
+    let holderBackendPid = 0;
     const holder = prisma.$transaction(async tx => {
+      const [me] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+      holderBackendPid = me.pid;
       await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(72606101)`;
       await gate; // 持锁不放，模拟另一笔核销正在进行
     });
 
     try {
-      await waitForAdvisoryLock();
+      await waitForAdvisoryLock(() => holderBackendPid);
       const attempt = prisma.$transaction(async tx => {
         await tx.$executeRaw`SET LOCAL lock_timeout = 300`;
         return allocateLedgerTx(tx, user.id, { paymentId: payment.id, revision: 0, kind: "RECEIVABLE", items: [{ targetId: ar.id, amount: "100" }] });

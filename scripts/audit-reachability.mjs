@@ -111,7 +111,6 @@ const BASELINE = new Set([
   "mergeClients",
   "batchApproveArchiveRecords",
   "batchRejectArchiveRecords",
-  "bindPartyToEnterprise",
   "checkLoginRequiresTotp",
   "completeMatterService",
   "createFolder",
@@ -151,7 +150,6 @@ const BASELINE = new Set([
   "reorderFolders",
   "softDeleteMatter",
   "triggerAuditCleanupNow",
-  "unbindPartyEnterprise",
 ]);
 
 const VERDICT = {
@@ -184,6 +182,10 @@ const VERDICT = {
   getSealStats: ["intentional", "依赖同样未接线的 listSealRequests；用章台账页未建，保留待接线"],
   // 卷宗目录由 default-folders 自动创建并给定 orderIndex，不开放手工排序
   reorderFolders: ["intentional", "卷宗目录顺序由 default-folders 决定，不开放手工排序（建/删目录本就未开放）"],
+  // 2026-11-20：绑定/解绑已补入口（当事人卡片「绑定工商 / 改绑 / 解绑」）。
+  // 企业概览**刻意不自动调用**——元典按 10 POINT/次计费，渲染时就发请求等于悄悄烧钱；
+  // 保留待「显式点击才查」的入口，不在列表/详情渲染路径上挂。
+  getEnterpriseSummaryByParty: ["intentional", "元典按 10 POINT/次计费，刻意不做自动查询；待显式「查看企业概览」入口"],
   deleteBilling: ["intentional", "合同删除未开放，避免破坏已签署事实与分成依据"],
 
   // ── 有意：建案动线是「收案 → 转正式案件」 ──
