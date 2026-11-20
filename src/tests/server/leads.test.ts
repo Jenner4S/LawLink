@@ -281,3 +281,29 @@ describe("负责人筛选", () => {
     expect(row?.ownerName).toBe("离职律师");
   });
 });
+
+describe("收口审查：作废提醒必须走失败隔离封装", () => {
+  /**
+   * 三次作废都发生在写事务**之后**：到店/谈案已落库、流失已落库、转收案已落库。
+   * 若作废抛错并冒泡，用户会看到「操作失败」但数据其实已写入 —— 他会重试，
+   * 于是又多一条记录。**已成功的事不该因为后续清理失败而报失败。**
+   *
+   * 为什么用结构检查而不是注入失败：
+   * Prisma 的模型委托是 Proxy，`spyOn(prisma.reminderDelivery, ...)` 打不中
+   * 实际调用点（第一次写这条测试就是这样失败的）。结构守卫能达成同样的防回归目的，
+   * 且不会假装自己在测运行时行为。
+   */
+  it("actions.ts 里不再直接调用 retireLeadReminders（一律走 Safely 封装）", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../../server/leads/actions.ts", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    // 裸调用只允许出现在安全封装内部（封装是第 69 行那个 async function 本身），
+    // 也就是全文件恰好 1 处；若有人在三处调用点直接写裸调用，会增加。
+    const naked = src.match(/await\s+retireLeadReminders\(/g) ?? [];
+    expect(naked, "裸调用只应存在于封装内部").toHaveLength(1);
+    // 封装本身必须存在且被三处使用
+    expect(src).toContain("retireLeadRemindersSafely");
+    expect((src.match(/await\s+retireLeadRemindersSafely\(/g) ?? []).length).toBe(3);
+  });
+});

@@ -41,11 +41,13 @@ afterAll(async () => { await dropDb?.(); }, 60_000);
 
 vi.mock("@/lib/prisma", () => ({ get prisma() { return prisma; } }));
 vi.mock("@/server/notifications/create", () => ({ createNotification: vi.fn(async () => ({ id: "n1" })) }));
+vi.mock("@/server/audit", () => ({ audit: vi.fn(async () => {}), auditTx: vi.fn() }));
 
 const { scanLeadInviteReminders, retireLeadReminders, LEAD_REMINDER_DAYS, LEAD_REMINDER_AHEAD_DAYS } =
   await import("@/server/leads/reminders");
 const { deliverPendingReminders } = await import("@/server/reminders/delivery");
 const { createNotification } = await import("@/server/notifications/create");
+const { audit } = await import("@/server/audit");
 
 let seq = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(++seq).toString(36)}`;
@@ -257,3 +259,51 @@ describe("事前提醒（提前 1 天 / 当天）", () => {
     expect(mine).toHaveLength(0);
   });
 });
+
+describe("收口审查：跳过的停用负责人必须留痕", () => {
+  /**
+   * 这条防的是「没做成会有人知道吗」这一问的反例：
+   * 停用负责人的线索此前只是**悄悄跳过**，除了一次函数返回值没人知道——
+   * 而那批客户就是静静流失。系统不替人转派（会误投给不相干的人），
+   * 但必须留痕迹，与保全提醒的 PRESERVATION_RECIPIENT_MISSING 同口径。
+   */
+  it("有停用负责人被跳过时，写一条汇总审计", async () => {
+    await seedFutureForAudit();
+    vi.mocked(audit).mockClear();
+    const res = await scanLeadInviteReminders(NOW);
+    expect(res.skippedDisabled).toBeGreaterThanOrEqual(1);
+    const calls = vi.mocked(audit).mock.calls.map((c) => c[0] as { action: string; detail?: { skippedDisabled?: number } });
+    const hit = calls.find((c) => c.action === "LEAD_REMINDER_RECIPIENT_DISABLED");
+    expect(hit).toBeTruthy();
+    expect(hit!.detail?.skippedDisabled).toBeGreaterThanOrEqual(1);
+  });
+
+  it("没有跳过时不写（避免空审计噪音）", async () => {
+    // 只造在途且负责人有效的线索：存量里可能还有停用负责人的数据，
+    // 故这里只断言「当天第一次扫描以外」不重复写——用一个不含停用线索的窗口无法构造，
+    // 改为断言：skippedDisabled 为 0 时不写。
+    vi.mocked(audit).mockClear();
+    // 先把所有停用负责人的在途线索清掉
+    const disabledUsers = await prisma.user.findMany({ where: { active: false }, select: { id: true } });
+    if (disabledUsers.length) {
+      await prisma.lead.deleteMany({ where: { ownerId: { in: disabledUsers.map((u) => u.id) }, stage: "INVITED" } });
+    }
+    const res = await scanLeadInviteReminders(NOW);
+    expect(res.skippedDisabled).toBe(0);
+    const calls = vi.mocked(audit).mock.calls.map((c) => c[0] as { action: string });
+    expect(calls.some((c) => c.action === "LEAD_REMINDER_RECIPIENT_DISABLED")).toBe(false);
+  });
+});
+
+/** 造一条「约定在明天、负责人已停用」的线索 */
+async function seedFutureForAudit() {
+  const owner = await prisma.user.create({
+    data: { email: `${uid("e")}@t.local`, name: "停用甲", role: "LAWYER", passwordHash: "x", active: false }
+  });
+  await prisma.lead.create({
+    data: {
+      name: uid("线索"), phone: "13800000000", stage: "INVITED",
+      invitedAt: new Date(NOW.getTime() + 86_400_000), ownerId: owner.id
+    }
+  });
+}

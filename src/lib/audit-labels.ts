@@ -111,6 +111,9 @@ const words: Record<string, string> = {
   // CONVERT 已有词条（"转正式案件"），LEAD_CONVERT 拼出来是「获客线索·转正式案件」——
   // 正好对：线索确实转成了正式收案。重复键会被 tsc 拦下（已踩到），故不再加。
   LEAD: "获客线索", LOST: "标记流失", ACTIVITY: "跟进",
+  // LEAD_REMINDER_RECIPIENT_DISABLED（2026-11-21 收口审查）
+  // REMINDER / RECIPIENT 已在通用词表里，这里只补缺的 DISABLED
+  DISABLED: "已停用", RETIRE: "作废",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

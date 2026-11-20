@@ -30,6 +30,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { registerReminderDelivery, voidPendingDeliveries } from "@/server/reminders/ledger";
+import { audit } from "@/server/audit";
 
 /** 逾期第几天提醒（1/3/7），之后不再提醒 */
 export const LEAD_REMINDER_DAYS = [1, 3, 7] as const;
@@ -127,6 +128,19 @@ export async function scanLeadInviteReminders(now: Date = new Date()): Promise<L
       registered += 1;
       if (offset <= 0) registeredAhead += 1;
     }
+  }
+
+  // 2026-11-21 收口审查补齐：停用负责人的线索此前只是**悄悄跳过**，
+  // 除了一次函数返回值没人知道——正是「没做成会有人知道吗」这一问的反例。
+  // 邀约是个人跟进事项，系统不替人转派（那会误投给不相干的人），
+  // 但**必须留下痕迹**，否则这批客户就是静静流失。
+  // 与保全提醒的 PRESERVATION_RECIPIENT_MISSING 同口径：记一条汇总审计，不逐条刷屏。
+  if (skippedDisabled > 0) {
+    await audit({
+      action: "LEAD_REMINDER_RECIPIENT_DISABLED",
+      targetType: "Lead",
+      detail: { skippedDisabled, scanned: candidates.length, day: shDayKey(now) }
+    });
   }
 
   return { scanned: candidates.length, registered, skippedDisabled, registeredAhead };

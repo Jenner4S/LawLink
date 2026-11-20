@@ -55,6 +55,30 @@ function requireLeadWrite(user: { role: string; rolePermissions?: unknown } & Re
   }
 }
 
+
+/**
+ * 作废邀约提醒——**失败不阻断主操作**（2026-11-21 收口审查）
+ *
+ * 三次调用都发生在写事务**之后**：到店/谈案已落库、流失已落库、转收案已落库。
+ * 如果这里抛错冒泡上去，用户会看到「操作失败」，但数据其实已经写进去了——
+ * 他会重试，于是又多一条记录。**已成功的事不该因为后续清理失败而报失败。**
+ *
+ * 失败时写审计，让「提醒没作废」这件事可查（否则客户到店后第二天仍收到
+ * 「约了没来」，而没人知道是哪一环没跑）。
+ */
+async function retireLeadRemindersSafely(leadId: string, reason: string) {
+  try {
+    await retireLeadReminders([leadId], "CANCELLED", reason);
+  } catch (err) {
+    await audit({
+      action: "LEAD_REMINDER_RETIRE_FAILED",
+      targetType: "Lead",
+      targetId: leadId,
+      detail: { reason, error: err instanceof Error ? err.message : String(err) }
+    });
+  }
+}
+
 /** 新建线索 */
 export async function createLead(input: z.input<typeof createSchema>) {
   const session = await requireSession("clients.write");
@@ -228,7 +252,7 @@ export async function addLeadActivity(input: z.input<typeof activitySchema>) {
   // 到店/谈案即作废未发出的邀约提醒——客户已经到了，第二天还收「约了没来」
   // 一次就足以让人不再相信这个提醒（见 reminders.ts 文件头）。
   if (data.type === "VISIT" || data.type === "CONSULT") {
-    await retireLeadReminders([lead.id], "CANCELLED", `LEAD_${data.type}`);
+    await retireLeadRemindersSafely(lead.id, `LEAD_${data.type}`);
   }
 
   await audit({
@@ -261,7 +285,7 @@ export async function markLeadLost(input: z.input<typeof loseSchema>) {
     where: { id: lead.id },
     data: { stage: "LOST", lostReason: data.reason, lostAt: new Date() }
   });
-  await retireLeadReminders([lead.id], "CANCELLED", "LEAD_LOST");
+  await retireLeadRemindersSafely(lead.id, "LEAD_LOST");
   await audit({
     userId: session.user.id,
     action: "LEAD_LOST",
@@ -321,7 +345,7 @@ export async function convertLeadToIntake(input: { leadId: string; title?: strin
     return intake.id;
   });
 
-  await retireLeadReminders([lead.id], "CANCELLED", "LEAD_CONVERTED");
+  await retireLeadRemindersSafely(lead.id, "LEAD_CONVERTED");
   await audit({
     userId: session.user.id,
     action: "LEAD_CONVERT",
