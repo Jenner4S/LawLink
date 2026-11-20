@@ -1,5 +1,5 @@
 // @vitest-environment node
-// B1 来件处理状态机（docs/SMS-B1-DESIGN-20260920.md §2.3）纯规则回归。
+// B1 来件处理状态机（docs/短信B1设计-20260920.md §2.3）纯规则回归。
 import { describe, expect, it } from "vitest";
 import { deriveProcessingState } from "@/lib/sms/processing-state";
 

@@ -10,7 +10,7 @@
 ## [未发布] - 2026-11-20
 
 本段覆盖 v2.0.1（`4736aa1`）之后的 **194 个提交**，按领域分组列出。
-逐条带提交号的完整清单另见 [未推送提交审查清单](./docs/UNPUSHED-REVIEW-20261120.md)（该文档生成于推送前，文件名保留历史）。
+逐条带提交号的完整清单另见 [未推送提交审查清单](./docs/未推送提交审查清单-20261120.md)（该文档生成于推送前，文件名保留历史）。
 
 ### 要点（先看这四条）
 
@@ -269,7 +269,7 @@
          SyntaxError: Unexpected token 'E', "Error load"... is not valid JSON
   ```
 
-  受影响的是容器内的 `prisma migrate deploy`、`prisma db seed`，以及应用自身的数据库查询——即按[云服务器安装指南](./docs/CLOUD-SERVER-INSTALLATION-GUIDE.md)部署会卡在初始化第一步。`Dockerfile` 的 deps / builder / runner 三个阶段均已补装 `openssl`。
+  受影响的是容器内的 `prisma migrate deploy`、`prisma db seed`，以及应用自身的数据库查询——即按[云服务器安装指南](./docs/云服务器安装指南.md)部署会卡在初始化第一步。`Dockerfile` 的 deps / builder / runner 三个阶段均已补装 `openssl`。
 
 - **运行镜像缺少 `next.config.mjs`，容器无法启动**。本项目的 `distDir` 取自 `NEXT_DIST_DIR`（构建产物在 `.next-build` 而非默认 `.next`），配置文件不在镜像中时 `next start` 会去找 `.next` 并报 `Could not find a production build`，容器反复重启。该文件同时承载 `serverExternalPackages`（缺失会让 `@napi-rs/canvas` / `unpdf` 依赖链上的路由返回 500）、Server Actions 的 25MB 上传上限（缺失则材料上传超 1MB 即失败）与全站安全响应头——**即使容器能启动，缺少该配置也是错误的部署**。runner 阶段已补 COPY。
 
@@ -278,13 +278,13 @@
 ### 升级
 
 - 从 v2.0.0 升级：拉取新代码后 **重新构建镜像**（`docker compose build app`），无需执行任何数据库迁移。
-- 从 v1.3.x 升级：步骤不变，见 [升级说明](./docs/RELEASE-GUIDE-v1.3.md#从-v13x-升级迁移基线重建必读含手工步骤)。
+- 从 v1.3.x 升级：步骤不变，见 [升级说明](./docs/升级指南-v1.3.md#从-v13x-升级迁移基线重建必读含手工步骤)。
 
 ## [2.0.0] - 2026-09-21
 
 正式标签指向以 `597404b` 为基线、包含测试时钟修复和发布文档的正式提交。包版本已统一为 2.0.0；旧文档及升级脚本保留 1.4.0 名称。补充固定时钟测试，同时覆盖开庭前和开庭后提醒。
 
-[正式发布说明](./docs/RELEASE-NOTES-v2.0.0.md)
+[正式发布说明](./docs/发布说明-v2.0.0.md)
 
 > **⚠️ 从 v1.3.x 保留数据升级须执行增量脚本并做两次手工标记，只做标记会失败（已实测复现）：**
 > ```bash
@@ -293,7 +293,7 @@
 > npx prisma migrate resolve --applied 20260921000004_archive_borrow
 > npx prisma migrate deploy
 > ```
-> 本版把迁移链重建为单一基线 `0_init`（旧链因 `2026*` 与 `v4*` 命名混排，在空库上无法从零重放）。v1.3.x 库缺少 v1.4.0 全部新增结构，直接 deploy 会在 `20260921000004` 处报 `42704`，**且失败会写入迁移表并阻断后续全部迁移**。完整步骤、必填列回填规则与失败恢复见[升级说明](./docs/RELEASE-GUIDE-v1.3.md#从-v13x-升级迁移基线重建必读含手工步骤与增量脚本)。全新安装不受影响。
+> 本版把迁移链重建为单一基线 `0_init`（旧链因 `2026*` 与 `v4*` 命名混排，在空库上无法从零重放）。v1.3.x 库缺少 v1.4.0 全部新增结构，直接 deploy 会在 `20260921000004` 处报 `42704`，**且失败会写入迁移表并阻断后续全部迁移**。完整步骤、必填列回填规则与失败恢复见[升级说明](./docs/升级指南-v1.3.md#从-v13x-升级迁移基线重建必读含手工步骤与增量脚本)。全新安装不受影响。
 
 ### 界面
 

@@ -1,5 +1,5 @@
 /**
- * 提醒送达台账投递器（F-1，docs/REMINDER-DELIVERY-LEDGER-PLAN-20260921.md）。
+ * 提醒送达台账投递器（F-1，docs/提醒送达台账方案-20260921.md）。
  *
  * sweep PENDING 行 → 复核对象当前状态（B3「发送前核实当前状态」原则，兜住
  * 作废-投递竞态）→ 发送 → 落终态。阶段一接入保全四种 kind；阶段二接入期限/
@@ -87,7 +87,7 @@ export type DeliverySweepResult = {
  *
  * 本标志只在单进程内有效（AGENTS：单体应用 + 单进程），足以消除 node-cron
  * 重叠触发这一现实成因。多实例部署仍需数据库级租约，那需要 Schema 迁移，
- * 走红线审批，见 docs/SYSTEM-AUDIT-20260921-ROUND7-v2.md §五。
+ * 走红线审批，见 docs/系统审计-20260921-第7轮v2.md §五。
  */
 let sweepInFlight = false;
 

@@ -1,5 +1,5 @@
 /**
- * B2 OCR provider 抽象（docs/SYSTEM-AUDIT-REMEDIATION-V3-20260920.md B 批设计定案：
+ * B2 OCR provider 抽象（docs/系统审计整改V3-20260920.md B 批设计定案：
  * 云 API、联网部署、管理后台「外部接入」配置、部署方自选厂商）。
  *
  * 两个实现，按配置自动选择：

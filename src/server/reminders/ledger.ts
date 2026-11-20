@@ -1,5 +1,5 @@
 /**
- * 提醒送达台账原语（F-1，docs/REMINDER-DELIVERY-LEDGER-PLAN-20260921.md）。
+ * 提醒送达台账原语（F-1，docs/提醒送达台账方案-20260921.md）。
  *
  * 登记 / 作废 / 结果落账三类原语的唯一下沉处——登记方（schedule.ts、
  * scan-due-reminders.ts）与投递方（delivery.ts）都依赖本模块，故不得反向

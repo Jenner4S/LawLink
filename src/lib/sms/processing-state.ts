@@ -1,5 +1,5 @@
 /**
- * B1 来件处理状态推导（docs/SMS-B1-DESIGN-20260920.md §2.3）。
+ * B1 来件处理状态推导（docs/短信B1设计-20260920.md §2.3）。
  * 纯规则：取件结果落库后统一计算状态机位置；不依赖数据库。
  */
 import type { SmsProcessingState } from "@prisma/client";

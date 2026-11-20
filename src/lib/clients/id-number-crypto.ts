@@ -4,7 +4,7 @@
  * 存储形态：Client.idNumber 存 AES-256-GCM 密文（iv.tag.ct，base64 三段），
  * 与附件共用 STORAGE_ENCRYPTION_KEY；等值检索走 idNumberBlind——
  * HMAC-SHA256，密钥由主密钥域分离派生（"client-id-blind" 域，不新增环境变量；
- * 轮换流程：换派生域盐重算全量盲索引，见 OPERATIONS.md）。
+ * 轮换流程：换派生域盐重算全量盲索引，见 运维手册.md）。
  * 模糊 LIKE 检索退役：盲索引只支持等值（§三检索策略）。
  */
 import { createHmac } from "node:crypto";

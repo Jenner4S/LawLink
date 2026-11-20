@@ -63,8 +63,8 @@ if (!process.env.DATABASE_URL && process.env.POSTGRES_DB && process.env.POSTGRES
     `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD ?? ""}` +
     `@localhost:${port}/${process.env.POSTGRES_DB}?schema=public`;
 }
-const DOC = path.join(ROOT, "docs/DELIVERY-STATUS-20261120.md");
-const LEDGER = path.join(ROOT, "docs/BACKLOG-20261118.md");
+const DOC = path.join(ROOT, "docs/交付状态-20261120.md");
+const LEDGER = path.join(ROOT, "docs/待办台账-20261118.md");
 const FIX = process.argv.includes("--fix");
 
 /** 跑一次测试，取出 "Tests  N passed" 里的 N。失败返回 null，绝不返回空串。 */

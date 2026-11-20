@@ -55,7 +55,7 @@ export const SMS_TYPE_CN: Record<SmsType, string> = {
   OTHER: "其他通知"
 };
 
-/** B1 来件处理状态（docs/SMS-B1-DESIGN-20260920.md §2.3） */
+/** B1 来件处理状态（docs/短信B1设计-20260920.md §2.3） */
 export const SMS_STATE_CN: Record<SmsProcessingState, string> = {
   PROCESSING: "取件中",
   NEEDS_MANUAL_FETCH: "待人工取件",

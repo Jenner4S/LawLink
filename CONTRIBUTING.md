@@ -7,10 +7,10 @@
 开始前请先阅读：
 
 - [AGENTS.md](./AGENTS.md)：工作区规则和工程纪律。
-- [docs/RELEASE-GUIDE-v1.3.md](./docs/RELEASE-GUIDE-v1.3.md)：当前公开功能、权限和升级边界。
-- [docs/PRD.md](./docs/PRD.md)：产品设计与历史演进。
-- [docs/DATA-MODEL.md](./docs/DATA-MODEL.md)：数据模型。
-- [docs/UI-DESIGN.md](./docs/UI-DESIGN.md)：界面规范。
+- [docs/升级指南-v1.3.md](./docs/升级指南-v1.3.md)：当前公开功能、权限和升级边界。
+- [docs/产品需求文档.md](./docs/产品需求文档.md)：产品设计与历史演进。
+- [docs/数据模型.md](./docs/数据模型.md)：数据模型。
+- [docs/界面规范.md](./docs/界面规范.md)：界面规范。
 
 ## 适合提交的内容
 

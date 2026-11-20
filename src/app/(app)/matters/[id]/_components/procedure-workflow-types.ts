@@ -234,7 +234,7 @@ export type WorkflowApi = {
   currentStageName: string | null;
 };
 
-/** 案卷工作台页签（docs/UI-MATTER-DOSSIER-PLAN.md 第三版；2026-11-19 增「工时」） */
+/** 案卷工作台页签（docs/案卷工作台方案.md 第三版；2026-11-19 增「工时」） */
 export type DossierView = "archive" | "work" | "money" | "time" | "email" | "seal";
 
 /** 待办「等待他人」：审批中的用印、归档等 */

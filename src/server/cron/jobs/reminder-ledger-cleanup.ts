@@ -1,5 +1,5 @@
 /**
- * 提醒送达台账保留清理（F-1 阶段三，docs/REMINDER-DELIVERY-LEDGER-PLAN-20260921.md §六）。
+ * 提醒送达台账保留清理（F-1 阶段三，docs/提醒送达台账方案-20260921.md §六）。
  *
  * 每天 03:10 跑一次（Asia/Shanghai）：
  * 1. PENDING 超过 7 天仍未投递的行置 FAILED（防滞留——正常应在分钟级被投递器收敛）；

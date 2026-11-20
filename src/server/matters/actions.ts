@@ -731,7 +731,7 @@ export async function addMatterLink(
   await assertCanAssociateMatter(session.user.id, matterId);
   await assertCanAssociateMatter(session.user.id, relatedMatterId);
   // 2026-11-21 补守卫（复核 11 个导出时发现）：归档即冻结是本项目既定规则
-  //（docs/BUGFIX-20260906.md 第 11 条：归档案件不得新增开票申请），
+  //（docs/缺陷修复-20260906.md 第 11 条：归档案件不得新增开票申请），
   // 而这里此前只查「未删除 / 关联范围 / 隔离墙」，**不看案件状态** ——
   // 已归档案件的关联关系仍可被增删。
   // 只守卫**被编辑的这一侧**：把在办案件关联到已归档案件（参考同类案）仍然允许，

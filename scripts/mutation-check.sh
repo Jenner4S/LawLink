@@ -32,7 +32,7 @@ cd "$(dirname "$0")/.."
 SLOW=0
 [ "${1:-}" = "--slow" ] && SLOW=1
 
-DOC="docs/DELIVERY-STATUS-20261120.md"
+DOC="docs/交付状态-20261120.md"
 BACKUP_DIR=$(mktemp -d /tmp/lawlink-mutation.XXXXXX)
 PASS=0
 FAIL=0
@@ -94,7 +94,7 @@ echo "[M1] 把文档里的测试数改错，检查脚本应报错"
 backup "$DOC"
 ORIG=$(node -e '
 const fs=require("fs");
-const m=fs.readFileSync("docs/DELIVERY-STATUS-20261120.md","utf8").match(/(\d+) passed/);
+const m=fs.readFileSync("docs/交付状态-20261120.md","utf8").match(/(\d+) passed/);
 console.log(m?m[1]:"");
 ')
 if [ -z "$ORIG" ]; then
@@ -124,7 +124,7 @@ sed -i.bak "s|/ ${ORIG} passed|/  passed|g" "$DOC" 2>/dev/null || \
 rm -f "${DOC}.bak"
 BEFORE=$(node -e '
 const fs=require("fs");
-console.log((fs.readFileSync("docs/DELIVERY-STATUS-20261120.md","utf8").match(/\d+ passed/)||[""])[0]);
+console.log((fs.readFileSync("docs/交付状态-20261120.md","utf8").match(/\d+ passed/)||[""])[0]);
 ')
 if [ -n "$BEFORE" ]; then
   report_invalid "数字被删后 --fix 补回" "文档里仍能读到 \"${BEFORE}\"，说明删除没生效"
@@ -132,7 +132,7 @@ else
   node scripts/check-doc-numbers.mjs --fix >/dev/null 2>&1
   AFTER=$(node -e '
 const fs=require("fs");
-const m=fs.readFileSync("docs/DELIVERY-STATUS-20261120.md","utf8").match(/(\d+) passed/);
+const m=fs.readFileSync("docs/交付状态-20261120.md","utf8").match(/(\d+) passed/);
 console.log(m?m[1]:"");
 ')
   report "数字被删后 --fix 补回" "$ORIG" "$AFTER"
@@ -145,7 +145,7 @@ fi
 echo
 echo "[M3] 把台账条目数改错，检查脚本应报错"
 backup "$DOC"
-LEDGER_N=$(grep -c "^| 2026" docs/BACKLOG-20261118.md)
+LEDGER_N=$(grep -c "^| 2026" docs/待办台账-20261118.md)
 perl -0pi -e "s/\*\*${LEDGER_N} 条\*\*/**1 条**/g" "$DOC" 2>/dev/null || \
   sed -i.bak "s/\*\*${LEDGER_N} 条\*\*/**1 条**/g" "$DOC"
 rm -f "${DOC}.bak"
