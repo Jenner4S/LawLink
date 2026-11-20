@@ -17,7 +17,7 @@ import { Prisma } from "@prisma/client";
 const { db, session, perms, guard, auditMock, revalidateMock } = vi.hoisted(() => {
   const db: Record<string, any> = {
     matter: { findFirst: vi.fn(), findUnique: vi.fn() },
-    timeEntry: { create: vi.fn(), findMany: vi.fn(), aggregate: vi.fn() },
+    timeEntry: { create: vi.fn(), findMany: vi.fn(), aggregate: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() },
     feeEntry: { aggregate: vi.fn() },
     rateSchedule: { findFirst: vi.fn() }
   };
@@ -42,7 +42,7 @@ vi.mock("@/server/audit", () => ({ audit: auditMock, auditTx: vi.fn() }));
 vi.mock("@/server/matters/route", () => ({ revalidateMatter: revalidateMock }));
 
 import { ActionError } from "@/lib/action-error";
-import { addTimeEntry, getMatterTimeBoard } from "@/server/time/actions";
+import { addTimeEntry, getMatterTimeBoard, updateTimeEntry, deleteTimeEntry } from "@/server/time/actions";
 
 const MATTER = "cmatter00000000000000000001";
 const ENTRY = "ctimeen000000000000000000001";
@@ -72,6 +72,12 @@ beforeEach(() => {
   db.feeEntry.aggregate.mockResolvedValue({ _sum: { amount: null } });
   defaultRate();
 });
+
+/** 取最近一次 audit 调用的 (action, detail)——mock.calls 元组形状推不出来，统一在此收口 */
+function lastAudit(): { action: string; detail: any } {
+  const calls = auditMock.mock.calls as unknown as [ { action: string; detail: any } ][];
+  return calls[calls.length - 1][0];
+}
 
 const baseInput = {
   matterId: MATTER,
@@ -272,5 +278,127 @@ describe("工时页签取数", () => {
 
     await expect(getMatterTimeBoard(MATTER)).rejects.toThrow("案件不存在");
     expect(db.timeEntry.findMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 工时编辑与删除（2026-11-20，P0-1 ⑥）
+ *
+ * 核心风险不是"能不能改"，而是**改了会不会篡改已认证事实**：
+ *   · 已核定（APPROVED）是审批人核对过的记录
+ *   · 已出账（BILLED）已经进账单，改了账单与工时会对不上
+ * 两者都必须拒绝原地改删，只能作废后重登。删除是硬删除，审计必须留下可重建的字段。
+ */
+describe("工时编辑 · 状态守卫与重算", () => {
+  const ROW = {
+    id: ENTRY,
+    matterId: MATTER,
+    userId: "clawyer0000000000000000001",
+    status: "DRAFT",
+    minutes: 60,
+    billableMinutes: 60,
+    billable: true,
+    narrative: "旧内容",
+    workDate: new Date(`${TODAY}T04:00:00.000Z`),
+    amount: new Prisma.Decimal("3000.00"),
+    hourlyRateSnapshot: new Prisma.Decimal("3000.00")
+  };
+
+  const editInput = { id: ENTRY, workDate: TODAY, minutes: 120, narrative: "改后的内容", billable: true as const };
+
+  it("草稿可改，金额按新分钟数重算（2 小时 × 3000 = 6000）", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW });
+    db.timeEntry.update.mockResolvedValue({});
+    const res = await updateTimeEntry(editInput);
+    expect(res.amount).toBe(6000);
+    const call = db.timeEntry.update.mock.calls[0][0];
+    expect(call.data.minutes).toBe(120);
+    expect(call.data.amount).toBeInstanceOf(Prisma.Decimal);
+    expect(call.data.amount.toFixed(2)).toBe("6000.00");
+  });
+
+  it("已核定拒绝修改，且不写库；提示指向作废重登", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW, status: "APPROVED" });
+    await expect(updateTimeEntry(editInput)).rejects.toThrow("已审批");
+    expect(db.timeEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("已出账拒绝修改，提示指出会让账单与工时对不上", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW, status: "BILLED" });
+    await expect(updateTimeEntry(editInput)).rejects.toThrow("已进账单");
+    expect(db.timeEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("不能改成未来日期", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW });
+    const future = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + 3 * 86400000));
+    await expect(updateTimeEntry({ ...editInput, workDate: future })).rejects.toThrow("未来日期");
+    expect(db.timeEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("审计记录改前改后金额与费率；非本人操作标 onBehalfOf", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW, userId: "someone-else" });
+    db.timeEntry.update.mockResolvedValue({});
+    await updateTimeEntry(editInput);
+    const detail = lastAudit().detail;
+    expect(lastAudit().action).toBe("TIME_ENTRY_UPDATE");
+    expect(detail.before.amount).toBe("3000.00");
+    expect(detail.after.amount).toBe("6000.00");
+    expect(detail.onBehalfOf).toBe("someone-else");
+  });
+
+  it("本人操作不留 onBehalfOf（避免噪声）", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW });
+    db.timeEntry.update.mockResolvedValue({});
+    await updateTimeEntry(editInput);
+    expect(lastAudit().detail.onBehalfOf).toBeUndefined();
+  });
+});
+
+describe("工时删除 · 硬删除必须留足重建字段", () => {
+  const ROW = {
+    id: ENTRY,
+    matterId: MATTER,
+    userId: "clawyer0000000000000000001",
+    status: "DRAFT",
+    workDate: new Date(`${TODAY}T04:00:00.000Z`),
+    minutes: 90,
+    billableMinutes: 90,
+    billable: true,
+    narrative: "要删的这条",
+    taskCode: "阅卷",
+    noChargeReason: null,
+    amount: new Prisma.Decimal("4500.00"),
+    hourlyRateSnapshot: new Prisma.Decimal("3000.00")
+  };
+
+  it("草稿可删，审计带删除前全部字段（含金额与费率）", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW });
+    db.timeEntry.delete.mockResolvedValue({});
+    await deleteTimeEntry(ENTRY);
+    expect(db.timeEntry.delete).toHaveBeenCalledWith({ where: { id: ENTRY } });
+    const detail = lastAudit().detail;
+    expect(lastAudit().action).toBe("TIME_ENTRY_DELETE");
+    expect(detail.deleted.minutes).toBe(90);
+    expect(detail.deleted.amount).toBe("4500.00");
+    expect(detail.deleted.hourlyRate).toBe("3000.00");
+    expect(detail.deleted.narrative).toBe("要删的这条");
+  });
+
+  it("已核定拒绝删除", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW, status: "APPROVED" });
+    await expect(deleteTimeEntry(ENTRY)).rejects.toThrow("已审批");
+    expect(db.timeEntry.delete).not.toHaveBeenCalled();
+  });
+
+  it("已出账拒绝删除", async () => {
+    db.timeEntry.findUnique.mockResolvedValue({ ...ROW, status: "BILLED" });
+    await expect(deleteTimeEntry(ENTRY)).rejects.toThrow("已进账单");
+    expect(db.timeEntry.delete).not.toHaveBeenCalled();
+  });
+
+  it("记录不存在时明确报错，不静默成功", async () => {
+    db.timeEntry.findUnique.mockResolvedValue(null);
+    await expect(deleteTimeEntry(ENTRY)).rejects.toThrow("工时不存在");
   });
 });

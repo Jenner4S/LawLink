@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { parseInput } from "@/lib/parse-input";
 
 import { ActionError } from "@/lib/action-error";
@@ -13,6 +14,7 @@ import { audit } from "@/server/audit";
 import { revalidateMatter } from "@/server/matters/route";
 import { prisma } from "@/lib/prisma";
 import { createTimeEntry, getMatterTimeSummary } from "./entries";
+import { resolveRate, billableMinutesOf, amountOf } from "./rate";
 
 /**
  * 工时登记的 Server Action（P0-1 阶段 1-b）。
@@ -153,6 +155,238 @@ export async function addTimeEntry(input: TimeEntryCreateInput): Promise<TimeEnt
     amount: decimalToNumber(created.amount),
     rateScope: created.rateScope
   };
+}
+
+/**
+ * 可改可删的状态白名单（2026-11-20）
+ *
+ * 只允许 DRAFT / SUBMITTED。
+ *   · APPROVED —— 审批人已经核对过这条工时，改它等于改已认证事实；
+ *   · BILLED   —— 已经进账单，改它会让账单金额与工时明细对不上；
+ *   · WRITTEN_OFF —— 已作废，留着是审计痕迹。
+ * 三种都只能走「作废 + 重新登记」，不允许原地改。
+ */
+const EDITABLE_STATUSES: readonly string[] = ["DRAFT", "SUBMITTED"];
+
+/** 改工时入参：与登记同规则，但不含 matterId（不允许改挂案件，那会让两个案件的工时账都错） */
+const timeEntryUpdateSchema = z
+  .object({
+    id: z.string().trim().min(1, "缺少工时标识"),
+    workDate: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD"),
+    minutes: z
+      .coerce.number()
+      .int("分钟数应为整数")
+      .min(1, "至少 1 分钟")
+      .max(MAX_MINUTES, "单条工时不得到超过 24 小时"),
+    narrative: z.string().trim().min(1, "工作内容必填").max(2000, "工作内容不超过 2000 字"),
+    taskCode: z.string().trim().max(40).optional().or(z.literal("")),
+    billable: z.boolean(),
+    noChargeReason: z.string().trim().max(200).optional().or(z.literal("")),
+    /** 说明为什么改（非必填，但写进审计便于回溯） */
+    changeNote: z.string().trim().max(200).optional().or(z.literal(""))
+  })
+  .refine((v) => v.billable || (v.noChargeReason ?? "").trim().length > 0, {
+    message: "标记为不可计费时必须填写原因",
+    path: ["noChargeReason"]
+  });
+
+/**
+ * 修改一条工时（2026-11-20，P0-1 ⑥）
+ *
+ * 权限与登记同口径（`assertCanHandleMatter` + `assertMatterWritable`），
+ * 但**额外**要求状态可改（见 EDITABLE_STATUSES）。
+ *
+ * 改动会**重新解析费率并重算金额**——不沿用旧快照：
+ * 改了工作日期就可能跨到另一个费率生效期，沿用旧快照会让金额与费率表脱节。
+ * 审计里同时记录改前改后，含金额与费率，便于对账时解释差异。
+ *
+ * 非本人操作时 detail 记 `onBehalfOf`：合伙人代改他人工时是允许的，
+ * 但必须能一眼看出「这条不是作者自己改的」。
+ */
+export async function updateTimeEntry(input: z.input<typeof timeEntryUpdateSchema>) {
+  const session = await requireSession("matters.write");
+  const data = parseInput(timeEntryUpdateSchema, input);
+
+  const existing = await prisma.timeEntry.findUnique({
+    where: { id: data.id },
+    select: {
+      id: true,
+      matterId: true,
+      userId: true,
+      status: true,
+      minutes: true,
+      billableMinutes: true,
+      billable: true,
+      narrative: true,
+      workDate: true,
+      amount: true,
+      hourlyRateSnapshot: true
+    }
+  });
+  if (!existing) throw new ActionError("工时不存在或已被删除");
+
+  await assertCanHandleMatter(session.user, existing.matterId);
+  await assertMatterWritable(existing.matterId, { allowPrincipal: true });
+
+  if (!EDITABLE_STATUSES.includes(existing.status)) {
+    throw new ActionError(
+      existing.status === "BILLED"
+        ? "这条工时已进账单，不能直接修改；如需更正请作废后重新登记"
+        : existing.status === "APPROVED"
+          ? "这条工时已审批，不能直接修改；如需更正请作废后重新登记"
+          : "当前状态不可修改"
+    );
+  }
+
+  const workDate = civilFromKey(data.workDate);
+  if (civilKey(workDate) !== data.workDate) throw new ActionError("日期无效，请重新选择");
+  if (data.workDate > shDayKey(Date.now())) throw new ActionError("不能登记未来日期的工时");
+
+  const matter = await prisma.matter.findFirst({
+    where: { id: existing.matterId, deletedAt: null },
+    select: { primaryClientId: true }
+  });
+  if (!matter) throw new ActionError("案件不存在或已删除");
+
+  const rate = await resolveRate({
+    matterId: existing.matterId,
+    clientId: matter.primaryClientId,
+    userId: existing.userId,
+    role: session.user.role,
+    workDate
+  });
+  const billableMinutes = data.billable ? billableMinutesOf(data.minutes, rate.billingIncrement) : 0;
+  const amount = data.billable && rate.configured ? amountOf(billableMinutes, rate.hourlyRate) : new Prisma.Decimal(0);
+
+  await prisma.timeEntry.update({
+    where: { id: data.id },
+    data: {
+      workDate,
+      minutes: data.minutes,
+      billableMinutes,
+      narrative: data.narrative.trim(),
+      taskCode: data.taskCode?.trim() || null,
+      billable: data.billable,
+      noChargeReason: data.billable ? null : (data.noChargeReason ?? "").trim(),
+      rateScheduleId: rate.scheduleId,
+      hourlyRateSnapshot: rate.hourlyRate,
+      amount
+    }
+  });
+
+  await audit({
+    userId: session.user.id,
+    action: "TIME_ENTRY_UPDATE",
+    targetType: "TimeEntry",
+    targetId: data.id,
+    detail: {
+      matterId: existing.matterId,
+      authorId: existing.userId,
+      // 非本人操作时留痕：合伙人可代改，但必须看得出不是作者自己改的
+      ...(existing.userId === session.user.id ? {} : { onBehalfOf: existing.userId }),
+      before: {
+        workDate: civilKey(existing.workDate),
+        minutes: existing.minutes,
+        billableMinutes: existing.billableMinutes,
+        billable: existing.billable,
+        narrative: existing.narrative.slice(0, 200),
+        amount: existing.amount.toFixed(2),
+        hourlyRate: existing.hourlyRateSnapshot.toFixed(2)
+      },
+      after: {
+        workDate: data.workDate,
+        minutes: data.minutes,
+        billableMinutes,
+        billable: data.billable,
+        narrative: data.narrative.trim().slice(0, 200),
+        amount: amount.toFixed(2),
+        hourlyRate: rate.hourlyRate.toFixed(2)
+      },
+      changeNote: data.changeNote?.trim() || null
+    }
+  });
+
+  await revalidateMatter(existing.matterId);
+  return { ok: true as const, amount: decimalToNumber(amount), billableMinutes };
+}
+
+/**
+ * 删除一条工时（2026-11-20，P0-1 ⑥）
+ *
+ * 同样是硬删除 + 状态守卫。删除是**物理删除**，所以审计里必须留下
+ * 足以重建这条记录的全部字段（工时、金额、费率、内容）——
+ * 否则「删了一条工时」在事后无法解释，而这正是工时争议最常见的问题。
+ */
+export async function deleteTimeEntry(id: string) {
+  const session = await requireSession("matters.write");
+  const entryId = String(id ?? "").trim();
+  if (!entryId) throw new ActionError("缺少工时标识");
+
+  const existing = await prisma.timeEntry.findUnique({
+    where: { id: entryId },
+    select: {
+      id: true,
+      matterId: true,
+      userId: true,
+      status: true,
+      workDate: true,
+      minutes: true,
+      billableMinutes: true,
+      billable: true,
+      narrative: true,
+      taskCode: true,
+      noChargeReason: true,
+      amount: true,
+      hourlyRateSnapshot: true
+    }
+  });
+  if (!existing) throw new ActionError("工时不存在或已被删除");
+
+  await assertCanHandleMatter(session.user, existing.matterId);
+  await assertMatterWritable(existing.matterId, { allowPrincipal: true });
+
+  if (!EDITABLE_STATUSES.includes(existing.status)) {
+    throw new ActionError(
+      existing.status === "BILLED"
+        ? "这条工时已进账单，不能删除；如需更正请作废后重新登记"
+        : existing.status === "APPROVED"
+          ? "这条工时已审批，不能删除；如需更正请作废后重新登记"
+          : "当前状态不可删除"
+    );
+  }
+
+  await prisma.timeEntry.delete({ where: { id: entryId } });
+
+  await audit({
+    userId: session.user.id,
+    action: "TIME_ENTRY_DELETE",
+    targetType: "TimeEntry",
+    targetId: entryId,
+    detail: {
+      matterId: existing.matterId,
+      authorId: existing.userId,
+      ...(existing.userId === session.user.id ? {} : { onBehalfOf: existing.userId }),
+      // 硬删除：留足重建所需字段
+      deleted: {
+        workDate: civilKey(existing.workDate),
+        minutes: existing.minutes,
+        billableMinutes: existing.billableMinutes,
+        billable: existing.billable,
+        narrative: existing.narrative.slice(0, 500),
+        taskCode: existing.taskCode,
+        noChargeReason: existing.noChargeReason,
+        amount: existing.amount.toFixed(2),
+        hourlyRate: existing.hourlyRateSnapshot.toFixed(2),
+        status: existing.status
+      }
+    }
+  });
+
+  await revalidateMatter(existing.matterId);
+  return { ok: true as const };
 }
 
 /**

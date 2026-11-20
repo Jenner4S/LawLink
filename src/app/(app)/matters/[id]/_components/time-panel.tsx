@@ -18,6 +18,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Clock3, Loader2, Plus } from "lucide-react";
+import { confirmDialog } from "@/components/patterns/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -27,7 +28,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { actionErrorMessage } from "@/lib/action-error";
 import { shDayKey } from "@/lib/ui/sh-time";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
-import { addTimeEntry, type MatterTimeBoard } from "@/server/time/actions";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry, type MatterTimeBoard } from "@/server/time/actions";
+
+/** 与服务端 EDITABLE_STATUSES 同口径：已核定/已出账/已核销不可原地改删 */
+const EDITABLE_STATUSES = new Set(["DRAFT", "SUBMITTED"]);
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "草稿",
@@ -62,7 +66,11 @@ export function TimePanel({
   /** 与案件其他写操作同一口径：经办（含合伙人）+ 案件未归档 */
   canWrite: boolean;
 }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [addOpen, setAddOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState<MatterTimeBoard["entries"][number] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const { summary, entries } = board;
 
   const cells: { label: string; value: string; tone?: string; hint?: string }[] = [
@@ -156,6 +164,48 @@ export function TimePanel({
                 <span className="shrink-0 text-[11px] text-muted-foreground">
                   {STATUS_LABEL[e.status] ?? e.status}
                 </span>
+                {/* 2026-11-20（P0-1 ⑥）：只有草稿/已提交可原地改删——已核定是审批人核对过的事实，
+                    已出账改动会让账单与工时对不上，已核销是审计痕迹。 */}
+                {canWrite && EDITABLE_STATUSES.has(e.status) ? (
+                  <span className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      className="text-[11px] text-muted-foreground hover:text-foreground"
+                      disabled={busyId === e.id}
+                      onClick={() => setEditEntry(e)}
+                    >
+                      改
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[11px] text-muted-foreground hover:text-destructive"
+                      disabled={busyId === e.id}
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: `删除这条工时（${hoursText(e.minutes)} 小时）？`,
+                          description: `${e.narrative.slice(0, 40)}${e.narrative.length > 40 ? "…" : ""}\n\n删除后不可恢复。审计会保留这条工时的全部字段（时长、金额、费率、内容），事后仍可追溯。`,
+                          confirmText: "删除",
+                          danger: true
+                        });
+                        if (!ok) return;
+                        setBusyId(e.id);
+                        startTransition(async () => {
+                          try {
+                            await deleteTimeEntry(e.id);
+                            toast.success("已删除");
+                            router.refresh();
+                          } catch (err) {
+                            toast.error("删除失败", { description: actionErrorMessage(err) });
+                          } finally {
+                            setBusyId(null);
+                          }
+                        });
+                      }}
+                    >
+                      删
+                    </button>
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -163,6 +213,14 @@ export function TimePanel({
       </section>
 
       {canWrite ? <AddTimeEntryDialog open={addOpen} onOpenChange={setAddOpen} matterId={matterId} /> : null}
+      {canWrite ? (
+        <AddTimeEntryDialog
+          open={editEntry !== null}
+          onOpenChange={(o) => { if (!o) setEditEntry(null); }}
+          matterId={matterId}
+          entry={editEntry}
+        />
+      ) : null}
     </div>
   );
 }
@@ -171,12 +229,24 @@ export function TimePanel({
 function AddTimeEntryDialog({
   open,
   onOpenChange,
-  matterId
+  matterId,
+  entry
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   matterId: string;
+  /** 传入即为编辑模式（2026-11-20，P0-1 ⑥） */
+  entry?: {
+    id: string;
+    workDate: Date | string;
+    minutes: number;
+    narrative: string;
+    taskCode: string | null;
+    billable: boolean;
+    noChargeReason: string | null;
+  } | null;
 }) {
+  const isEdit = !!entry;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [workDate, setWorkDate] = useState("");
@@ -189,6 +259,18 @@ function AddTimeEntryDialog({
 
   // 默认日期取上海「今天」：只在浏览器端设置，避免服务端/浏览器时区不同导致水合不一致
   useEffect(() => setWorkDate(shDayKey(new Date())), []);
+
+  // 编辑模式：打开时按传入记录预填（日期取上海日历日，与服务端口径一致）
+  useEffect(() => {
+    if (!open || !entry) return;
+    setWorkDate(shDayKey(new Date(entry.workDate)));
+    setHours(String(Math.floor(entry.minutes / 60)));
+    setMins(String(entry.minutes % 60));
+    setNarrative(entry.narrative);
+    setBillable(entry.billable ? "billable" : "free");
+    setNoChargeReason(entry.noChargeReason ?? "");
+    setTaskCode(entry.taskCode ?? "");
+  }, [open, entry]);
 
   const totalMinutes = (Number(hours) || 0) * 60 + (Number(mins) || 0);
 
@@ -217,6 +299,25 @@ function AddTimeEntryDialog({
     }
     startTransition(async () => {
       try {
+        if (isEdit && entry) {
+          // 编辑会重算费率与金额（改日期可能跨费率期），不沿用旧快照
+          const res = await updateTimeEntry({
+            id: entry.id,
+            workDate,
+            minutes: totalMinutes,
+            narrative,
+            taskCode: taskCode || "",
+            billable: billable === "billable",
+            noChargeReason: billable === "free" ? noChargeReason : ""
+          });
+          toast.success(
+            `已更新 · ${hoursText(totalMinutes)} 小时` +
+              (res.amount > 0 ? ` · 折算 ${formatCurrency(res.amount)}` : "")
+          );
+          onOpenChange(false);
+          router.refresh();
+          return;
+        }
         const res = await addTimeEntry({
           matterId,
           workDate,
@@ -248,9 +349,11 @@ function AddTimeEntryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[88vh] w-[92vw] max-w-xl flex-col gap-0 p-0">
         <DialogHeader className="border-b border-border px-6 py-4">
-          <DialogTitle>登记工时</DialogTitle>
+          <DialogTitle>{isEdit ? "编辑工时" : "登记工时"}</DialogTitle>
           <DialogDescription className="text-xs">
-            折算金额按录入时生效的费率计算并锁定快照，此后调整费率不会改动这条记录。
+            {isEdit
+              ? "保存后按当前费率与日期重新计算金额（改日期可能跨到另一个费率生效期）。已核定或已出账的工时不能改。"
+              : "折算金额按录入时生效的费率计算并锁定快照，此后调整费率不会改动这条记录。"}
           </DialogDescription>
         </DialogHeader>
 
