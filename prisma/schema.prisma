@@ -3434,6 +3434,12 @@ model ClientPortalUser {
   name           String
   passwordHash   String
   active         Boolean   @default(true)
+  /// 是否主账号（方案 §七 Q3：一客户一主账号，其余为协作者）
+  ///
+  /// 只影响**这张清单怎么展示**与「谁是这家客户的对接人」，
+  /// 不影响可见性：协作者默认可见该客户全部已分享内容（Q3 默认档）。
+  /// 「仅自己提交的」档要等工单（S3）落地才有作用对象，现在引入就是假开关。
+  isPrimary      Boolean   @default(true)
   /// 与员工侧同机制：递增即让该客户所有旧会话失效
   sessionVersion Int       @default(0)
   lastLoginAt    DateTime?

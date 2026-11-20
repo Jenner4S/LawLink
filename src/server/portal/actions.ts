@@ -76,6 +76,13 @@ export async function invitePortalUser(input: z.input<typeof inviteSchema>) {
   const { token, tokenHash } = createInviteToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+  // 主账号判定（方案 §七 Q3）：该客户当前是否已有启用的主账号。
+  // 已有 → 新账号是协作者；没有 → 新账号就是主账号（第一人即对接人）。
+  // 存量账号：迁移时 isPrimary 默认 true，所以老客户不会突然"没有主账号"。
+  const hasPrimary = await prisma.clientPortalUser.count({
+    where: { clientId: client.id, active: true, isPrimary: true }
+  });
+
   const portalUser = await prisma.$transaction(async (db) => {
     // 账号在「接受邀请」时才设密码；未接受前 passwordHash 存一个不可用占位，
     // 使其无法通过口令登录（哈希比对必然失败），也不留空串这种「看起来像密码」的值。
@@ -89,7 +96,8 @@ export async function invitePortalUser(input: z.input<typeof inviteSchema>) {
             clientId: client.id,
             email: data.email,
             name: data.name,
-            passwordHash: `!unusable:${createInviteToken().tokenHash}`
+            passwordHash: `!unusable:${createInviteToken().tokenHash}`,
+            isPrimary: hasPrimary === 0
           }
         });
 
@@ -298,6 +306,7 @@ export async function listPortalUsersForClient(clientId: string) {
       email: true,
       name: true,
       active: true,
+      isPrimary: true,
       lastLoginAt: true,
       createdAt: true,
       _count: { select: { invites: true } }
@@ -310,6 +319,7 @@ export async function listPortalUsersForClient(clientId: string) {
     email: r.email,
     name: r.name,
     active: r.active,
+    isPrimary: r.isPrimary,
     lastLoginAt: r.lastLoginAt,
     createdAt: r.createdAt,
     inviteCount: r._count.invites

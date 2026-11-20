@@ -34,7 +34,7 @@ export function PortalInviteButton({ clientId, clientName }: { clientId: string;
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [accounts, setAccounts] = useState<
-    { id: string; email: string; name: string; active: boolean; lastLoginAt: Date | null; inviteCount: number }[] | null
+    { id: string; email: string; name: string; active: boolean; isPrimary: boolean; lastLoginAt: Date | null; inviteCount: number }[] | null
   >(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -159,6 +159,13 @@ export function PortalInviteButton({ clientId, clientName }: { clientId: string;
                       {a.name}
                       <span className="ml-1 text-[10.5px] text-[var(--t-muted)]">{a.email}</span>
                     </span>
+                    <span
+                      className={`badge shrink-0 ${a.isPrimary ? "b-blue" : "b-white"}`}
+                      style={{ fontSize: 9 }}
+                      title={a.isPrimary ? "对接人：主账号" : "协作者：可见该客户全部已分享内容"}
+                    >
+                      {a.isPrimary ? "主账号" : "协作者"}
+                    </span>
                     <span className="shrink-0 text-[10px] text-[var(--t-muted)]">
                       {a.active ? (a.lastLoginAt ? "已登录过" : "待首次登录") : "已停用"}
                     </span>
@@ -219,6 +226,13 @@ export function PortalInviteButton({ clientId, clientName }: { clientId: string;
                   />
                   <p className="text-[11px] text-[var(--t-muted)]">
                     同一邮箱只能绑定一个客户；若该邮箱已属于其他客户，系统会拒绝（不显示是谁）。
+                  </p>
+                  <p className="text-[11px] text-[var(--t-muted)]">
+                    {accounts === null ? "" : accounts.some((a) => a.active && a.isPrimary) ? (
+                      <>该客户已有主账号，新邀请的将是<b>协作者</b>——可见该客户全部已分享内容，但永远看不到别的客户。</>
+                    ) : (
+                      <>该客户还没有主账号，新邀请的将是<b>主账号</b>（对接人）。之后邀请的同事自动成为协作者。</>
+                    )}
                   </p>
                 </div>
               </>

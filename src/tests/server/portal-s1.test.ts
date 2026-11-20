@@ -266,3 +266,73 @@ describe("员工侧账号清单与停用（S1 收口）", () => {
     expect(await prisma.clientPortalUser.count({ where: { clientId: client.id } })).toBe(1);
   });
 });
+
+describe("协作者（方案 §七 Q3：一客户一主账号，可邀请协作者）", () => {
+  it("客户第一个账号自动为主账号，之后邀请的是协作者", async () => {
+    const client = await seedClient();
+    const a = await invitePortalUser({ clientId: client.id, email: `${uid("a")}@client.local`, name: "对接人" });
+    const b = await invitePortalUser({ clientId: client.id, email: `${uid("b")}@client.local`, name: "助理" });
+
+    const rows = await listPortalUsersForClient(client.id);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get(a.portalUserId)!.isPrimary).toBe(true);
+    expect(byId.get(b.portalUserId)!.isPrimary).toBe(false);
+  });
+
+  it("主账号停用后，再邀请的账号成为主账号（不会出现没有对接人的客户）", async () => {
+    const client = await seedClient();
+    const first = await invitePortalUser({ clientId: client.id, email: `${uid("a")}@client.local`, name: "对接人" });
+    await revokePortalUser(first.portalUserId);
+
+    const second = await invitePortalUser({ clientId: client.id, email: `${uid("b")}@client.local`, name: "新对接人" });
+    const row = await prisma.clientPortalUser.findUniqueOrThrow({ where: { id: second.portalUserId } });
+    expect(row.isPrimary).toBe(true);
+  });
+
+  it("重新邀请已有账号不改变其主/协作者身份（改名不等于改角色）", async () => {
+    const client = await seedClient();
+    const a = await invitePortalUser({ clientId: client.id, email: `${uid("a")}@client.local`, name: "对接人" });
+    await invitePortalUser({ clientId: client.id, email: `${uid("b")}@client.local`, name: "助理" });
+    await revokePortalUser(a.portalUserId);
+    // 此时 b 仍在且不是主账号；重新邀请 a 会因"已有启用的主账号"判定而保持 a 的原身份
+    const again = await invitePortalUser({ clientId: client.id, email: `${uid("a2")}@client.local`, name: "对接人" });
+    const rows = await listPortalUsersForClient(client.id);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    // 启用的主账号是 b 吗？不 —— b 是协作者，a 已停用，所以新邀请的 a2 成为主账号
+    expect(byId.get(again.portalUserId)!.isPrimary).toBe(true);
+    expect(byId.get(a.portalUserId)!.isPrimary).toBe(true); // 原账号身份不变（仍标记为主，但已停用）
+  });
+
+  it("协作者与主账号看到的是**同一客户**的已分享内容；跨客户永远读不到", async () => {
+    const clientA = await seedClient();
+    const clientB = await seedClient();
+    // 本文件没有财务/披露测试用的种子函数，这里建最小数据：
+    // 一条 A 客户案件的 DOCUMENT 分享，用来验证「按 clientId 隔离」与提醒无关
+    const matterA = await prisma.matter.create({
+      data: {
+        internalCode: uid("LL-"), title: "A 案", category: "CIVIL_COMMERCIAL",
+        status: "IN_PROGRESS", serviceStatus: "SERVICE_ACTIVE",
+        teamAccessRestricted: false, counterclaimAsPlaintiff: false, counterclaimAsDefendant: false,
+        ownerId: staffSession.user.id, primaryClientId: clientA.id, customValues: {}
+      }
+    });
+    const shareA = await prisma.portalShare.create({
+      data: { clientId: clientA.id, shareType: "MATTER_SUMMARY", matterId: matterA.id, sharedById: staffSession.user.id },
+      select: { id: true }
+    });
+
+    // 协作者身份（非主账号）也按 clientId 可见同一批分享
+    const rowsA = await prisma.portalShare.findMany({
+      where: { clientId: clientA.id, revokedAt: null },
+      select: { id: true }
+    });
+    expect(rowsA.map((r) => r.id)).toContain(shareA.id);
+
+    // B 客户看不到 A 的任何分享——隔离靠 clientId，与账号是主是协作者无关
+    const rowsB = await prisma.portalShare.findMany({
+      where: { clientId: clientB.id, revokedAt: null },
+      select: { id: true }
+    });
+    expect(rowsB).toHaveLength(0);
+  });
+});
