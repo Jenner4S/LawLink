@@ -89,11 +89,28 @@ async function seedFixture() {
   const rec = await prisma.archiveRecord.create({
     data: {
       matterId: matter.id, archiveNo: uid("AR-"),
-      summary: "归档摘要", checklistJson: {}, archivedBy: "主办", archivedById: owner.id,
+      summary: "归档摘要", checklistJson: {},
+      // 归档人不是主办：否则 canReadDocument 的归档记录分支直接放行主办，
+      // 「归档材料需借阅」这条测不出来
+      archivedBy: "主任", archivedById: approver.id,
       status: "APPROVED"
     }
   });
   return { owner, outsider, approver, matter, rec };
+}
+
+/** 与 seedFixture 相同，但额外建一份材料（材料取阅策略用） */
+async function seedFixtureWithDoc() {
+  const base = await seedFixture();
+  const doc = await prisma.document.create({
+    data: {
+      matterId: base.matter.id, name: "判决书.pdf", path: `${uid("s")}/p.pdf`,
+      category: "OTHER", status: "APPROVED", mimeType: "application/pdf", size: 1024,
+      sha256: "a".repeat(64), algorithm: "AES-256-GCM",
+      uploadedById: base.approver.id
+    }
+  });
+  return { ...base, doc };
 }
 
 beforeEach(async () => {
@@ -203,13 +220,15 @@ describe("借阅状态机（真库）", () => {
   });
 });
 
-describe("缺陷特征化：借阅授权在合法路径上不可获得（2026-11-21 发现）", () => {
+describe("缺陷已修：借阅链在合法路径上闭环（2026-11-21 修复后）", () => {
   /**
-   * 这两条不是"期望行为"，是**把当前缺陷钉住**——防止有人以为借阅链已闭环，
-   * 也防止将来偷偷改变其中一端而不自知。
-   * 修的方案见文件顶部 A/B 两案，需业主定夺。
+   * 修复前这里的断言是**相反的**（「无可见性的人申请被拒」「有可见性的人无借阅也能读」
+   * 两条特征化缺陷）。修法见 src/server/archive/borrow-policy.ts：
+   * 归档案件的材料取阅默认要求有效借阅（可配置为 OPEN 回到旧行为）。
+   *
+   * 这两条现在是**正向**断言——如果有人把策略改回旧口径，它们会红。
    */
-  it("对该案无常规可见性的人：申请处就被拒 —— 无法走到需要借阅授权的那一端", async () => {
+  it("对该案无常规可见性的人：仍在申请处被拒（借阅只对本案相关人员开放）", async () => {
     const { outsider, rec } = await seedFixture();
     as(outsider);
     await expect(
@@ -217,13 +236,15 @@ describe("缺陷特征化：借阅授权在合法路径上不可获得（2026-11
     ).rejects.toThrow("仅对该案件具备可见性的成员可申请借阅");
   });
 
-  it("对案件有常规可见性的人：没有借阅单也能读 —— 借阅授权对其没有增量", async () => {
-    const { owner, matter } = await seedFixture();
-    // 归档后主办律师的可见性并未被收回（approveArchiveRecord 只写 status/archivedAt/closedAt）
-    const archived = await prisma.matter.findUniqueOrThrow({ where: { id: matter.id }, select: { status: true } });
-    expect(archived.status).toBe("ARCHIVED");
+  it("对案件有常规可见性的人：材料取阅已按策略要求借阅（不再是「本来就读得到」）", async () => {
+    const { owner, matter, doc } = await seedFixtureWithDoc();
+    const { canReadDocument } = await import("@/lib/approvals/documents");
+    // 元数据仍可读
     await expect(assertCanReadMatter(owner.id, "LAWYER", matter.id)).resolves.toBeUndefined();
-    // 且此时库里没有任何借阅单
-    expect(await prisma.archiveBorrowRequest.count()).toBe(0);
+    // 但材料内容默认不可读（需借阅）
+    const readable = await canReadDocument(owner.id, {
+      id: doc.id, uploadedById: doc.uploadedById, matterId: doc.matterId, intakeId: null, deletedAt: null
+    });
+    expect(readable).toBe(false);
   });
 });

@@ -169,10 +169,42 @@ export async function canReadDocument(
   // 软删可恢复：案件恢复（deletedAt 置回 null）后，材料自动重新可下载，
   // 与「删除不销毁数据」的既有语义不冲突。
   if (canReadBusiness && doc.matterId) {
-    const isMine = ctx?.accessibleMatterIds !== undefined
-      ? ctx.accessibleMatterIds.has(doc.matterId)
-      : (await prisma.matter.count({ where: { id: doc.matterId, deletedAt: null, OR: [{ ownerId: userId }, { members: { some: { userId } } }] } })) > 0;
-    if (isMine) return true;
+    // 2026-11-21：归档案件的**材料内容取阅**按策略要求有效借阅。
+    //
+    // 为什么要加这一跳：归档不收回团队/主办对案件的可见性，
+    // 于是「案件关系 → 直接下载材料」这条老路让借阅链空转
+    // （借阅授权只对"常规路径不通过"的人生效，而那些人在申请处就被拒）。
+    // 详见 src/server/archive/borrow-policy.ts 的缺陷说明。
+    //
+    // 只作用于材料内容，不影响案件元数据读取——否则归档等于消失。
+    const matterState = await prisma.matter.findUnique({
+      where: { id: doc.matterId },
+      select: { deletedAt: true, status: true, ownerId: true, members: { where: { userId }, select: { userId: true } } }
+    });
+    const isMine = Boolean(
+      matterState && !matterState.deletedAt &&
+      (matterState.ownerId === userId || matterState.members.length > 0)
+    );
+    if (isMine) {
+      if (matterState!.status !== "ARCHIVED") return true;
+      const { getArchiveMaterialPolicy, hasActiveArchiveBorrowGrant } = await import("@/server/archive/borrow-policy");
+      if (await getArchiveMaterialPolicy() === "OPEN") return true;
+      if (await hasActiveArchiveBorrowGrant(userId, doc.matterId)) return true;
+      // 归档人/审批人仍可看 —— 不能把归档的人自己锁在外面，否则没人愿意做归档这件事
+      const archivist = await prisma.archiveRecord.findFirst({
+        where: {
+          matterId: doc.matterId,
+          status: { in: ["APPROVED", "PENDING_REVIEW"] },
+          OR: [{ archivedById: userId }, { reviewedById: userId }]
+        },
+        select: { id: true }
+      });
+      if (archivist) return true;
+      // 归档且无有效借阅：**在这里收敛为拒绝**，不再落到后面的「历史上传关系 / 审批历史」
+      // 分支 —— 否则一个当年上传过材料的律师，在案件归档后仍能凭上传记录长期下载全文，
+      // 「归档 = 收起来」就名存实亡。这正是借阅链空转的另一半成因。
+      return false;
+    }
   }
   if (doc.intakeId) {
     const intake = await prisma.intake.findUnique({ where: { id: doc.intakeId }, select: { createdById: true, ownerUserId: true, coUserIds: true, status: true } });

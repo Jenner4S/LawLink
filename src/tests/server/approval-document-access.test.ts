@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { db, canApprove } = vi.hoisted(() => ({ db: {
-  systemSetting: { findUnique: vi.fn() }, user: { findUnique: vi.fn() }, matter: { count: vi.fn() }, intake: { findUnique: vi.fn() },
+  systemSetting: { findUnique: vi.fn() }, user: { findUnique: vi.fn() }, // 2026-11-21：canReadDocument 对「案件关系」分支改用 findUnique（需要 status 判断归档），
+  // 旧 mock 只有 count，会 TypeError。两个都留着，兼容不同分支。
+  matter: { count: vi.fn(), findUnique: vi.fn() }, intake: { findUnique: vi.fn() },
   document: { findUnique: vi.fn() }, sealRequest: { findFirst: vi.fn() }, invoiceRequest: { findMany: vi.fn() }, archiveRecord: { findMany: vi.fn() },
   // 2026-11-20：canReadDocument（下载/预览统一判定）新增隔离墙检查，需 mock。
   // 默认 null = 无墙；要验证「墙内不可下载」的用例可改返回值。
