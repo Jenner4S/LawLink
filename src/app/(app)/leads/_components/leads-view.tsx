@@ -225,19 +225,33 @@ export function LeadsView({
             <div>
               <div className="mb-1 text-[11px] text-[var(--t-muted)]">按渠道（决定钱往哪投）</div>
               <div className="space-y-0.5">
+                <div className="flex items-center gap-2 text-[9.5px] text-[var(--t-muted)]">
+                  <span className="w-28 shrink-0">渠道</span>
+                  <span className="w-24 shrink-0 text-right">线索 / 到店 / 成交</span>
+                  <span className="w-14 shrink-0 text-right">成交率</span>
+                  <span className="w-24 shrink-0 text-right">
+                    券{funnel.voucherSide === "COST" ? "成本" : funnel.voucherSide === "REVENUE" ? "收入" : ""}
+                  </span>
+                  <span className="w-24 shrink-0 text-right">单条线索 / 单成交</span>
+                </div>
                 {funnel.byChannel.slice(0, 6).map((r) => (
                   <div key={r.key} className="flex items-center gap-2 text-[11px]">
                     <span className="w-28 shrink-0 truncate" title={r.label}>{r.label}</span>
                     <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
-                      {r.total} 条 · 到店 {r.visited} · 成交 {r.converted}
+                      {r.total} / {r.visited} / {r.converted}
                     </span>
-                    <span className="w-20 shrink-0 text-right tabular">{pct(r.conversionRate)}</span>
-                    {r.voucherAmount > 0 ? (
-                      <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
-                        {/* 口径可配置（2026-11-22）：同一列不能既是成本又是收入 */}
-                        券{(funnel.voucherSide === "COST" ? "成本" : funnel.voucherSide === "REVENUE" ? "收入" : "")} ¥{r.voucherAmount}
-                      </span>
-                    ) : null}
+                    <span className="w-14 shrink-0 text-right tabular">{pct(r.conversionRate)}</span>
+                    <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
+                      {r.voucherAmount > 0 ? `¥${r.voucherAmount}` : "—"}
+                    </span>
+                    {/* 单位成本（2026-11-22）：只做成本，不做 ROI 比率——
+                        收入侧没有可信数据，混进来会把"线索质量"和"客单价"搅在一起。
+                        分母为 0 或未录券金额时显示「—」，不显示 0（0 成本会被误读成"不花钱"）。 */}
+                    <span className="w-24 shrink-0 text-right tabular">
+                      {r.costPerLead === null ? "—" : `¥${r.costPerLead}`}
+                      {" / "}
+                      {r.costPerConverted === null ? "—" : `¥${r.costPerConverted}`}
+                    </span>
                   </div>
                 ))}
               </div>

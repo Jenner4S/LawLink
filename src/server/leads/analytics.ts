@@ -76,12 +76,29 @@ export type LeadFunnel = {
     converted: number;
     voucherAmount: number;
     conversionRate: number | null;
+    /**
+     * 单位成本（2026-11-22 渠道 ROI）：券金额 ÷ 线索数 / 到店数 / 成交数。
+     * **只做成本，不做 ROI 比率**——收入侧没有可信数据（成交金额虽有，但它是
+     * 案件标的或收费，混进渠道口径会把"线索质量"和"客单价"搅在一起）。
+     * 分母为 0 或券金额为 0 时为 null，界面显示「—」：
+     * 0 成本会被误读成"这个渠道不花钱"，那比不显示更危险。
+     */
+    costPerLead: number | null;
+    costPerVisit: number | null;
+    costPerConverted: number | null;
   }[];
   byOwner: { ownerId: string; ownerName: string; total: number; converted: number; conversionRate: number | null }[];
   lostReasons: { reason: string; count: number }[];
 };
 
 const rate = (num: number, den: number): number | null => (den === 0 ? null : Math.round((num / den) * 1000) / 10);
+
+/**
+ * 单位成本：券金额 ÷ 分母。分母或金额为 0 时返回 null（界面显示「—」）。
+ * 返回 0 会有害：读者会以为"这个渠道零成本"，而真相往往是"还没录金额"。
+ */
+const unitCost = (amount: number, denominator: number): number | null =>
+  amount > 0 && denominator > 0 ? Math.round((amount / denominator) * 100) / 100 : null;
 
 export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): Promise<LeadFunnel> {
   const periodStart = period.start ?? shMonthStart();
@@ -206,7 +223,10 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
         visited: v.visited,
         converted: v.converted,
         voucherAmount: Math.round(v.voucherAmount * 100) / 100,
-        conversionRate: rate(v.converted, v.total)
+        conversionRate: rate(v.converted, v.total),
+        costPerLead: unitCost(v.voucherAmount, v.total),
+        costPerVisit: unitCost(v.voucherAmount, v.visited),
+        costPerConverted: unitCost(v.voucherAmount, v.converted)
       }))
       .sort((a, b) => b.total - a.total),
     byOwner: [...ownerAgg.entries()]
