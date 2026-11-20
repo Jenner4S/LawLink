@@ -208,6 +208,7 @@ export function MatterDetailTabs({
   currentUserRole,
   rolePermissions,
   writeOffRows,
+  commissionSuggestions,
   canAssociateThisMatter,
   canLeadThisMatter,
   canOwnThisMatter,
@@ -236,6 +237,8 @@ export function MatterDetailTabs({
   rolePermissions?: RoleGrant[];
   /** 坏账明细（2026-11-22 P0-5），由页面用 listWriteOffs 取 */
   writeOffRows?: unknown[];
+  /** 分成角色建议（2026-11-22 D 段），只建议不自动写 */
+  commissionSuggestions?: { role: string; userId: string; userName: string; reason: string }[];
   canAssociateThisMatter: boolean;
   canLeadThisMatter: boolean;
   canOwnThisMatter: boolean;
@@ -688,6 +691,7 @@ export function MatterDetailTabs({
                 // 分成方案的可见性：需 finance.write 且案件未归档（服务端另校验主办/协办）
                 canManageCommission={allowed("finance.write") && matter.status !== "ARCHIVED"}
                 hideStats
+                commissionSuggestions={commissionSuggestions ?? []}
               />
             ) : null}
           </div>

@@ -14,8 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { setCommissionPlan } from "@/server/finance/actions";
 import { actionErrorMessage } from "@/lib/action-error";
 
-type Row = { userId: string; percent: string; label: string };
-type PlanRow = { id: string; percent: number; label: string | null; userId: string; user?: { id: string; name: string } | null };
+type Row = { userId: string; percent: string; label: string; role: string };
+type PlanRow = { id: string; percent: number; label: string | null; role?: string | null; userId: string; user?: { id: string; name: string } | null };
 
 /**
  * 分成方案设置（2026-11-20）
@@ -36,13 +36,16 @@ export function CommissionPlanDialog({
   onOpenChange,
   matterId,
   userOptions,
-  currentPlans
+  currentPlans,
+  suggestions = []
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   matterId: string;
   userOptions: { id: string; name: string }[];
   currentPlans: PlanRow[];
+  /** 角色建议（2026-11-22 D 段）：只预填空行，由人确认后保存 */
+  suggestions?: { role: string; userId: string; userName: string; reason: string }[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -55,17 +58,24 @@ export function CommissionPlanDialog({
         ? currentPlans.map((p) => ({
             userId: p.userId ?? p.user?.id ?? "",
             percent: String(Number(p.percent)),
-            label: p.label ?? ""
+            label: p.label ?? "",
+            role: p.role ?? ""
           }))
-        : [{ userId: "", percent: "", label: "" }]
+        : suggestions.length > 0
+          // 有建议时按角色预填（比例留空——比例是谈出来的，系统不该猜）
+          ? suggestions.map((s) => ({ userId: s.userId, percent: "", label: "", role: s.role }))
+          : [{ userId: "", percent: "", label: "", role: "" }]
     );
-  }, [open, currentPlans]);
+  }, [open, currentPlans, suggestions]);
 
   const total = rows.reduce((sum, r) => {
     const v = Number(r.percent);
     return sum + (Number.isFinite(v) ? v : 0);
   }, 0);
   const over = total > 100 + 1e-8;
+  // 合计不足 100 不阻断（有些所只给部分角色分成，其余归所里），
+  // 但必须让人看见——否则"以为分完了"和"其实还有余额"会长期并存。
+  const short = total > 0 && total < 100 - 1e-8;
 
   const submit = () => {
     const items = rows
@@ -73,7 +83,8 @@ export function CommissionPlanDialog({
       .map((r) => ({
         userId: r.userId,
         percent: Number(r.percent),
-        label: r.label.trim() || ""
+        label: r.label.trim() || "",
+        role: (r.role || undefined) as "REFERRER" | "INVITER" | "CLOSER" | "OTHER" | undefined
       }));
 
     if (items.length === 0) {
@@ -137,6 +148,28 @@ export function CommissionPlanDialog({
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="w-28 space-y-1">
+                  <Label className="text-[11px]">角色</Label>
+                  {/* 2026-11-22 D 段：角色结构化才能按"邀约人"汇总提成。
+                      自由文本写"邀约"/"约人"/"邀约人"三种叫法必然统计错。 */}
+                  <Select
+                    value={r.role || "NONE"}
+                    onValueChange={(v) =>
+                      setRows((prev) => prev.map((x, j) => (j === i ? { ...x, role: v === "NONE" ? "" : v } : x)))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="未标注" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">未标注</SelectItem>
+                      <SelectItem value="REFERRER">案源人</SelectItem>
+                      <SelectItem value="INVITER">邀约人</SelectItem>
+                      <SelectItem value="CLOSER">面谈签约人</SelectItem>
+                      <SelectItem value="OTHER">其他</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="w-24 space-y-1">
                   <Label className="text-[11px]">比例%</Label>
                   <Input
@@ -175,12 +208,12 @@ export function CommissionPlanDialog({
             variant="outline"
             size="sm"
             className="gap-1 text-xs"
-            onClick={() => setRows((prev) => [...prev, { userId: "", percent: "", label: "" }])}
+            onClick={() => setRows((prev) => [...prev, { userId: "", percent: "", label: "", role: "" }])}
           >
             <Plus className="h-3 w-3" /> 增加一行
           </Button>
           <p className={over ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-            合计 {total.toFixed(2)}%{over ? "（超过 100%，无法保存）" : ""}
+            合计 {total.toFixed(2)}%{over ? "（超过 100%，无法保存）" : short ? "（不足 100%，余额归所内）" : ""}
           </p>
         </FormDialogBody>
         <DialogFooter>

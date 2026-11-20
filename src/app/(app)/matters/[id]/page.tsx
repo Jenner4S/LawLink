@@ -13,6 +13,7 @@ import { notFound, redirect } from "next/navigation";
 import { getMatterById } from "@/server/matters/actions";
 import { ActionError } from "@/lib/action-error";
 import { listWriteOffs } from "@/server/finance/writeoff-actions";
+import { suggestCommissionRoles } from "@/server/finance/commission-roles";
 import { getMatterFinance } from "@/server/finance/actions";
 import { listActiveColleagues } from "@/server/users/actions";
 import { getLatestArchiveRecord } from "@/server/archive/actions";
@@ -87,7 +88,8 @@ export default async function MatterDetailPage({ params }: PageProps) {
     latestArchive,
     customFieldDefs,
     preservationCases,
-    writeOffRows
+    writeOffRows,
+    commissionSuggestions
   ] = await Promise.all([
     allowed("finance.read") ? getMatterFinance(matter.id) : Promise.resolve({ billings: [], entries: [], plans: [], stats: { outstanding:0, allocated:0, clientFunds:0, contractAmount: 0, receivable: 0, received: 0, pendingReceived: 0, refund: 0, cost: 0, commission: 0, invoiced: 0, writeOff: 0, outstandingNet: 0 }, writeOffs: [], contingency: { plans: [], total: 0 } }),
     listActiveColleagues(),
@@ -183,7 +185,9 @@ export default async function MatterDetailPage({ params }: PageProps) {
       }
     }),
     // 2026-11-22 P0-5：坏账明细（含申报人/状态，用于界面展示与审批）
-    allowed("finance.read") ? listWriteOffs(matter.id) : Promise.resolve([])
+    allowed("finance.read") ? listWriteOffs(matter.id) : Promise.resolve([]),
+    // 2026-11-22 D 段：分成角色建议（只建议、不自动写）
+    allowed("finance.read") ? suggestCommissionRoles(matter.id) : Promise.resolve([])
   ]);
 
   // getMatterFinance 已在 action 出口统一序列化 Decimal
@@ -253,6 +257,7 @@ export default async function MatterDetailPage({ params }: PageProps) {
         matter={matter}
         finance={finance}
         writeOffRows={writeOffRows}
+        commissionSuggestions={commissionSuggestions}
         userOptions={[
           ...userOptions,
           ...matter.members.filter((m) => !userOptions.some((u) => u.id === m.userId)).map((m) => ({ ...m.user, active: false, isTeammate: false }))

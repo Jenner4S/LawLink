@@ -476,6 +476,7 @@ export async function setCommissionPlan(input: CommissionPlanSetInput) {
         userId: it.userId,
         percent: new Prisma.Decimal(it.percent),
         label: it.label || null,
+        role: it.role ?? null,
         active: true
       }))
     });
@@ -484,7 +485,7 @@ export async function setCommissionPlan(input: CommissionPlanSetInput) {
     action: "COMMISSION_PLAN_SET",
     targetType: "Matter",
     targetId: data.matterId,
-    detail: { itemCount: data.items.length }
+    detail: { itemCount: data.items.length, roles: data.items.map((i) => i.role ?? null) }
     });
   });
 

@@ -22,7 +22,8 @@ export function FinancePanel({
   canRequestInvoice,
   canManageCommission = false,
   compact = false,
-  hideStats = false
+  hideStats = false,
+  commissionSuggestions = []
 }: {
   matterId: string;
   finance: FinancePayload;
@@ -33,6 +34,8 @@ export function FinancePanel({
   compact?: boolean;
   /** 上方已有收费概览时隐藏指标网格 */
   hideStats?: boolean;
+  /** 分成角色建议（2026-11-22 D 段）：界面上预填，由人确认，绝不自动写 */
+  commissionSuggestions?: { role: string; userId: string; userName: string; reason: string }[];
 }) {
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [commissionOpen, setCommissionOpen] = useState(false);
@@ -172,6 +175,7 @@ export function FinancePanel({
           matterId={matterId}
           userOptions={userOptions}
           currentPlans={(finance.plans ?? []) as never}
+          suggestions={commissionSuggestions}
         />
       ) : null}
       {contingencyPlans.length > 0 ? (

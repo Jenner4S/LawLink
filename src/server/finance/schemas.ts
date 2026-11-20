@@ -52,7 +52,10 @@ export const commissionPlanSetSchema = z.object({
           value => Math.abs(value * 100 - Math.round(value * 100)) < 1e-8,
           "分成比例最多两位小数"
         ),
-        label: z.string().max(40).optional().or(z.literal(""))
+        label: z.string().max(40).optional().or(z.literal("")),
+        // 2026-11-22 D 段：结构化角色。客户把功劳拆给案源/邀约/面签三人，
+        // 那是三笔绩效；靠 label 自由文本无法按角色汇总。
+        role: z.enum(["REFERRER", "INVITER", "CLOSER", "OTHER"]).optional()
       })
     )
     .default([])
@@ -61,9 +64,18 @@ export const commissionPlanSetSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["items"], message: "分成比例合计不得超过 100%" });
   }
   const users = new Set<string>();
+  // 同一角色只能有一个受益人：案源人是"谁带来的"，两个人同时当案源人，
+  // 这笔绩效就无法归属。允许同一人兼多角色（要有两行，故按 userId 判重仍在）。
+  const roles = new Set<string>();
   items.forEach((item, index) => {
     if (users.has(item.userId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["items", index, "userId"], message: "同一受益人只能设置一项分成" });
     users.add(item.userId);
+    if (item.role && item.role !== "OTHER") {
+      if (roles.has(item.role)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["items", index, "role"], message: "同一角色只能指定一人" });
+      }
+      roles.add(item.role);
+    }
   });
 });
 

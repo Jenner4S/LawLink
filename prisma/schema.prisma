@@ -1784,17 +1784,34 @@ model FeeEntry {
   @@index([confirmState, occurredAt])
 }
 
+/// 分成角色（2026-11-22，对标分析 P1-1 / D 段）
+///
+/// 客户现行系统把功劳拆给三个人：**案源人 / 邀约人 / 面谈签约人**。
+/// 这不是同一字段的三种叫法，是**三笔绩效**。
+///
+/// 此前 `CommissionPlan.label` 是自由文本——能写，但统计不了：
+/// 「按邀约人算提成」需要按语义分组，靠字符串匹配（"邀约"/"邀约人"/"约人"）必然出错。
+/// 故加结构化 role；label 保留为补充说明（如"协助面签"）。
+enum CommissionRole {
+  REFERRER // 案源人：谁带来的
+  INVITER // 邀约人：谁约来的
+  CLOSER // 面谈签约人：谁谈成的
+  OTHER // 其他（协作、转介分成等）
+}
+
 model CommissionPlan {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   matterId  String
-  matter    Matter   @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  matter    Matter          @relation(fields: [matterId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  percent   Decimal  @db.Decimal(5, 2)
+  user      User            @relation(fields: [userId], references: [id])
+  percent   Decimal         @db.Decimal(5, 2)
   label     String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  /// 角色（2026-11-22）：同案同一角色只应有一人，由 schema 校验
+  role      CommissionRole?
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   @@unique([matterId, userId])
   @@index([matterId])
