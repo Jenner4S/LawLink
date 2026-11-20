@@ -25,6 +25,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import type { LeadStage, LeadSource } from "@prisma/client";
 import { shMonthStart } from "@/server/finance/facts";
 
@@ -62,6 +63,11 @@ export type LeadFunnel = {
    * 优先用 channelId（一级渠道名，二级用「一级 / 二级」表示）；为空回退 source 枚举文案。
    * voucherAmount 为该渠道本期券金额合计（口径待业主确认，只展示不参与比率）。
    */
+  /**
+   * 券金额归属口径（2026-11-22 可配置）：COST 成本侧 / REVENUE 收入侧 / IGNORED 只记录。
+   * 界面据此把那一列标成「券成本」还是「券收入」，避免同一列被两种解读混用。
+   */
+  voucherSide: "COST" | "REVENUE" | "IGNORED";
   byChannel: {
     key: string;
     label: string;
@@ -94,6 +100,8 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
   });
 
   const total = leads.length;
+  // 券金额归属口径（2026-11-22 可配置）：界面据此标注那一列是成本还是收入
+  const { voucherAmountSide } = await getLeadFinancePolicy();
   let invited = 0;
   let visited = 0;
   let consulted = 0;
@@ -168,6 +176,7 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
   return {
     periodStart,
     periodEnd,
+    voucherSide: voucherAmountSide,
     total,
     invited,
     visited,

@@ -57,14 +57,24 @@ export function computeContingencyAccruals(
     contingencyPercent: Prisma.Decimal | number | string | null;
     signedAt: Date | null;
   }[],
-  netReceived: number
+  netReceived: number,
+  /**
+   * 计提基数（2026-11-22 可配置，见 settings/lead-finance-policy.ts）：
+   * RECEIVED 按回款（默认，行业惯例）；CONTRACT 按合同额（预估收入口径）。
+   * 两种口径下金额都不落库、读时派生，切换不改历史数据。
+   */
+  basis: "RECEIVED" | "CONTRACT" = "RECEIVED"
 ): ContingencyPlan[] {
   return billings
     .filter((b) => b.contingencyPercent !== null && b.contingencyPercent !== undefined)
     .map((b) => {
       const percent = Number(b.contingencyPercent);
       // 未签署的合同不参与计提：还没生效的约定不能拿去算钱
-      const effective = b.signedAt ? netReceived : 0;
+      const effective = b.signedAt
+        ? basis === "CONTRACT"
+          ? Number(b.contractAmount)
+          : netReceived
+        : 0;
       return {
         billingId: b.id,
         billingTitle: b.title,

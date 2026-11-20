@@ -14,6 +14,8 @@ import { formatDateTime } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
 import { addLeadActivity, assignLeadLawyer, convertLeadToIntake, createLead, markLeadLost, respondLeadAssignment, setLeadSecondOwner, type LeadRow } from "@/server/leads/actions";
 import { createLeadChannel, toggleLeadChannel } from "@/server/leads/channels-actions";
+import { updateLeadFinancePolicy } from "@/server/settings/lead-finance-policy-actions";
+import type { LeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import type { LeadFunnel } from "@/server/leads/analytics";
 import type { ChannelNode } from "@/server/leads/channels";
 
@@ -42,7 +44,8 @@ export function LeadsView({
   owners,
   channels,
   lawyers,
-  assigneeView = "ALL"
+  assigneeView = "ALL",
+  financePolicy
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -54,6 +57,8 @@ export function LeadsView({
   lawyers: { id: string; name: string }[];
   /** 当前派单视图（2026-11-22）：ALL / PENDING_ASSIGN / PENDING_ACCEPT */
   assigneeView?: "ALL" | "PENDING_ASSIGN" | "PENDING_ACCEPT";
+  /** 业务口径（2026-11-22）：风代计提基数、券金额归属 */
+  financePolicy: LeadFinancePolicy;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -228,7 +233,10 @@ export function LeadsView({
                     </span>
                     <span className="w-20 shrink-0 text-right tabular">{pct(r.conversionRate)}</span>
                     {r.voucherAmount > 0 ? (
-                      <span className="w-16 shrink-0 text-right tabular text-[var(--t-muted)]">券 ¥{r.voucherAmount}</span>
+                      <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
+                        {/* 口径可配置（2026-11-22）：同一列不能既是成本又是收入 */}
+                        券{(funnel.voucherSide === "COST" ? "成本" : funnel.voucherSide === "REVENUE" ? "收入" : "")} ¥{r.voucherAmount}
+                      </span>
                     ) : null}
                   </div>
                 ))}
@@ -318,12 +326,61 @@ export function LeadsView({
           onClick={() => setChannelPanel((v) => !v)}
           className="text-[11px] text-[var(--t-muted)] underline decoration-dotted"
         >
-          {channelPanel ? "收起渠道设置" : "渠道设置"}
+          {channelPanel ? "收起渠道与口径" : "渠道与口径"}
         </button>
       </div>
 
       {channelPanel ? (
         <div className="card mb-3 p-4">
+          <div className="mb-3 rounded border border-[var(--bd-hair)] p-2">
+            <p className="mb-1 text-[12px] font-medium">业务口径（改配置即可，不动代码）</p>
+            <p className="mb-2 text-[10.5px] text-[var(--t-muted)]">
+              这两项只有业主能定；定下来之前系统按有主张的默认跑，定了随时切换。
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <label className="text-[11px]">
+                风代计提基数
+                <select
+                  className="input ml-1 h-6 text-[11px]"
+                  value={financePolicy.contingencyBasis}
+                  disabled={isPending}
+                  onChange={(e) => startTransition(async () => {
+                    try {
+                      await updateLeadFinancePolicy({ ...financePolicy, contingencyBasis: e.target.value as "RECEIVED" | "CONTRACT" });
+                      toast.success("已切换计提基数");
+                      router.refresh();
+                    } catch (err) {
+                      toast.error("保存失败", { description: actionErrorMessage(err) });
+                    }
+                  })}
+                >
+                  <option value="RECEIVED">按回款（默认，先收后提）</option>
+                  <option value="CONTRACT">按合同额（预估收入）</option>
+                </select>
+              </label>
+              <label className="text-[11px]">
+                团购/券金额归属
+                <select
+                  className="input ml-1 h-6 text-[11px]"
+                  value={financePolicy.voucherAmountSide}
+                  disabled={isPending}
+                  onChange={(e) => startTransition(async () => {
+                    try {
+                      await updateLeadFinancePolicy({ ...financePolicy, voucherAmountSide: e.target.value as "COST" | "REVENUE" | "IGNORED" });
+                      toast.success("已切换券金额口径");
+                      router.refresh();
+                    } catch (err) {
+                      toast.error("保存失败", { description: actionErrorMessage(err) });
+                    }
+                  })}
+                >
+                  <option value="COST">成本侧（律所付平台，默认）</option>
+                  <option value="REVENUE">收入侧（客户付券款）</option>
+                  <option value="IGNORED">只记录，不参与计算</option>
+                </select>
+              </label>
+            </div>
+          </div>
           <p className="mb-1 text-[13px] font-medium">渠道（两级）</p>
           <p className="mb-2 text-[10.5px] text-[var(--t-muted)]">
             渠道做成单选才能聚合出「某平台本月来多少条、成交几单」。停用不删除——历史线索仍指向它。

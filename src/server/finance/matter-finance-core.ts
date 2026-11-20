@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { getFinanceFacts, sumAmounts } from "@/server/finance/facts";
 import { serializeDecimals } from "@/lib/decimal";
 import { computeContingencyAccruals, sumContingencyAccruals } from "./contingency";
+import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 
 export async function computeMatterFinanceFacts(matterId: string) {
   const [billings, entries, plans, issuedInvoices, writeOffs] = await Promise.all([
@@ -106,7 +107,9 @@ export async function computeMatterFinanceFacts(matterId: string) {
 
   // 2026-11-22 P0-4：风险代理计提。金额不落库、按当前实收派生，
   // 并明确标注为估算（见 contingency.ts 文件头）。
-  const contingencyPlans = computeContingencyAccruals(billings, stats.received);
+  // 计提基数走可配置口径（默认回款）：业主定下另一口径后改配置即可，不动代码
+  const { contingencyBasis } = await getLeadFinancePolicy();
+  const contingencyPlans = computeContingencyAccruals(billings, stats.received, contingencyBasis);
   const contingency = { plans: contingencyPlans, total: sumContingencyAccruals(contingencyPlans) };
 
   return serializeDecimals({ billings, entries, plans, stats, invoices: issuedInvoices, contingency, writeOffs, ledgerReady:Boolean(facts) });
