@@ -11,6 +11,8 @@ const targetLabels: Record<string, string> = {
   SmsMessage: "法院短信", StageTemplate: "阶段模板", SystemSetting: "系统设置", Task: "事项",
   Team: "律师团队", User: "用户", BuiltinRole: "内置角色", RoleDefinition: "自定义角色",
   Engagement: "委托", EvidenceItem: "证据项",
+  // 门户 S1（2026-11-20）：客户侧账号与邀请，审计页须能一眼看出是「客户门户」而非员工账号
+  ClientPortalUser: "客户门户账号", PortalInvite: "门户邀请",
   // 第七轮体检：补齐缺失对象标签（缺失时审计页显示「其他对象」）
   ArchiveBorrowRequest: "案卷借阅申请", CommissionSettlement: "分成结算", DeadlineRule: "期限规则",
   FeeEntryList: "收付记录列表", FinanceCorrection: "财务更正", Holiday: "放假安排",
@@ -92,6 +94,13 @@ const words: Record<string, string> = {
   // PRESERVATION_PROPERTY_RENEW/LIFT/DELETE 六个动作。被保全人与续封/解除/删除
   // 都是律所高风险操作，审计页必须一眼读懂，不能落到「其他操作」。
   TARGET: "被保全人", RENEW: "续封",
+  // 客户门户 S1（2026-11-20）：PORTAL_INVITE_CREATE / PORTAL_INVITE_ACCEPT /
+  // PORTAL_LOGIN / PORTAL_LOGIN_BLOCKED / PORTAL_USER_REVOKE
+  // 前两个构成「邀请—接受」闭环，后三个是登录与踢下线。
+  // BLOCKED 单独给词条：它记的是「有人拿着正确口令但账号已停用/客户已删」，
+  // 是安全事件而不是普通登录，审计页必须能区分。
+  // LOGIN 已在上面「登录/退出登录」组里定义，此处不重复（重复键在 TS 里是错误）
+  PORTAL: "客户门户", INVITE: "邀请", ACCEPT: "接受", BLOCKED: "被拦截",
 };
 export function auditActionLabel(code: string): string {
   const parts = code.split("_");

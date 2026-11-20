@@ -437,66 +437,66 @@ model RolePermission {
 }
 
 model User {
-  createdEthicalWalls EthicalWall[]       @relation("EthicalWallCreator")
-  liftedEthicalWalls  EthicalWall[]       @relation("EthicalWallLifter")
-  ethicalWallDenials  EthicalWallDenial[]  @relation("EthicalWallDeniedUser")
-  timeEntries   TimeEntry[]    @relation("TimeEntryUser")
-  rateSchedules RateSchedule[] @relation("RateScheduleUser")
-  archiveBorrows ArchiveBorrowRequest[] @relation("ArchiveBorrowApplicant")
-  archiveBorrowApprovals ArchiveBorrowRequest[] @relation("ArchiveBorrowApprover")
-  invoiceAdjustments InvoiceAdjustment[]
+  createdEthicalWalls            EthicalWall[]              @relation("EthicalWallCreator")
+  liftedEthicalWalls             EthicalWall[]              @relation("EthicalWallLifter")
+  ethicalWallDenials             EthicalWallDenial[]        @relation("EthicalWallDeniedUser")
+  timeEntries                    TimeEntry[]                @relation("TimeEntryUser")
+  rateSchedules                  RateSchedule[]             @relation("RateScheduleUser")
+  archiveBorrows                 ArchiveBorrowRequest[]     @relation("ArchiveBorrowApplicant")
+  archiveBorrowApprovals         ArchiveBorrowRequest[]     @relation("ArchiveBorrowApprover")
+  invoiceAdjustments             InvoiceAdjustment[]
   // WebAuthn / Passkey（台账 P2-2 后半）：一个账号可绑定多台设备
-  webAuthnCredentials WebAuthnCredential[]
-  outgoingIntakeHandovers IntakeHandover[] @relation("IntakeHandoverFrom")
-  incomingIntakeHandovers IntakeHandover[] @relation("IntakeHandoverTo")
-  initiatedIntakeHandovers IntakeHandover[] @relation("IntakeHandoverInitiator")
-  requestedTerminations ExecutionTermination[] @relation("TerminationRequester")
-  decidedTerminations ExecutionTermination[] @relation("TerminationDecider")
-  archiveFinanceResponsibilities ArchiveClosurePlan[] @relation("ArchiveFinanceOwner")
-  workResponsibilities WorkResponsibility[] @relation("WorkAssignee")
-  proposedWork WorkResponsibility[] @relation("ProposedWork")
-  urgentResponsibilities IntakeUrgentItem[] @relation("UrgentAssignee")
-  proposedUrgent IntakeUrgentItem[] @relation("ProposedUrgent")
-  handoversInitiated MatterHandover[] @relation("HandoverInitiator")
-  handoversSent MatterHandover[] @relation("HandoverSender")
-  handoversReceived MatterHandover[] @relation("HandoverReceiver")
-  intakeSubmissions IntakeRevision[]
-  confirmedFinanceCorrections FinanceCorrection[] @relation("FinanceCorrectionConfirmer")
-  invoicePaymentAllocations InvoicePaymentAllocation[] @relation("InvoiceAllocationRecorder")
-  commissionSettlements CommissionSettlement[] @relation("CommissionSettlementRecorder")
-  confirmedReceivableConditions Receivable[] @relation("ReceivableConditionConfirmer")
+  webAuthnCredentials            WebAuthnCredential[]
+  outgoingIntakeHandovers        IntakeHandover[]           @relation("IntakeHandoverFrom")
+  incomingIntakeHandovers        IntakeHandover[]           @relation("IntakeHandoverTo")
+  initiatedIntakeHandovers       IntakeHandover[]           @relation("IntakeHandoverInitiator")
+  requestedTerminations          ExecutionTermination[]     @relation("TerminationRequester")
+  decidedTerminations            ExecutionTermination[]     @relation("TerminationDecider")
+  archiveFinanceResponsibilities ArchiveClosurePlan[]       @relation("ArchiveFinanceOwner")
+  workResponsibilities           WorkResponsibility[]       @relation("WorkAssignee")
+  proposedWork                   WorkResponsibility[]       @relation("ProposedWork")
+  urgentResponsibilities         IntakeUrgentItem[]         @relation("UrgentAssignee")
+  proposedUrgent                 IntakeUrgentItem[]         @relation("ProposedUrgent")
+  handoversInitiated             MatterHandover[]           @relation("HandoverInitiator")
+  handoversSent                  MatterHandover[]           @relation("HandoverSender")
+  handoversReceived              MatterHandover[]           @relation("HandoverReceiver")
+  intakeSubmissions              IntakeRevision[]
+  confirmedFinanceCorrections    FinanceCorrection[]        @relation("FinanceCorrectionConfirmer")
+  invoicePaymentAllocations      InvoicePaymentAllocation[] @relation("InvoiceAllocationRecorder")
+  commissionSettlements          CommissionSettlement[]     @relation("CommissionSettlementRecorder")
+  confirmedReceivableConditions  Receivable[]               @relation("ReceivableConditionConfirmer")
   // 合同确认留痕（P1-4 降级实现）：仅记录「客户已阅知并确认」，不构成电子签名
-  createdContractConfirmations ContractConfirmation[] @relation("ContractConfirmationCreator")
-  id                     String                     @id @default(cuid())
-  name                   String
-  email                  String                     @unique
-  passwordHash           String
-  role                   UserRole                   @default(LAWYER)
-  systemRole             SystemRole                 @default(NONE)
-  managerAuthorized     Boolean                    @default(false)
-  roleDefinitionId       String?
-  roleDefinition         RoleDefinition?            @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
-  phone                  String?
-  identityDocumentType   IdentityDocumentType?
-  identityDocumentName   String?                    @db.VarChar(60)
-  identityDocumentNumber String?                    @db.VarChar(50)
-  avatar                 String?
-  active                 Boolean                    @default(true)
-  lastLoginAt            DateTime?
-  sessionVersion         Int                        @default(0)
+  createdContractConfirmations   ContractConfirmation[]     @relation("ContractConfirmationCreator")
+  id                             String                     @id @default(cuid())
+  name                           String
+  email                          String                     @unique
+  passwordHash                   String
+  role                           UserRole                   @default(LAWYER)
+  systemRole                     SystemRole                 @default(NONE)
+  managerAuthorized              Boolean                    @default(false)
+  roleDefinitionId               String?
+  roleDefinition                 RoleDefinition?            @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+  phone                          String?
+  identityDocumentType           IdentityDocumentType?
+  identityDocumentName           String?                    @db.VarChar(60)
+  identityDocumentNumber         String?                    @db.VarChar(50)
+  avatar                         String?
+  active                         Boolean                    @default(true)
+  lastLoginAt                    DateTime?
+  sessionVersion                 Int                        @default(0)
   // v1.x P0-3: 登录失败锁定（连续失败计数 + 锁定截止时间；成功登录清零）
-  failedLoginAttempts    Int                        @default(0)
-  lockedUntil            DateTime?
+  failedLoginAttempts            Int                        @default(0)
+  lockedUntil                    DateTime?
   // v1.x P1: TOTP 双步验证（RFC 6238；secret 加密存储，恢复码只存哈希）
-  totpEnabled            Boolean                    @default(false)
-  totpSecret             String?
-  recoveryCodeHashes     String[]                   @default([])
+  totpEnabled                    Boolean                    @default(false)
+  totpSecret                     String?
+  recoveryCodeHashes             String[]                   @default([])
   // v1.x P1 收尾 c: 管理端强制开启——enforced 且未绑定时拒绝登录（提示先绑定），
   // 且用户不可自行关闭双步验证；由 SUPER_ADMIN 通过 forceEnforceTotp 设置。
-  totpEnforced           Boolean                    @default(false)
-  approvalMemberships    ApprovalPermissionMember[]
+  totpEnforced                   Boolean                    @default(false)
+  approvalMemberships            ApprovalPermissionMember[]
   // v0.50: ICS 日历订阅 token（URL 即凭证，可重置）
-  calendarToken          String?                    @unique
+  calendarToken                  String?                    @unique
 
   ownedMatters              Matter[]                      @relation("MatterOwner")
   registeredMatters         Matter[]                      @relation("MatterRegistrar")
@@ -527,8 +527,8 @@ model User {
   // v0.9: 短信收件人 / 快递创建人
   receivedSmsMessages       SmsMessage[]                  @relation("SmsReceiver")
   downloadedSmsInboundFiles SmsInboundFile[]              @relation("SmsInboundFileDownloader")
-  createdSmsSuggestions     SmsSuggestion[]                @relation("SmsSuggestionCreator")
-  decidedSmsSuggestions     SmsSuggestion[]                @relation("SmsSuggestionDecider")
+  createdSmsSuggestions     SmsSuggestion[]               @relation("SmsSuggestionCreator")
+  decidedSmsSuggestions     SmsSuggestion[]               @relation("SmsSuggestionDecider")
   // v0.44: 保全三层重构（v0.48 移除旧单表模型）
   ownedPreservationCases    PreservationCase[]            @relation("PreservationCaseOwner")
   propertyRenewals          PreservationPropertyRenewal[] @relation("PropertyRenewalPerformer")
@@ -547,7 +547,7 @@ model User {
   leadProcedures            MatterProcedure[]             @relation("ProcedureLeadLawyer")
   identityDocuments         UserIdentityDocument[]        @relation("IdentityOwner")
   uploadedIdentityDocuments UserIdentityDocument[]        @relation("IdentityUploader")
-  archivedEmails            EmailArchive[]               @relation("EmailArchiver")
+  archivedEmails            EmailArchive[]                @relation("EmailArchiver")
   createdAt                 DateTime                      @default(now())
   updatedAt                 DateTime                      @updatedAt
 
@@ -583,14 +583,14 @@ model UserIdentityDocument {
 
 model Team {
   ethicalWallDenials EthicalWallDenial[] @relation("EthicalWallDeniedTeam")
-  id        String       @id @default(cuid())
-  name      String       @unique
-  leaderId  String
-  leader    User         @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Restrict)
-  active    Boolean      @default(true)
-  members   TeamMember[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                 String              @id @default(cuid())
+  name               String              @unique
+  leaderId           String
+  leader             User                @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Restrict)
+  active             Boolean             @default(true)
+  members            TeamMember[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@index([leaderId, active])
 }
@@ -610,7 +610,10 @@ model TeamMember {
 }
 
 model Client {
-  rateSchedules RateSchedule[]
+  rateSchedules     RateSchedule[]
+  // 客户门户账号（2026-11-20 门户 S1）。独立表，不复用 User——
+  // 客户与员工的身份、权限、会话必须结构性隔离，不能靠角色字段区分。
+  portalUsers       ClientPortalUser[]
   id                String                  @id @default(cuid())
   name              String
   type              ClientType
@@ -700,20 +703,20 @@ model CauseOfAction {
 // ============================================================
 
 model Intake {
-  handovers IntakeHandover[]
-  urgentItems IntakeUrgentItem[]
-  workflowRevision Int @default(0)
-  revisions IntakeRevision[]
-  id             String         @id @default(cuid())
-  title          String
-  category       MatterCategory @default(CIVIL_COMMERCIAL)
-  causeId        String?
-  cause          CauseOfAction? @relation(fields: [causeId], references: [id])
-  causeFreeText  String?
-  description    String?
-  status         IntakeStatus   @default(INTAKE)
-  receivedAt     DateTime       @default(now())
-  declinedReason String?
+  handovers        IntakeHandover[]
+  urgentItems      IntakeUrgentItem[]
+  workflowRevision Int                @default(0)
+  revisions        IntakeRevision[]
+  id               String             @id @default(cuid())
+  title            String
+  category         MatterCategory     @default(CIVIL_COMMERCIAL)
+  causeId          String?
+  cause            CauseOfAction?     @relation(fields: [causeId], references: [id])
+  causeFreeText    String?
+  description      String?
+  status           IntakeStatus       @default(INTAKE)
+  receivedAt       DateTime           @default(now())
+  declinedReason   String?
 
   // v0.5: 客户 + 联系人
   clientId     String?
@@ -775,20 +778,20 @@ model Intake {
 
 model Matter {
   contractConfirmations ContractConfirmation[]
-  ethicalWalls  EthicalWall[]
-  timeEntries   TimeEntry[]
-  rateSchedules RateSchedule[]
-  closurePlan ArchiveClosurePlan?
-  handovers MatterHandover[]
-  urgentItems IntakeUrgentItem[]
-  conflictReviews ConflictCheck[]
-  financeCorrections FinanceCorrection[]
-  id                   String         @id @default(cuid())
-  internalCode         String         @unique
-  firmCaseNo           String?        @unique // v0.42 所内案号（按可配置模板生成）
-  title                String
-  category             MatterCategory @default(CIVIL_COMMERCIAL)
-  status               MatterStatus   @default(IN_PROGRESS)
+  ethicalWalls          EthicalWall[]
+  timeEntries           TimeEntry[]
+  rateSchedules         RateSchedule[]
+  closurePlan           ArchiveClosurePlan?
+  handovers             MatterHandover[]
+  urgentItems           IntakeUrgentItem[]
+  conflictReviews       ConflictCheck[]
+  financeCorrections    FinanceCorrection[]
+  id                    String                 @id @default(cuid())
+  internalCode          String                 @unique
+  firmCaseNo            String?                @unique // v0.42 所内案号（按可配置模板生成）
+  title                 String
+  category              MatterCategory         @default(CIVIL_COMMERCIAL)
+  status                MatterStatus           @default(IN_PROGRESS)
   // v1.x P2 状态轴分离（报告 §6.4）：服务轴独立于程序轴 status。
   //
   // ⚠️ 当前**不启用**（2026-11-20 核实）：
@@ -805,10 +808,10 @@ model Matter {
   //   ① 恢复「服务完成/恢复」入口（服务轴 UI 于 2026-09-20 整体移除，见 AGENTS.md）；
   //   ② 让下游真正消费它（结案门禁、报表口径或工作台筛选至少有一处读它）。
   // 只做 ① 会让字段开始变化但仍无人读取；只做 ② 会拿一个恒真值去过滤。
-  serviceStatus        MatterServiceStatus @default(SERVICE_ACTIVE)
+  serviceStatus         MatterServiceStatus    @default(SERVICE_ACTIVE)
   // v1.x 制度决策 4.1（选项 A）: 受限事项——不进入团队汇总视图，
   // 限制优先于团队授权；撤权复核提示沿用既有审计。
-  teamAccessRestricted Boolean        @default(false)
+  teamAccessRestricted  Boolean                @default(false)
 
   causeId       String?
   cause         CauseOfAction? @relation(fields: [causeId], references: [id])
@@ -954,9 +957,9 @@ model MatterClient {
 
 model MatterProcedure {
   billingScopes BillingProcedureScope[]
-  id       String @id @default(cuid())
-  matterId String
-  matter   Matter @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  id            String                  @id @default(cuid())
+  matterId      String
+  matter        Matter                  @relation(fields: [matterId], references: [id], onDelete: Cascade)
 
   type        ProcedureType
   customLabel String?
@@ -1036,20 +1039,20 @@ model MatterStage {
 
 model Task {
   responsibility WorkResponsibility?
-  id          String       @id @default(cuid())
-  matterId    String
-  matter      Matter       @relation(fields: [matterId], references: [id], onDelete: Cascade)
-  stageId     String?
-  stage       MatterStage? @relation(fields: [stageId], references: [id])
-  title       String
-  description String?
-  assigneeId  String?
-  dueAt       DateTime?
-  completed   Boolean      @default(false)
-  completedAt DateTime?
-  priority    Int          @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id             String              @id @default(cuid())
+  matterId       String
+  matter         Matter              @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  stageId        String?
+  stage          MatterStage?        @relation(fields: [stageId], references: [id])
+  title          String
+  description    String?
+  assigneeId     String?
+  dueAt          DateTime?
+  completed      Boolean             @default(false)
+  completedAt    DateTime?
+  priority       Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([matterId, completed, dueAt])
   @@index([assigneeId, completed])
@@ -1057,26 +1060,26 @@ model Task {
 
 model Hearing {
   responsibility WorkResponsibility?
-  id          String          @id @default(cuid())
-  procedureId String
-  procedure   MatterProcedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
-  title       String
-  room        String?
-  address     String?
-  judge       String?
-  contact     String?
-  startsAt    DateTime
-  endsAt      DateTime?
-  notes       String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id             String              @id @default(cuid())
+  procedureId    String
+  procedure      MatterProcedure     @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+  title          String
+  room           String?
+  address        String?
+  judge          String?
+  contact        String?
+  startsAt       DateTime
+  endsAt         DateTime?
+  notes          String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([procedureId, startsAt])
   @@index([startsAt])
 }
 
 model Deadline {
-  responsibility WorkResponsibility?
+  responsibility   WorkResponsibility?
   id               String                @id @default(cuid())
   procedureId      String
   procedure        MatterProcedure       @relation(fields: [procedureId], references: [id], onDelete: Cascade)
@@ -1257,21 +1260,21 @@ enum MatterLinkRelation {
 // ============================================================
 
 model ConflictCheck {
-  matterId String?
-  matter Matter? @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  matterId           String?
+  matter             Matter?            @relation(fields: [matterId], references: [id], onDelete: Restrict)
   subjectFingerprint String?
-  submittedRounds IntakeRevision[]
-  id           String             @id @default(cuid())
-  intakeId     String?
-  intake       Intake?            @relation(fields: [intakeId], references: [id])
-  queryPayload Json
-  hits         ConflictHit[]
-  conclusion   ConflictConclusion @default(PENDING)
-  decidedById  String?
-  decidedBy    User?              @relation("ConflictDecidedBy", fields: [decidedById], references: [id])
-  decidedAt    DateTime?
-  note         String?
-  checkedAt    DateTime           @default(now())
+  submittedRounds    IntakeRevision[]
+  id                 String             @id @default(cuid())
+  intakeId           String?
+  intake             Intake?            @relation(fields: [intakeId], references: [id])
+  queryPayload       Json
+  hits               ConflictHit[]
+  conclusion         ConflictConclusion @default(PENDING)
+  decidedById        String?
+  decidedBy          User?              @relation("ConflictDecidedBy", fields: [decidedById], references: [id])
+  decidedAt          DateTime?
+  note               String?
+  checkedAt          DateTime           @default(now())
 }
 
 model ConflictHit {
@@ -1318,33 +1321,33 @@ model Note {
 
 model Document {
   invoiceAdjustmentEvidence InvoiceAdjustment[]
-  reviewedById String?
-  billingAttachments BillingAttachment[]
-  id           String           @id @default(cuid())
+  reviewedById              String?
+  billingAttachments        BillingAttachment[]
+  id                        String              @id @default(cuid())
   // v0.4: matterId 可空（收案阶段挂在 Intake 上），转 Matter 时回填
-  matterId     String?
-  matter       Matter?          @relation(fields: [matterId], references: [id], onDelete: Cascade)
-  intakeId     String?
-  intake       Intake?          @relation(fields: [intakeId], references: [id], onDelete: Cascade)
-  procedureId  String?
-  procedure    MatterProcedure? @relation(fields: [procedureId], references: [id])
+  matterId                  String?
+  matter                    Matter?             @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  intakeId                  String?
+  intake                    Intake?             @relation(fields: [intakeId], references: [id], onDelete: Cascade)
+  procedureId               String?
+  procedure                 MatterProcedure?    @relation(fields: [procedureId], references: [id])
   // v0.48: 归属环节（外键，环节改名/隐藏不断链）；环节删除时置空保留材料
-  stageId      String?
-  stage        MatterStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
-  name         String
-  category     DocumentCategory @default(OTHER)
+  stageId                   String?
+  stage                     MatterStage?        @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  name                      String
+  category                  DocumentCategory    @default(OTHER)
   // v0.42: 材料来源方（我方/对方/第三人 等，取自本案当事人，可空）
-  sourceParty  String?
+  sourceParty               String?
   // v0.10: 文书审批流程
-  status       DocumentStatus   @default(DRAFT)
-  reviewedBy   User?            @relation("DocumentReviewer", fields: [reviewedById], references: [id])
-  reviewedAt   DateTime?
-  approvedById String?
-  approvedBy   User?            @relation("DocumentApprover", fields: [approvedById], references: [id])
-  approvedAt   DateTime?
-  version      Int              @default(1)
-  isLatest     Boolean          @default(true)
-  familyId     String?
+  status                    DocumentStatus      @default(DRAFT)
+  reviewedBy                User?               @relation("DocumentReviewer", fields: [reviewedById], references: [id])
+  reviewedAt                DateTime?
+  approvedById              String?
+  approvedBy                User?               @relation("DocumentApprover", fields: [approvedById], references: [id])
+  approvedAt                DateTime?
+  version                   Int                 @default(1)
+  isLatest                  Boolean             @default(true)
+  familyId                  String?
 
   // v1.x P1 批次③: 材料来源（墨案 04 页来源 chip：谁提供的这份材料）
   sourceOrigin DocumentSourceOrigin?
@@ -1393,13 +1396,9 @@ model Document {
   archiveChecklistItemId String?
 
   // v0.21: 反向 - AI 审查历史
-  reviewRecords ReviewRecord[]
-  smsInboundFiles    SmsInboundFile[]
+  reviewRecords   ReviewRecord[]
+  smsInboundFiles SmsInboundFile[]
 
-  @@index([matterId, category])
-  @@index([intakeId])
-  @@index([procedureId])
-  @@index([familyId])
   // 2026-11-20（H1）：材料版本链的数据库级唯一性。
   //
   // 此前 (familyId, version) 只有普通索引，应用层用 `version: prior.version + 1`
@@ -1410,6 +1409,10 @@ model Document {
   // familyId 为 null 的是首版本（尚未成族），PostgreSQL 的唯一索引允许多个 null，
   // 所以首版本不受此约束影响——这正是需要的行为。
   @@unique([familyId, version])
+  @@index([matterId, category])
+  @@index([intakeId])
+  @@index([procedureId])
+  @@index([familyId])
   @@index([folderId])
   @@index([templateId])
   @@index([matterId, archiveChecklistItemId])
@@ -1422,20 +1425,19 @@ model Document {
 // ============================================================
 
 model InvoiceRequest {
-  invoiceAdjustments InvoiceAdjustment[] @relation("AdjustedInvoice")
-  replacementAdjustments InvoiceAdjustment[] @relation("ReplacementInvoice")
-  terminationRequests ExecutionTermination[]
-  paymentAllocations InvoicePaymentAllocation[]
-  @@unique([id, matterId])
-  id             String               @id @default(cuid())
+  invoiceAdjustments     InvoiceAdjustment[]        @relation("AdjustedInvoice")
+  replacementAdjustments InvoiceAdjustment[]        @relation("ReplacementInvoice")
+  terminationRequests    ExecutionTermination[]
+  paymentAllocations     InvoicePaymentAllocation[]
+  id                     String                     @id @default(cuid())
   // v0.43 项5：matterId 可空——支持「无关联案件」开票（须填 noMatterReason）
-  matterId       String?
-  matter         Matter?              @relation(fields: [matterId], references: [id], onDelete: Cascade)
-  noMatterReason String? // 无关联案件时的原因说明（matterId 为空时必填）
-  amount         Decimal              @db.Decimal(14, 2)
-  title          String? // 备注 / 客户称谓（仅做兼容，新字段用 buyerName）
-  status         InvoiceRequestStatus @default(PENDING)
-  requestNote    String?
+  matterId               String?
+  matter                 Matter?                    @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  noMatterReason         String? // 无关联案件时的原因说明（matterId 为空时必填）
+  amount                 Decimal                    @db.Decimal(14, 2)
+  title                  String? // 备注 / 客户称谓（仅做兼容，新字段用 buyerName）
+  status                 InvoiceRequestStatus       @default(PENDING)
+  requestNote            String?
 
   // v0.12: 开票类型 + 名目 + 抬头 + 税号 + 开票依据
   invoiceType      InvoiceType?
@@ -1471,6 +1473,7 @@ model InvoiceRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([id, matterId])
   @@index([matterId, status])
   @@index([status, requestedAt])
   @@index([requestedById])
@@ -1503,71 +1506,71 @@ enum FinanceCorrectionType {
 }
 
 model Receivable {
-  sourceKey String? @unique
-  installmentNumber Int?
-  dueState ReceivableDueState @default(UNKNOWN)
-  dueCondition String?
-  conditionSatisfiedAt DateTime?
+  sourceKey              String?                   @unique
+  installmentNumber      Int?
+  dueState               ReceivableDueState        @default(UNKNOWN)
+  dueCondition           String?
+  conditionSatisfiedAt   DateTime?
   conditionConfirmedById String?
-  conditionConfirmedBy User? @relation("ReceivableConditionConfirmer", fields: [conditionConfirmedById], references: [id], onDelete: Restrict)
-  adjustmentAmount Decimal @default(0) @db.Decimal(14, 2)
-  billing Billing? @relation(fields: [billingId], references: [id], onDelete: Restrict)
-  corrections FinanceCorrection[] @relation("CorrectionReceivable")
-  correctionEffects FinanceCorrectionEffect[] @relation("EffectReceivable")
-  moneyKind MoneyKind
-  revision Int @default(0)
-  id            String           @id @default(cuid())
-  matterId      String
-  matter        Matter           @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  billingId     String? // 来源合同（数据库层有 FK ON DELETE RESTRICT，Prisma 层未建模，见迁移 20260919000002）
-  title         String
-  amount        Decimal          @db.Decimal(14, 2)
-  settledAmount Decimal          @default(0) @db.Decimal(14, 2) // 已核销合计（Allocation 汇总冗余）
-  status        ReceivableStatus @default(OPEN)
-  dueDate       DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  Allocation    Allocation[]
+  conditionConfirmedBy   User?                     @relation("ReceivableConditionConfirmer", fields: [conditionConfirmedById], references: [id], onDelete: Restrict)
+  adjustmentAmount       Decimal                   @default(0) @db.Decimal(14, 2)
+  billing                Billing?                  @relation(fields: [billingId], references: [id], onDelete: Restrict)
+  corrections            FinanceCorrection[]       @relation("CorrectionReceivable")
+  correctionEffects      FinanceCorrectionEffect[] @relation("EffectReceivable")
+  moneyKind              MoneyKind
+  revision               Int                       @default(0)
+  id                     String                    @id @default(cuid())
+  matterId               String
+  matter                 Matter                    @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  billingId              String? // 来源合同（数据库层有 FK ON DELETE RESTRICT，Prisma 层未建模，见迁移 20260919000002）
+  title                  String
+  amount                 Decimal                   @db.Decimal(14, 2)
+  settledAmount          Decimal                   @default(0) @db.Decimal(14, 2) // 已核销合计（Allocation 汇总冗余）
+  status                 ReceivableStatus          @default(OPEN)
+  dueDate                DateTime?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  Allocation             Allocation[]
 
   @@index([matterId, status])
 }
 
 model Payment {
-  refundedAmount Decimal @default(0) @db.Decimal(14, 2)
-  sourceEntry FeeEntry @relation("PaymentSourceEntry", fields: [feeEntryId], references: [id], onDelete: Restrict)
+  refundedAmount     Decimal                    @default(0) @db.Decimal(14, 2)
+  sourceEntry        FeeEntry                   @relation("PaymentSourceEntry", fields: [feeEntryId], references: [id], onDelete: Restrict)
   invoiceAllocations InvoicePaymentAllocation[]
-  corrections FinanceCorrection[] @relation("CorrectionPayment")
-  correctionEffects FinanceCorrectionEffect[] @relation("EffectPayment")
-  @@unique([id, matterId])
-  moneyKind MoneyKind
-  revision Int @default(0)
-  id              String        @id @default(cuid())
-  matterId        String
-  matter          Matter        @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  feeEntryId      String @unique // 唯一的已确认 RECEIVED 来源流水
-  amount          Decimal       @db.Decimal(14, 2)
-  allocatedAmount Decimal       @default(0) @db.Decimal(14, 2)
-  status          PaymentStatus @default(UNALLOCATED)
-  occurredAt      DateTime      @default(now())
-  recordedById    String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  Allocation      Allocation[]
+  corrections        FinanceCorrection[]        @relation("CorrectionPayment")
+  correctionEffects  FinanceCorrectionEffect[]  @relation("EffectPayment")
+  moneyKind          MoneyKind
+  revision           Int                        @default(0)
+  id                 String                     @id @default(cuid())
+  matterId           String
+  matter             Matter                     @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  feeEntryId         String                     @unique // 唯一的已确认 RECEIVED 来源流水
+  amount             Decimal                    @db.Decimal(14, 2)
+  allocatedAmount    Decimal                    @default(0) @db.Decimal(14, 2)
+  status             PaymentStatus              @default(UNALLOCATED)
+  occurredAt         DateTime                   @default(now())
+  recordedById       String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  Allocation         Allocation[]
 
+  @@unique([id, matterId])
   @@index([matterId, status])
 }
 
 model Allocation {
-  reversedAmount Decimal @default(0) @db.Decimal(14, 2)
+  reversedAmount    Decimal                   @default(0) @db.Decimal(14, 2)
   correctionEffects FinanceCorrectionEffect[] @relation("EffectAllocation")
-  id            String     @id @default(cuid())
-  paymentId     String
-  payment       Payment    @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  receivableId  String
-  receivable    Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
-  amount        Decimal    @db.Decimal(14, 2)
-  allocatedById String
-  createdAt     DateTime   @default(now())
+  id                String                    @id @default(cuid())
+  paymentId         String
+  payment           Payment                   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  receivableId      String
+  receivable        Receivable                @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  amount            Decimal                   @db.Decimal(14, 2)
+  allocatedById     String
+  createdAt         DateTime                  @default(now())
 
   @@unique([paymentId, receivableId])
   @@index([receivableId])
@@ -1575,36 +1578,36 @@ model Allocation {
 
 // 冲正：带原因与凭证号的关联更正记录（替代物理删除；审计同事务）
 model FinanceCorrection {
-  requestPayload Json
-  occurredAt DateTime
-  status FinanceCorrectionStatus @default(PENDING)
-  matterId String
-  matter Matter @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  paymentId String?
-  payment Payment? @relation("CorrectionPayment", fields: [paymentId], references: [id], onDelete: Restrict)
-  receivableId String?
-  receivable Receivable? @relation("CorrectionReceivable", fields: [receivableId], references: [id], onDelete: Restrict)
-  feeEntryId String?
-  feeEntry FeeEntry? @relation("CorrectionFeeEntry", fields: [feeEntryId], references: [id], onDelete: Restrict)
-  sourceBillingId String? @unique
-  sourceBilling Billing? @relation("BillingSourceCorrection", fields: [sourceBillingId], references: [id], onDelete: Restrict)
-  confirmedById String?
-  confirmedBy User? @relation("FinanceCorrectionConfirmer", fields: [confirmedById], references: [id], onDelete: Restrict)
-  confirmedAt DateTime?
-  resolutionNote String?
-  revision Int @default(0)
-  effects FinanceCorrectionEffect[]
-  @@index([matterId, status])
-  id           String                @id @default(cuid())
-  targetType   String // FeeEntry / Payment / Receivable
-  targetId     String
-  type         FinanceCorrectionType
-  amount       Decimal               @db.Decimal(14, 2)
-  reason       String
-  relatedDocNo String? // 关联凭证号（退款单/折让函等）
-  createdById  String
-  createdAt    DateTime              @default(now())
+  requestPayload  Json
+  occurredAt      DateTime
+  status          FinanceCorrectionStatus   @default(PENDING)
+  matterId        String
+  matter          Matter                    @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  paymentId       String?
+  payment         Payment?                  @relation("CorrectionPayment", fields: [paymentId], references: [id], onDelete: Restrict)
+  receivableId    String?
+  receivable      Receivable?               @relation("CorrectionReceivable", fields: [receivableId], references: [id], onDelete: Restrict)
+  feeEntryId      String?
+  feeEntry        FeeEntry?                 @relation("CorrectionFeeEntry", fields: [feeEntryId], references: [id], onDelete: Restrict)
+  sourceBillingId String?                   @unique
+  sourceBilling   Billing?                  @relation("BillingSourceCorrection", fields: [sourceBillingId], references: [id], onDelete: Restrict)
+  confirmedById   String?
+  confirmedBy     User?                     @relation("FinanceCorrectionConfirmer", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt     DateTime?
+  resolutionNote  String?
+  revision        Int                       @default(0)
+  effects         FinanceCorrectionEffect[]
+  id              String                    @id @default(cuid())
+  targetType      String // FeeEntry / Payment / Receivable
+  targetId        String
+  type            FinanceCorrectionType
+  amount          Decimal                   @db.Decimal(14, 2)
+  reason          String
+  relatedDocNo    String? // 关联凭证号（退款单/折让函等）
+  createdById     String
+  createdAt       DateTime                  @default(now())
 
+  @@index([matterId, status])
   @@index([targetType, targetId])
 }
 
@@ -1678,65 +1681,65 @@ model EvidenceItem {
 }
 
 model Billing {
-  timeEntries TimeEntry[]
-  draftTerms Json?
-  completedWork String?
-  handoverWork String?
-  amendmentType BillingAmendmentType?
-  sourceBillingId String?
-  sourceBilling Billing? @relation("BillingAmendments", fields: [sourceBillingId], references: [id], onDelete: Restrict)
-  amendments Billing[] @relation("BillingAmendments")
-  effectiveAt DateTime?
-  endsAt DateTime?
-  previousAmount Decimal? @db.Decimal(14, 2)
-  resultingAmount Decimal? @db.Decimal(14, 2)
+  timeEntries       TimeEntry[]
+  draftTerms        Json?
+  completedWork     String?
+  handoverWork      String?
+  amendmentType     BillingAmendmentType?
+  sourceBillingId   String?
+  sourceBilling     Billing?                @relation("BillingAmendments", fields: [sourceBillingId], references: [id], onDelete: Restrict)
+  amendments        Billing[]               @relation("BillingAmendments")
+  effectiveAt       DateTime?
+  endsAt            DateTime?
+  previousAmount    Decimal?                @db.Decimal(14, 2)
+  resultingAmount   Decimal?                @db.Decimal(14, 2)
   terminationReason String?
-  receivables Receivable[]
-  procedureScopes BillingProcedureScope[]
-  attachments BillingAttachment[]
-  sourceCorrection FinanceCorrection? @relation("BillingSourceCorrection")
-  moneyKind MoneyKind
-  revision Int @default(0)
-  id             String        @id @default(cuid())
-  engagementId   String?
-  engagement     Engagement?   @relation(fields: [engagementId], references: [id])
-  matterId       String
-  matter         Matter        @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  title          String
-  contractAmount Decimal       @db.Decimal(14, 2)
-  schedule       String?
-  status         BillingStatus @default(DRAFT)
-  signedAt       DateTime?
-  feeEntries     FeeEntry[]
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  receivables       Receivable[]
+  procedureScopes   BillingProcedureScope[]
+  attachments       BillingAttachment[]
+  sourceCorrection  FinanceCorrection?      @relation("BillingSourceCorrection")
+  moneyKind         MoneyKind
+  revision          Int                     @default(0)
+  id                String                  @id @default(cuid())
+  engagementId      String?
+  engagement        Engagement?             @relation(fields: [engagementId], references: [id])
+  matterId          String
+  matter            Matter                  @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  title             String
+  contractAmount    Decimal                 @db.Decimal(14, 2)
+  schedule          String?
+  status            BillingStatus           @default(DRAFT)
+  signedAt          DateTime?
+  feeEntries        FeeEntry[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@index([matterId, status])
 }
 
 model FeeEntry {
-  sourcePayment Payment? @relation("PaymentSourceEntry")
-  commissionRateSnapshot Decimal? @db.Decimal(5, 2)
-  commissionBaseSnapshot Decimal? @db.Decimal(14, 2)
-  commissionSettlements CommissionSettlement[]
-  corrections FinanceCorrection[] @relation("CorrectionFeeEntry")
-  commissionEffects FinanceCorrectionEffect[] @relation("EffectCommission")
-  expenseEffects FinanceCorrectionEffect[] @relation("EffectExpense")
-  moneyKind MoneyKind
-  revision Int @default(0)
-  id           String       @id @default(cuid())
-  matterId     String
-  matter       Matter       @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  billingId    String?
-  billing      Billing?     @relation(fields: [billingId], references: [id])
-  type         FeeEntryType
-  amount       Decimal      @db.Decimal(14, 2)
-  occurredAt   DateTime     @default(now())
-  invoiceNo    String?
-  invoiceFile  String?
-  payerOrPayee String?
-  method       String?
-  note         String?
+  sourcePayment          Payment?                  @relation("PaymentSourceEntry")
+  commissionRateSnapshot Decimal?                  @db.Decimal(5, 2)
+  commissionBaseSnapshot Decimal?                  @db.Decimal(14, 2)
+  commissionSettlements  CommissionSettlement[]
+  corrections            FinanceCorrection[]       @relation("CorrectionFeeEntry")
+  commissionEffects      FinanceCorrectionEffect[] @relation("EffectCommission")
+  expenseEffects         FinanceCorrectionEffect[] @relation("EffectExpense")
+  moneyKind              MoneyKind
+  revision               Int                       @default(0)
+  id                     String                    @id @default(cuid())
+  matterId               String
+  matter                 Matter                    @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  billingId              String?
+  billing                Billing?                  @relation(fields: [billingId], references: [id])
+  type                   FeeEntryType
+  amount                 Decimal                   @db.Decimal(14, 2)
+  occurredAt             DateTime                  @default(now())
+  invoiceNo              String?
+  invoiceFile            String?
+  payerOrPayee           String?
+  method                 String?
+  note                   String?
 
   parentFeeEntryId   String?
   parentFeeEntry     FeeEntry?  @relation("CommissionParent", fields: [parentFeeEntryId], references: [id])
@@ -1805,30 +1808,30 @@ enum ArchiveStatus {
 }
 
 model ArchiveClosurePlan {
-  id String @id @default(cuid())
-  matterId String @unique
-  matter Matter @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  financeOwnerId String?
-  financeOwner User? @relation("ArchiveFinanceOwner", fields: [financeOwnerId], references: [id], onDelete: Restrict)
+  id                 String   @id @default(cuid())
+  matterId           String   @unique
+  matter             Matter   @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  financeOwnerId     String?
+  financeOwner       User?    @relation("ArchiveFinanceOwner", fields: [financeOwnerId], references: [id], onDelete: Restrict)
   serviceCompletedAt DateTime
-  reason String
-  snapshot Json
-  fingerprint String
-  revision Int @default(0)
-  updatedAt DateTime @updatedAt
+  reason             String
+  snapshot           Json
+  fingerprint        String
+  revision           Int      @default(0)
+  updatedAt          DateTime @updatedAt
 }
 
 model ArchiveRecord {
-  borrows ArchiveBorrowRequest[]
-  supplementOfId String?
-  supplementOf ArchiveRecord? @relation("ArchiveSupplement", fields: [supplementOfId], references: [id], onDelete: Restrict)
-  supplements ArchiveRecord[] @relation("ArchiveSupplement")
+  borrows          ArchiveBorrowRequest[]
+  supplementOfId   String?
+  supplementOf     ArchiveRecord?         @relation("ArchiveSupplement", fields: [supplementOfId], references: [id], onDelete: Restrict)
+  supplements      ArchiveRecord[]        @relation("ArchiveSupplement")
   workflowSnapshot Json?
-  frozenManifest Json?
-  reviewedById String?
-  id       String @id @default(cuid())
-  matterId String
-  matter   Matter @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  frozenManifest   Json?
+  reviewedById     String?
+  id               String                 @id @default(cuid())
+  matterId         String
+  matter           Matter                 @relation(fields: [matterId], references: [id], onDelete: Cascade)
 
   archiveNo       String               @unique
   summary         String
@@ -1848,9 +1851,9 @@ model ArchiveRecord {
   checksum     String?
 
   // v0.16: 归档审批流
-  status       ArchiveStatus @default(PENDING_REVIEW)
-  reviewedAt   DateTime?
-  reviewNote   String?
+  status     ArchiveStatus @default(PENDING_REVIEW)
+  reviewedAt DateTime?
+  reviewNote String?
 
   @@index([matterId])
   @@index([archivedAt])
@@ -1868,9 +1871,9 @@ enum ArchiveClosedReason {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   userId     String?
-  user       User?    @relation(fields: [userId], references: [id])
+  user       User?   @relation(fields: [userId], references: [id])
   action     String
   targetType String?
   targetId   String?
@@ -1883,7 +1886,7 @@ model AuditLog {
   /// 上一条记录的 integrityHash；首条为空。篡改任意一条会导致后续全部校验失败
   previousHash  String?
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
@@ -1987,11 +1990,11 @@ model SealTypeConfig {
 // 用章申请
 model SealRequest {
   terminationRequests ExecutionTermination[]
-  id       String   @id @default(cuid())
-  code     String   @unique // SEAL-2026-0001
-  sealType SealType
-  matterId String?
-  matter   Matter?  @relation(fields: [matterId], references: [id])
+  id                  String                 @id @default(cuid())
+  code                String                 @unique // SEAL-2026-0001
+  sealType            SealType
+  matterId            String?
+  matter              Matter?                @relation(fields: [matterId], references: [id])
 
   purposeConfigId      String?
   purposeConfig        SealPurposeConfig? @relation(fields: [purposeConfigId], references: [id], onDelete: Restrict)
@@ -2118,13 +2121,13 @@ model SmsMessage {
 // （未匹配案件的私有来件）；已匹配案件下载即转正并回填映射。
 // 磁盘文件不物理删除；错误归属经有权人纠正只改映射并留审计。
 model SmsInboundFile {
-  id             String        @id @default(cuid())
+  id             String           @id @default(cuid())
   smsId          String
-  sms            SmsMessage    @relation(fields: [smsId], references: [id], onDelete: Restrict)
+  sms            SmsMessage       @relation(fields: [smsId], references: [id], onDelete: Restrict)
   matterId       String?
-  matter         Matter?       @relation(fields: [matterId], references: [id], onDelete: SetNull)
+  matter         Matter?          @relation(fields: [matterId], references: [id], onDelete: SetNull)
   documentId     String?
-  document       Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  document       Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
   sourceUrl      String
   storageKey     String // 私有存储键（storage/sms-inbound/…，下载经鉴权，不暴露直链）
   originalName   String // 平台原始文件名（保留）
@@ -2132,11 +2135,11 @@ model SmsInboundFile {
   mimeType       String
   size           Int
   sha256         String
-  downloadedAt   DateTime      @default(now()) // 与粘贴时间 receivedAt 分离
+  downloadedAt   DateTime         @default(now()) // 与粘贴时间 receivedAt 分离
   downloadedById String
-  downloadedBy   User          @relation("SmsInboundFileDownloader", fields: [downloadedById], references: [id], onDelete: Restrict)
-  uploadSource   SmsFileSource @default(LINK_FETCH)
-  state          SmsFileState  @default(PENDING_REVIEW)
+  downloadedBy   User             @relation("SmsInboundFileDownloader", fields: [downloadedById], references: [id], onDelete: Restrict)
+  uploadSource   SmsFileSource    @default(LINK_FETCH)
+  state          SmsFileState     @default(PENDING_REVIEW)
   // B2：阅读分析
   analysisState  SmsAnalysisState @default(PENDING)
   analysisError  String?
@@ -2188,32 +2191,32 @@ enum SmsAnalysisState {
 // B2/B3：整理建议——系统自动准备、律师确认后生效（docs/SYSTEM-AUDIT-REMEDIATION-V3 §5.2：
 // 每项建议最少记录目标、原值、建议值、来源定位、决定人与时间；拒绝过的建议不重复弹回）
 model SmsSuggestion {
-  id            String   @id @default(cuid())
-  smsId         String
-  sms           SmsMessage @relation(fields: [smsId], references: [id], onDelete: Restrict)
-  fileId        String?
-  file          SmsInboundFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
-  kind          SmsSuggestionKind
+  id             String              @id @default(cuid())
+  smsId          String
+  sms            SmsMessage          @relation(fields: [smsId], references: [id], onDelete: Restrict)
+  fileId         String?
+  file           SmsInboundFile?     @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  kind           SmsSuggestionKind
   /// FIELD_CHANGE 的目标对象类型（如 MatterProcedure）与 id
-  targetType    String?
-  targetId      String?
+  targetType     String?
+  targetId       String?
   /// FIELD_CHANGE 的字段名（caseNumber/handlingAgency/acceptedAt…）
-  fieldKey      String?
-  currentValue  String?
+  fieldKey       String?
+  currentValue   String?
   suggestedValue String?
   /// 来源定位：文件内页码（1 起）或原文片段
-  sourcePage    Int?
-  sourceExcerpt String?
+  sourcePage     Int?
+  sourceExcerpt  String?
   /// HEARING/DEADLINE/MATTER_MATCH 的结构化载荷（标题、日期、责任建议等）
-  payload       Json?
-  status        SmsSuggestionStatus @default(PENDING)
-  decidedById   String?
-  decidedBy     User?   @relation("SmsSuggestionDecider", fields: [decidedById], references: [id], onDelete: SetNull)
-  decidedAt     DateTime?
-  createdById   String
-  createdBy     User    @relation("SmsSuggestionCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  payload        Json?
+  status         SmsSuggestionStatus @default(PENDING)
+  decidedById    String?
+  decidedBy      User?               @relation("SmsSuggestionDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt      DateTime?
+  createdById    String
+  createdBy      User                @relation("SmsSuggestionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([smsId, status])
   @@index([fileId])
@@ -2540,7 +2543,7 @@ enum ReminderDeliveryStatus {
 }
 
 model ReminderDelivery {
-  id           String                    @id @default(cuid())
+  id           String                     @id @default(cuid())
   objectType   ReminderDeliveryObjectType
   objectId     String
   kind         ReminderDeliveryKind
@@ -2548,14 +2551,14 @@ model ReminderDelivery {
   channel      ReminderDeliveryChannel
   dayKey       String // 上海日 YYYY-MM-DD（补发幂等的自然键）
   userId       String // 接收人；通道级行（WEBHOOK/全所摘要）为空串
-  status       ReminderDeliveryStatus    @default(PENDING)
+  status       ReminderDeliveryStatus     @default(PENDING)
   registeredAt DateTime // 登记时刻＝应发动的一刻：保存即时触发取保存时刻，档位扫描取扫描时刻；投递条件 registeredAt <= now
   sentAt       DateTime?
-  attempts     Int                       @default(0)
+  attempts     Int                        @default(0)
   lastError    String?
   detail       Json? // 通道级补充（如 Digest 的 sentCount/userCount、SKIPPED 原因）
-  createdAt    DateTime                  @default(now())
-  updatedAt    DateTime                  @updatedAt
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
 
   @@unique([objectType, objectId, kind, offset, channel, dayKey, userId], map: "reminder_delivery_dedupe")
   @@index([dayKey, channel, status], map: "reminder_delivery_day_channel_status")
@@ -2695,15 +2698,15 @@ model ExternalContact {
   notes        String?
   tags         String[]
 
-  createdById  String
-  createdBy    User                  @relation("ExternalContactCreator", fields: [createdById], references: [id])
-  status       ExternalContactStatus @default(APPROVED)
-  reviewedBy   User?                 @relation("ExternalContactReviewer", fields: [reviewedById], references: [id])
-  reviewedAt   DateTime?
-  reviewNote   String?
-  archivedAt   DateTime?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  createdById String
+  createdBy   User                  @relation("ExternalContactCreator", fields: [createdById], references: [id])
+  status      ExternalContactStatus @default(APPROVED)
+  reviewedBy  User?                 @relation("ExternalContactReviewer", fields: [reviewedById], references: [id])
+  reviewedAt  DateTime?
+  reviewNote  String?
+  archivedAt  DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 
   @@index([category, archivedAt, name])
   @@index([status, archivedAt, createdAt])
@@ -2785,6 +2788,7 @@ enum MoneyKind {
   EXPENSE_RECOVERY
   OTHER
 }
+
 enum BillingAmendmentType {
   ORIGINAL
   ADDITION
@@ -2793,17 +2797,20 @@ enum BillingAmendmentType {
   SCOPE_ONLY
   TERMINATION
 }
+
 enum ReceivableDueState {
   UNKNOWN
   DATE_SET
   CONDITIONAL
 }
+
 enum FinanceCorrectionStatus {
   PENDING
   CONFIRMED
   REJECTED
   CANCELLED
 }
+
 enum FinanceEffectKind {
   EXPENSE_REVERSAL
   PAYMENT_REFUND
@@ -2812,78 +2819,84 @@ enum FinanceEffectKind {
   INVOICE_ALLOCATION_REVERSAL
   COMMISSION_ADJUSTMENT
 }
+
 enum BillingScopeState {
   COVERED
   SUPPLEMENT_REQUIRED
   PENDING_REVIEW
 }
+
 enum CommissionSettlementKind {
   PAID
   RECOVERED
 }
 
 model BillingProcedureScope {
-  billingId String
-  billing Billing @relation(fields: [billingId], references: [id], onDelete: Restrict)
+  billingId   String
+  billing     Billing           @relation(fields: [billingId], references: [id], onDelete: Restrict)
   procedureId String
-  procedure MatterProcedure @relation(fields: [procedureId], references: [id], onDelete: Restrict)
-  state BillingScopeState @default(PENDING_REVIEW)
-  note String?
-  createdAt DateTime @default(now())
+  procedure   MatterProcedure   @relation(fields: [procedureId], references: [id], onDelete: Restrict)
+  state       BillingScopeState @default(PENDING_REVIEW)
+  note        String?
+  createdAt   DateTime          @default(now())
+
   @@id([billingId, procedureId])
   @@index([procedureId])
 }
 
 model BillingAttachment {
-  billingId String
-  billing Billing @relation(fields: [billingId], references: [id], onDelete: Restrict)
+  billingId  String
+  billing    Billing  @relation(fields: [billingId], references: [id], onDelete: Restrict)
   documentId String
-  document Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
-  createdAt DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  createdAt  DateTime @default(now())
+
   @@id([billingId, documentId])
   @@index([documentId])
 }
 
 model InvoicePaymentAllocation {
-  id String @id @default(cuid())
-  matterId String
-  invoiceId String
-  invoice InvoiceRequest @relation(fields: [invoiceId, matterId], references: [id, matterId], onDelete: Restrict)
-  paymentId String
-  payment Payment @relation(fields: [paymentId, matterId], references: [id, matterId], onDelete: Restrict)
-  amount Decimal @db.Decimal(14, 2)
-  reversedAmount Decimal @default(0) @db.Decimal(14, 2)
-  recordedById String
-  recordedBy User @relation("InvoiceAllocationRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  revision Int @default(0)
+  id                String                    @id @default(cuid())
+  matterId          String
+  invoiceId         String
+  invoice           InvoiceRequest            @relation(fields: [invoiceId, matterId], references: [id, matterId], onDelete: Restrict)
+  paymentId         String
+  payment           Payment                   @relation(fields: [paymentId, matterId], references: [id, matterId], onDelete: Restrict)
+  amount            Decimal                   @db.Decimal(14, 2)
+  reversedAmount    Decimal                   @default(0) @db.Decimal(14, 2)
+  recordedById      String
+  recordedBy        User                      @relation("InvoiceAllocationRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  revision          Int                       @default(0)
   correctionEffects FinanceCorrectionEffect[] @relation("EffectInvoiceAllocation")
+
   @@unique([invoiceId, paymentId])
   @@index([paymentId])
 }
 
 model FinanceCorrectionEffect {
-  expenseEntryId String?
-  expenseEntry FeeEntry? @relation("EffectExpense", fields: [expenseEntryId], references: [id], onDelete: Restrict)
-  @@unique([correctionId, expenseEntryId])
-  id String @id @default(cuid())
-  correctionId String
-  correction FinanceCorrection @relation(fields: [correctionId], references: [id], onDelete: Restrict)
-  effectKind FinanceEffectKind
+  expenseEntryId      String?
+  expenseEntry        FeeEntry?                 @relation("EffectExpense", fields: [expenseEntryId], references: [id], onDelete: Restrict)
+  id                  String                    @id @default(cuid())
+  correctionId        String
+  correction          FinanceCorrection         @relation(fields: [correctionId], references: [id], onDelete: Restrict)
+  effectKind          FinanceEffectKind
   // 应收和分成是有符号调整；退款和撤回是正数，增加目标累计退回/撤回额。
-  delta Decimal @db.Decimal(14, 2)
-  paymentId String?
-  payment Payment? @relation("EffectPayment", fields: [paymentId], references: [id], onDelete: Restrict)
-  receivableId String?
-  receivable Receivable? @relation("EffectReceivable", fields: [receivableId], references: [id], onDelete: Restrict)
-  allocationId String?
-  allocation Allocation? @relation("EffectAllocation", fields: [allocationId], references: [id], onDelete: Restrict)
+  delta               Decimal                   @db.Decimal(14, 2)
+  paymentId           String?
+  payment             Payment?                  @relation("EffectPayment", fields: [paymentId], references: [id], onDelete: Restrict)
+  receivableId        String?
+  receivable          Receivable?               @relation("EffectReceivable", fields: [receivableId], references: [id], onDelete: Restrict)
+  allocationId        String?
+  allocation          Allocation?               @relation("EffectAllocation", fields: [allocationId], references: [id], onDelete: Restrict)
   invoiceAllocationId String?
-  invoiceAllocation InvoicePaymentAllocation? @relation("EffectInvoiceAllocation", fields: [invoiceAllocationId], references: [id], onDelete: Restrict)
-  commissionEntryId String?
-  commissionEntry FeeEntry? @relation("EffectCommission", fields: [commissionEntryId], references: [id], onDelete: Restrict)
-  createdAt DateTime @default(now())
+  invoiceAllocation   InvoicePaymentAllocation? @relation("EffectInvoiceAllocation", fields: [invoiceAllocationId], references: [id], onDelete: Restrict)
+  commissionEntryId   String?
+  commissionEntry     FeeEntry?                 @relation("EffectCommission", fields: [commissionEntryId], references: [id], onDelete: Restrict)
+  createdAt           DateTime                  @default(now())
+
+  @@unique([correctionId, expenseEntryId])
   @@unique([correctionId, paymentId])
   @@unique([correctionId, receivableId])
   @@unique([correctionId, allocationId])
@@ -2897,35 +2910,37 @@ model FinanceCorrectionEffect {
 }
 
 model CommissionSettlement {
-  id String @id @default(cuid())
+  id                String                   @id @default(cuid())
   commissionEntryId String
-  commissionEntry FeeEntry @relation(fields: [commissionEntryId], references: [id], onDelete: Restrict)
-  kind CommissionSettlementKind
-  amount Decimal @db.Decimal(14, 2)
-  occurredAt DateTime
-  recordedById String
-  recordedBy User @relation("CommissionSettlementRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
-  voucherReference String
-  note String?
-  voidedAt DateTime?
-  voidReason String?
-  createdAt DateTime @default(now())
+  commissionEntry   FeeEntry                 @relation(fields: [commissionEntryId], references: [id], onDelete: Restrict)
+  kind              CommissionSettlementKind
+  amount            Decimal                  @db.Decimal(14, 2)
+  occurredAt        DateTime
+  recordedById      String
+  recordedBy        User                     @relation("CommissionSettlementRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  voucherReference  String
+  note              String?
+  voidedAt          DateTime?
+  voidReason        String?
+  createdAt         DateTime                 @default(now())
+
   @@index([commissionEntryId])
 }
 
 // 已送审轮次只追加，不覆盖；snapshot 含当次字段/主体/材料清单。
 model IntakeRevision {
-  id String @id @default(cuid())
-  intakeId String
-  intake Intake @relation(fields: [intakeId], references: [id], onDelete: Restrict)
-  round Int
-  snapshot Json
-  fingerprint String
-  checkId String
-  check ConflictCheck @relation(fields: [checkId], references: [id], onDelete: Restrict)
+  id            String        @id @default(cuid())
+  intakeId      String
+  intake        Intake        @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  round         Int
+  snapshot      Json
+  fingerprint   String
+  checkId       String
+  check         ConflictCheck @relation(fields: [checkId], references: [id], onDelete: Restrict)
   submittedById String
-  submittedBy User @relation(fields: [submittedById], references: [id], onDelete: Restrict)
-  submittedAt DateTime @default(now())
+  submittedBy   User          @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+  submittedAt   DateTime      @default(now())
+
   @@unique([intakeId, round])
 }
 
@@ -2934,135 +2949,145 @@ enum WorkItemState {
   DONE
   CANCELLED
 }
+
 model WorkResponsibility {
   proposedAssigneeId String?
-  proposedAssignee User? @relation("ProposedWork", fields: [proposedAssigneeId], references: [id], onDelete: Restrict)
-  id String @id @default(cuid())
-  taskId String? @unique
-  task Task? @relation(fields: [taskId], references: [id], onDelete: Restrict)
-  deadlineId String? @unique
-  deadline Deadline? @relation(fields: [deadlineId], references: [id], onDelete: Restrict)
-  hearingId String? @unique
-  hearing Hearing? @relation(fields: [hearingId], references: [id], onDelete: Restrict)
-  assigneeId String
-  assignee User @relation("WorkAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
-  acceptedAt DateTime?
-  state WorkItemState @default(OPEN)
-  reason String?
-  closedAt DateTime?
-  revision Int @default(0)
-  createdAt DateTime @default(now())
+  proposedAssignee   User?         @relation("ProposedWork", fields: [proposedAssigneeId], references: [id], onDelete: Restrict)
+  id                 String        @id @default(cuid())
+  taskId             String?       @unique
+  task               Task?         @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  deadlineId         String?       @unique
+  deadline           Deadline?     @relation(fields: [deadlineId], references: [id], onDelete: Restrict)
+  hearingId          String?       @unique
+  hearing            Hearing?      @relation(fields: [hearingId], references: [id], onDelete: Restrict)
+  assigneeId         String
+  assignee           User          @relation("WorkAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  acceptedAt         DateTime?
+  state              WorkItemState @default(OPEN)
+  reason             String?
+  closedAt           DateTime?
+  revision           Int           @default(0)
+  createdAt          DateTime      @default(now())
+
   @@index([assigneeId, state])
 }
+
 model IntakeUrgentItem {
   proposedAssigneeId String?
-  proposedAssignee User? @relation("ProposedUrgent", fields: [proposedAssigneeId], references: [id], onDelete: Restrict)
-  id String @id @default(cuid())
-  intakeId String
-  intake Intake @relation(fields: [intakeId], references: [id], onDelete: Restrict)
-  matterId String?
-  matter Matter? @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  title String
-  dueAt DateTime
-  kind String
-  assigneeId String
-  assignee User @relation("UrgentAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
-  acceptedAt DateTime?
-  state WorkItemState @default(OPEN)
-  reason String?
-  closedAt DateTime?
-  revision Int @default(0)
-  createdAt DateTime @default(now())
-  @@index([assigneeId,state,dueAt])
+  proposedAssignee   User?         @relation("ProposedUrgent", fields: [proposedAssigneeId], references: [id], onDelete: Restrict)
+  id                 String        @id @default(cuid())
+  intakeId           String
+  intake             Intake        @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  matterId           String?
+  matter             Matter?       @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  title              String
+  dueAt              DateTime
+  kind               String
+  assigneeId         String
+  assignee           User          @relation("UrgentAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  acceptedAt         DateTime?
+  state              WorkItemState @default(OPEN)
+  reason             String?
+  closedAt           DateTime?
+  revision           Int           @default(0)
+  createdAt          DateTime      @default(now())
+
+  @@index([assigneeId, state, dueAt])
   @@index([intakeId])
   @@index([matterId])
 }
+
 enum HandoverState {
   PENDING
   ACCEPTED
   CANCELLED
 }
+
 model MatterHandover {
-  id String @id @default(cuid())
-  matterId String
-  matter Matter @relation(fields: [matterId], references: [id], onDelete: Restrict)
-  fromUserId String
-  fromUser User @relation("HandoverSender", fields: [fromUserId], references: [id], onDelete: Restrict)
-  toUserId String
-  toUser User @relation("HandoverReceiver", fields: [toUserId], references: [id], onDelete: Restrict)
+  id            String        @id @default(cuid())
+  matterId      String
+  matter        Matter        @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  fromUserId    String
+  fromUser      User          @relation("HandoverSender", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUserId      String
+  toUser        User          @relation("HandoverReceiver", fields: [toUserId], references: [id], onDelete: Restrict)
   initiatedById String
-  initiatedBy User @relation("HandoverInitiator", fields: [initiatedById], references: [id], onDelete: Restrict)
-  emergency Boolean @default(false)
-  reason String
-  snapshot Json
-  fingerprint String
-  status HandoverState @default(PENDING)
-  reviewedAt DateTime?
-  revision Int @default(0)
-  createdAt DateTime @default(now())
-  @@index([matterId,status])
-  @@index([toUserId,status])
+  initiatedBy   User          @relation("HandoverInitiator", fields: [initiatedById], references: [id], onDelete: Restrict)
+  emergency     Boolean       @default(false)
+  reason        String
+  snapshot      Json
+  fingerprint   String
+  status        HandoverState @default(PENDING)
+  reviewedAt    DateTime?
+  revision      Int           @default(0)
+  createdAt     DateTime      @default(now())
+
+  @@index([matterId, status])
+  @@index([toUserId, status])
 }
 
 model ExecutionTermination {
- id String @id @default(cuid())
- invoiceId String?
- invoice InvoiceRequest? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
- sealId String?
- seal SealRequest? @relation(fields: [sealId], references: [id], onDelete: Restrict)
- requestedById String
- requestedBy User @relation("TerminationRequester", fields: [requestedById], references: [id], onDelete: Restrict)
- decidedById String?
- decidedBy User? @relation("TerminationDecider", fields: [decidedById], references: [id], onDelete: Restrict)
- reason String
- decisionNote String?
- status FinanceCorrectionStatus @default(PENDING)
- revision Int @default(0)
- createdAt DateTime @default(now())
- decidedAt DateTime?
- @@index([invoiceId])
- @@index([sealId])
+  id            String                  @id @default(cuid())
+  invoiceId     String?
+  invoice       InvoiceRequest?         @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  sealId        String?
+  seal          SealRequest?            @relation(fields: [sealId], references: [id], onDelete: Restrict)
+  requestedById String
+  requestedBy   User                    @relation("TerminationRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  decidedById   String?
+  decidedBy     User?                   @relation("TerminationDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+  reason        String
+  decisionNote  String?
+  status        FinanceCorrectionStatus @default(PENDING)
+  revision      Int                     @default(0)
+  createdAt     DateTime                @default(now())
+  decidedAt     DateTime?
+
+  @@index([invoiceId])
+  @@index([sealId])
 }
 
 model IntakeHandover {
- id String @id @default(cuid())
- intakeId String
- intake Intake @relation(fields: [intakeId], references: [id], onDelete: Restrict)
- fromUserId String
- fromUser User @relation("IntakeHandoverFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
- toUserId String
- toUser User @relation("IntakeHandoverTo", fields: [toUserId], references: [id], onDelete: Restrict)
- initiatedById String
- initiatedBy User @relation("IntakeHandoverInitiator", fields: [initiatedById], references: [id], onDelete: Restrict)
- emergency Boolean @default(false)
- reason String
- snapshot Json
- fingerprint String
- status HandoverState @default(PENDING)
- revision Int @default(0)
- reviewedAt DateTime?
- createdAt DateTime @default(now())
- @@index([intakeId])
+  id            String        @id @default(cuid())
+  intakeId      String
+  intake        Intake        @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  fromUserId    String
+  fromUser      User          @relation("IntakeHandoverFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUserId      String
+  toUser        User          @relation("IntakeHandoverTo", fields: [toUserId], references: [id], onDelete: Restrict)
+  initiatedById String
+  initiatedBy   User          @relation("IntakeHandoverInitiator", fields: [initiatedById], references: [id], onDelete: Restrict)
+  emergency     Boolean       @default(false)
+  reason        String
+  snapshot      Json
+  fingerprint   String
+  status        HandoverState @default(PENDING)
+  revision      Int           @default(0)
+  reviewedAt    DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([intakeId])
 }
 
 model InvoiceAdjustment {
- id String @id @default(cuid())
- invoiceId String
- invoice InvoiceRequest @relation("AdjustedInvoice", fields: [invoiceId], references: [id], onDelete: Restrict)
- replacementInvoiceId String?
- replacementInvoice InvoiceRequest? @relation("ReplacementInvoice", fields: [replacementInvoiceId], references: [id], onDelete: Restrict)
- kind String
- amount Decimal @db.Decimal(14, 2)
- occurredAt DateTime
- reference String
- reason String
- documentId String
- document Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
- recordedById String
- recordedBy User @relation(fields: [recordedById], references: [id], onDelete: Restrict)
- createdAt DateTime @default(now())
- @@unique([invoiceId, reference])
- @@index([replacementInvoiceId])
+  id                   String          @id @default(cuid())
+  invoiceId            String
+  invoice              InvoiceRequest  @relation("AdjustedInvoice", fields: [invoiceId], references: [id], onDelete: Restrict)
+  replacementInvoiceId String?
+  replacementInvoice   InvoiceRequest? @relation("ReplacementInvoice", fields: [replacementInvoiceId], references: [id], onDelete: Restrict)
+  kind                 String
+  amount               Decimal         @db.Decimal(14, 2)
+  occurredAt           DateTime
+  reference            String
+  reason               String
+  documentId           String
+  document             Document        @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  recordedById         String
+  recordedBy           User            @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+  createdAt            DateTime        @default(now())
+
+  @@unique([invoiceId, reference])
+  @@index([replacementInvoiceId])
 }
 
 // ============ 工时与费率（2026-11-18 新增）============
@@ -3117,19 +3142,19 @@ model RateSchedule {
 
 /// 工时记录
 model TimeEntry {
-  id        String @id @default(cuid())
-  matterId  String
-  matter    Matter @relation(fields: [matterId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User   @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Restrict)
+  id       String @id @default(cuid())
+  matterId String
+  matter   Matter @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Restrict)
 
-  workDate   DateTime @db.Date
-  minutes    Int
+  workDate       DateTime @db.Date
+  minutes        Int
   /// 工作内容（律师可读的叙述）
-  narrative  String   @db.Text
+  narrative      String   @db.Text
   /// 自定义任务分类：阅卷 / 开庭 / 起草 / 沟通 …
-  taskCode   String?
-  billable   Boolean  @default(true)
+  taskCode       String?
+  billable       Boolean  @default(true)
   /// 不可计费时必填理由
   noChargeReason String?
 
@@ -3202,9 +3227,9 @@ model EthicalWall {
 
 /// 被隔离的对象。三种目标互斥：按人、按团队、按角色。
 model EthicalWallDenial {
-  id   String @id @default(cuid())
+  id     String      @id @default(cuid())
   wallId String
-  wall EthicalWall @relation(fields: [wallId], references: [id], onDelete: Cascade)
+  wall   EthicalWall @relation(fields: [wallId], references: [id], onDelete: Cascade)
 
   /// 被隔离对象的类别。刻意不叫 targetType——那个名字在本项目专指审计对象类型，
   /// 复用会让「全仓 targetType 字面量都必须有中文标签」的元测试误报。
@@ -3244,25 +3269,25 @@ enum EmailMatchKind {
 }
 
 model EmailArchive {
-  id          String  @id @default(cuid())
-  subject     String
-  fromAddress String
-  fromName    String?
+  id              String   @id @default(cuid())
+  subject         String
+  fromAddress     String
+  fromName        String?
   /// 多个收件人 / 抄送
-  toAddresses String[]
-  ccAddresses String[]
-  sentAt      DateTime
-  bodyText    String  @db.Text
-  bodyHtml    String? @db.Text
+  toAddresses     String[]
+  ccAddresses     String[]
+  sentAt          DateTime
+  bodyText        String   @db.Text
+  bodyHtml        String?  @db.Text
   /// 附件数量。本轮仅粘贴归档（无附件上传通道），恒为 0；接入 IMAP 后由取件器回填。
-  attachmentCount Int @default(0)
+  attachmentCount Int      @default(0)
 
   /// 归属案件（可空：尚未匹配）
   matterId String?
   matter   Matter? @relation(fields: [matterId], references: [id], onDelete: SetNull)
 
   /// 匹配依据类别
-  matchKind EmailMatchKind @default(UNMATCHED)
+  matchKind     EmailMatchKind @default(UNMATCHED)
   /// 匹配依据的可读说明，如「正文含案号 LL-2026-CC-0001」
   matchEvidence String?
 
@@ -3296,18 +3321,18 @@ model WebAuthnCredential {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// Base64URL 编码的 credential ID（浏览器侧 WebAuthnCredential.id）
-  credentialId String @unique
+  credentialId String    @unique
   /// Base64URL 编码的 COSE 公钥
-  publicKey    String @db.Text
+  publicKey    String    @db.Text
   /// 签名计数器（BigInt：部分认证器 counter 为 32 位无符号且可能很大）
-  counter      BigInt @default(0)
+  counter      BigInt    @default(0)
   /// usb / nfc / ble / internal / hybrid（浏览器上报，用于 allowCredentials 提示）
   transports   String[]
   /// 用户可读备注，如「MacBook 指纹」
   deviceName   String?
   /// 是否为可同步的 passkey（多设备凭证）。仅记录事实，不参与准入判定
-  backedUp     Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  backedUp     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
   lastUsedAt   DateTime?
 
   @@index([userId])
@@ -3356,13 +3381,13 @@ enum ConfirmationStatus {
 }
 
 model ContractConfirmation {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   clientId     String
-  client       Client  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  client       Client      @relation(fields: [clientId], references: [id], onDelete: Restrict)
   engagementId String?
   engagement   Engagement? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
   matterId     String?
-  matter       Matter?  @relation(fields: [matterId], references: [id], onDelete: SetNull)
+  matter       Matter?     @relation(fields: [matterId], references: [id], onDelete: SetNull)
 
   /// 送达给客户看的正文快照——事后可完整复现「客户当时看到的是什么」
   contentSnapshot String @db.Text
@@ -3383,11 +3408,54 @@ model ContractConfirmation {
   revokedAt     DateTime?
   revokedReason String?
   createdById   String
-  createdBy     User     @relation("ContractConfirmationCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdBy     User      @relation("ContractConfirmationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([clientId, status])
   @@index([tokenHash])
   @@index([status, expiresAt])
+}
+
+// ============================================================
+// 客户门户 S1：身份与邀请（2026-11-20）
+// 分期说明见 docs/客户门户架构方案-20261120.md §六。
+// S1 只建这两张表；PortalShare / PortalRequest / PortalSatisfaction
+// 随 S2/S3 落地时再加，避免先建空表却无人使用。
+// ============================================================
+
+/// 门户用户：客户方的自然人账号，与员工 User 结构性隔离
+model ClientPortalUser {
+  id             String    @id @default(cuid())
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  email          String    @unique
+  name           String
+  passwordHash   String
+  active         Boolean   @default(true)
+  /// 与员工侧同机制：递增即让该客户所有旧会话失效
+  sessionVersion Int       @default(0)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  invites PortalInvite[]
+
+  @@index([clientId])
+}
+
+/// 邀请链接：一次性 token，只存哈希
+model PortalInvite {
+  id           String           @id @default(cuid())
+  portalUserId String
+  portalUser   ClientPortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  /// 只存 sha256(明文 token)，不存原文；原文只在生成时返回一次
+  tokenHash    String           @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  /// 发起邀请的员工 User.id（不建外键：员工离职不删除历史邀请记录）
+  createdById  String
+  createdAt    DateTime         @default(now())
+
+  @@index([portalUserId])
 }
