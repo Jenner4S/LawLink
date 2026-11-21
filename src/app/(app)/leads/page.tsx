@@ -7,6 +7,8 @@ import { getLeadsListColumns } from "@/server/settings/leads-columns";
 import { getUpcomingVisits } from "@/server/leads/upcoming-visits";
 import { getStaleConsultedLeads } from "@/server/leads/stale-consulted";
 import { getChannelCostComparison, listChannelCosts, monthKey, recentMonths } from "@/server/leads/channel-costs";
+import { getChannelQualityComparison } from "@/server/leads/channel-quality";
+import { shMonthStart } from "@/server/finance/facts";
 import { getLeadToCash } from "@/server/leads/lead-to-cash";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
@@ -31,7 +33,10 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   // 首次进入自动预置常用渠道（幂等）：空表意味着没人建，等于没这个功能
   await ensureDefaultChannels().catch(() => ({ created: 0 }));
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // 月界必须与漏斗同口径（上海时区）。容器时区是 UTC，
+  // 用 `new Date(y, m, 1)` 会得到 UTC 月初 = 上海 08:00，
+  // 于是"本月 00:00 登记的线索"会被判进上月 —— 质量环比因此全是 null（踩过）。
+  const monthStart = shMonthStart(now);
   // 投放成本编辑月份（2026-11-23）：默认本月；只允许近 12 个月且不晚于本月
   // （补录上月是常态，填未来的数没有意义还会让环比错位）
   const thisMonth = monthKey(monthStart);
@@ -39,8 +44,9 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   const costMonth =
     typeof sp.costMonth === "string" && monthSeq.includes(sp.costMonth) ? sp.costMonth : thisMonth;
 
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming, staleConsulted, channelCosts, costCompare] = await Promise.all([
+  const nextMonth = shMonthStart(now, 1);
+  const prevMonthStart = shMonthStart(now, -1);
+  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming, staleConsulted, channelCosts, costCompare, qualityCompare] = await Promise.all([
     listLeads({ stage: "ALL", assignee: assigneeView, ...(channelFilter ? { channelId: channelFilter } : {}) }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
@@ -62,7 +68,10 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-23：渠道月度投放成本（本月的，供面板直接编辑）
     listChannelCosts(costMonth),
     // 2026-11-23：本月 vs 上月投放对比（录入的数要参与判断）
-    getChannelCostComparison(costMonth)
+    getChannelCostComparison(costMonth),
+    // 2026-11-23：到店率/成交率环比。成本环比只说多花了多少，
+    // 说不清"多花的钱有没有换来更好的客"。
+    getChannelQualityComparison(monthStart, nextMonth, prevMonthStart, monthStart)
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} channelCosts={channelCosts} costMonth={costMonth} costMonths={monthSeq} costCompare={Object.fromEntries(costCompare)} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} channelCosts={channelCosts} costMonth={costMonth} costMonths={monthSeq} costCompare={Object.fromEntries(costCompare)} qualityCompare={Object.fromEntries(qualityCompare)} />;
 }

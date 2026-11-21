@@ -32,7 +32,23 @@ await new Promise((r, j) => { ws.onopen = r; ws.onerror = () => j(new Error("ws"
 let id = 0; const pend = new Map();
 ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); } };
 const send = (m, p = {}) => new Promise((res) => { const i = ++id; pend.set(i, res); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
-const ev = async (x) => { const r = await send("Runtime.evaluate", { expression: x, awaitPromise: true, returnByValue: true }); return r.result?.result?.value; };
+/**
+ * 在页面里求值。
+ *
+ * 2026-11-23 修正：此前 evaluate 抛异常时这里返回 undefined，
+ * 上层再 `JSON.parse(undefined)` 就变成 "undefined is not valid JSON" ——
+ * 真正的原因（比如 `row.innerText` 的 TypeError）被吞掉了，白查半小时。
+ * 现在把异常直接抛出，失败信息能指到具体表达式。
+ */
+const ev = async (x) => {
+  const r = await send("Runtime.evaluate", { expression: x, awaitPromise: true, returnByValue: true });
+  const exc = r.result?.exceptionDetails;
+  if (exc) {
+    const desc = exc.exception?.description || exc.text || "unknown";
+    throw new Error(`页面求值失败：${String(desc).split("\n")[0].slice(0, 160)}`);
+  }
+  return r.result?.result?.value;
+};
 
 const log = [];
 const step = (name, pass, detail) => { log.push({ name, pass, detail }); console.log(`  ${pass ? "✅" : "❌"} ${name}${detail ? " — " + detail : ""}`); };
@@ -311,6 +327,47 @@ const cmp = await ev(`(function(){
 const ci2 = JSON.parse(cmp);
 step("⑲ 投放环比：上月 450→本月 600 显示 ↑33.3%", ci2.up && ci2.rate, `text=${(ci2.text||"").replace(/\n/g," ").slice(0,40)}`);
 
+// ⑳ 转化质量环比（2026-11-23）：上月 0 成交 → 本月 1 成交，成交率 +50 个百分点
+const qChanId = `walkqc${Date.now()}`;
+const qPrev1 = `walkqp${Date.now()}1`;
+const qPrev2 = `walkqp${Date.now()}2`;
+const qCur1 = `walkqc${Date.now()}1`;
+const qCur2 = `walkqc${Date.now()}2`;
+const thisMonthStart = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })();
+const prevMonthStart = new Date(thisMonthStart.getFullYear(), thisMonthStart.getMonth() - 1, 1);
+const iso = (d) => d.toISOString();
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "LeadChannel" (id,name,kind,active,sort,"createdAt","updatedAt")
+   values ('${qChanId}','巡检质量渠道','PAID',true,3,now(),now())`], { encoding: "utf8" });
+// 上月两条都未成交（其中一条到店）；本月两条，一条到店并成交
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "Lead" (id,name,phone,stage,"visitOutcome","ownerId","channelId","createdAt","updatedAt")
+   values ('${qPrev1}','巡检质量上月A','13900000795','VISITED','ARRIVED','${walkOwnerId}','${qChanId}','${iso(prevMonthStart)}','${iso(prevMonthStart)}'),
+          ('${qPrev2}','巡检质量上月B','13900000796','INVITED','PENDING','${walkOwnerId}','${qChanId}','${iso(prevMonthStart)}','${iso(prevMonthStart)}'),
+          ('${qCur1}','巡检质量本月A','13900000797','CONVERTED','ARRIVED','${walkOwnerId}','${qChanId}','${iso(thisMonthStart)}','${iso(thisMonthStart)}'),
+          ('${qCur2}','巡检质量本月B','13900000798','VISITED','ARRIVED','${walkOwnerId}','${qChanId}','${iso(thisMonthStart)}','${iso(thisMonthStart)}')`], { encoding: "utf8" });
+
+await send("Page.navigate", { url: "http://localhost:3000/leads" });
+await sleep(2500);
+await ev(`(function(){var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim()==="渠道与口径";});if(b)b.click();})()`);
+await sleep(1500);
+const qInfo = await ev(`(function(){
+  try {
+    var lab=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim().indexOf("巡检质量渠道")>=0;});
+    if(!lab) return JSON.stringify({found:false});
+    // parentElement 可能为 null（曾因此让 evaluate 抛错、返回 undefined，
+    // 再被 JSON.parse 吃掉成 "undefined is not valid JSON"）——加兜底并整体 try
+    var row=lab.parentElement||lab;
+    var t=((row.innerText||"")+"").split("\\n").join(" ");
+    return JSON.stringify({found:true, text:t, up:t.indexOf("▲")>=0, fifty:t.indexOf("50")>=0});
+  } catch (e) {
+    return JSON.stringify({found:false, err:String(e).slice(0,80)});
+  }
+})()`);
+const qi = JSON.parse(qInfo);
+step("⑳ 转化质量环比：上月 0 成交 → 本月 1 成交 显示 ▲50", qi.found && qi.up && qi.fifty,
+  `text=${(qi.text||"").slice(0,50)}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });
@@ -320,11 +377,11 @@ execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "la
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId" in ('${drillLeadId}','${upId}','${staleId}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
-  `delete from "Lead" where id in ('${drillLeadId}','${upId}','${staleId}','${costLeadId}')`], { encoding: "utf8" });
+  `delete from "Lead" where id in ('${drillLeadId}','${upId}','${staleId}','${costLeadId}','${qPrev1}','${qPrev2}','${qCur1}','${qCur2}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadChannelCost" where "channelId"='${costChanId}'`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
-  `delete from "LeadChannel" where id in ('${chanId}','${chanParentId}','${costChanId}')`], { encoding: "utf8" });
+  `delete from "LeadChannel" where id in ('${chanId}','${chanParentId}','${costChanId}','${qChanId}')`], { encoding: "utf8" });
 if (intakeId && intakeId.startsWith("cm")) {
   execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
     `delete from "Intake" where id='${intakeId}'`], { encoding: "utf8" });

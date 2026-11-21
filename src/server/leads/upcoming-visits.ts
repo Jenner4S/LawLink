@@ -31,15 +31,23 @@ export type UpcomingVisitDay = {
 
 const KEY_LEN = 3;
 
+/** 按 +08:00 出日期串：容器是 UTC，直接取本地字段会让"上海今晚的约定"显示成明天。 */
 function ymd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const sh = new Date(d.getTime() + 8 * 3600_000);
+  const y = sh.getUTCFullYear();
+  const m = String(sh.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(sh.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
 export async function getUpcomingVisits(days = 7, now = new Date()): Promise<UpcomingVisitDay[]> {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // 起算点是"今天 0 点"。容器时区是 UTC（2026-11-23 实测 `date` = UTC），
+  // 用本地构造会得到 UTC 0 点 = 上海 08:00，于是"上海今天上午的约定"被算进昨天。
+  // 这里改为按 +08:00 取当天 0 点，与页面显示（上海）一致。
+  const shNow = new Date(now.getTime() + 8 * 3600_000);
+  const start = new Date(
+    Date.UTC(shNow.getUTCFullYear(), shNow.getUTCMonth(), shNow.getUTCDate()) - 8 * 3600_000
+  );
   const end = new Date(start.getTime() + days * 86_400_000);
 
   const rows = await prisma.lead.findMany({

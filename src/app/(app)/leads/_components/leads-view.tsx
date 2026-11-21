@@ -58,7 +58,8 @@ export function LeadsView({
   channelCosts,
   costMonth,
   costMonths,
-  costCompare
+  costCompare,
+  qualityCompare
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -90,6 +91,13 @@ export function LeadsView({
   costMonths: string[];
   /** 本月 vs 上月投放对比（渠道 id → 对比） */
   costCompare: Record<string, { current: number; previous: number; delta: number; deltaRate: number | null }>;
+  /** 本月 vs 上月到店率/成交率对比（渠道 id → 对比） */
+  qualityCompare: Record<string, {
+    current: { total: number; visited: number; converted: number; visitRate: number | null; conversionRate: number | null };
+    previous: { total: number; visited: number; converted: number; visitRate: number | null; conversionRate: number | null };
+    visitRateDelta: number | null;
+    conversionRateDelta: number | null;
+  }>;
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
@@ -337,7 +345,25 @@ export function LeadsView({
                     <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
                       {r.total} / {r.visited} / {r.converted}
                     </span>
-                    <span className="w-14 shrink-0 text-right tabular">{pct(r.conversionRate)}</span>
+                    <span className="w-14 shrink-0 text-right tabular">
+                      {pct(r.conversionRate)}
+                      {/* 成交率环比（2026-11-23）：百分点差，不是百分比差。
+                          上月无基线时不显示（"上月没投"不构成对比）。 */}
+                      {(() => {
+                        const q = qualityCompare[r.key];
+                        const d = q?.conversionRateDelta;
+                        if (d === null || d === undefined || d === 0) return null;
+                        return (
+                          <span
+                            className={`ml-0.5 text-[9px] ${d > 0 ? "text-[var(--green,#15803d)]" : "text-[var(--red,#b91c1c)]"}`}
+                            title={`上月成交率 ${q!.previous.conversionRate ?? "—"}% → 本月 ${q!.current.conversionRate ?? "—"}%（${d > 0 ? "+" : ""}${d} 个百分点）`}
+                          >
+                            {d > 0 ? "▲" : "▼"}
+                            {Math.abs(d)}
+                          </span>
+                        );
+                      })()}
+                    </span>
                     {/* 2026-11-23：本月投放成本。此前只能改库，业主根本填不进去，
                         于是"单线索成本"那几列永远是「—」——功能等于没做完。
                         0 视为"没投"，服务端会删掉该月记录（0 与没投是同一件事）。 */}

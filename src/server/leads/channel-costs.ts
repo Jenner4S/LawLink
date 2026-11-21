@@ -12,9 +12,16 @@
  */
 import { prisma } from "@/lib/prisma";
 
-/** `YYYY-MM`（本地时区，与页面显示一致） */
+/**
+ * `YYYY-MM`，按 **+08:00** 取字段（与页面显示、`shMonthStart` 一致）。
+ *
+ * 容器时区是 UTC（实测 `date` = UTC）。若按本地字段取，
+ * 上海 11-01 00:00 这个时刻在 UTC 是 10-31T16:00Z → 会算成 `2026-10`，
+ * 与 `shMonthStart` 算出的"本月"错开一个月（投放成本的月份因此对不上，踩过）。
+ */
 export function monthKey(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const sh = new Date(d.getTime() + 8 * 3600_000);
+  return `${sh.getUTCFullYear()}-${String(sh.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export type ChannelCostRow = { channelId: string; month: string; amount: number; note: string | null };
@@ -42,7 +49,9 @@ export async function listChannelCosts(month: string): Promise<ChannelCostRow[]>
 /** `2026-11` ± n 个月（用于月份选择器与环比） */
 export function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
+  // 直接用 UTC 构造再交给 monthKey（它按 +08:00 取字段）——
+  // 用本地构造会引入一次时区往返，边界月份会偏。
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
   return monthKey(d);
 }
 

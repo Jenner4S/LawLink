@@ -205,3 +205,23 @@ describe("投放环比", () => {
     expect((await getChannelCostComparison("2026-11")).has(ch.id)).toBe(false);
   });
 });
+
+/**
+ * 容器时区是 UTC（2026-11-23 实测），而业务口径是上海。
+ *
+ * 这里的断言钉住"上海 11-01 00:00 必须是 2026-11"：
+ * 若按本地字段取，那个时刻在 UTC 是 10-31T16:00Z → 会算成 2026-10，
+ * 与 shMonthStart 算出的本月错开一个月（投放成本月份因此对不上，踩过）。
+ */
+describe("月份时区（+08:00）", () => {
+  it("上海月初 00:00（= UTC 前一天 16:00）算作本月", () => {
+    const shanghaiMonthStart = new Date(Date.UTC(2026, 10, 1) - 8 * 3600_000); // 2026-11-01 00:00 +08
+    expect(monthKey(shanghaiMonthStart)).toBe("2026-11");
+  });
+
+  it("跨年边界同样成立（上海 1/1 00:00 = UTC 上年 12/31 16:00）", () => {
+    const newYear = new Date(Date.UTC(2027, 0, 1) - 8 * 3600_000);
+    expect(monthKey(newYear)).toBe("2027-01");
+    expect(shiftMonth(monthKey(newYear), -1)).toBe("2026-12");
+  });
+});
