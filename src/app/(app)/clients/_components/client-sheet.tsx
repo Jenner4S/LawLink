@@ -62,6 +62,7 @@ const emptyDefaults: ClientCreateInput = {
   source: "",
   cooperationStatus: "SIGNED",
   industry: "",
+  occupation: "",
   gender: "",
   ethnicity: "",
   tags: [],
@@ -111,6 +112,7 @@ export function ClientSheet({ open, onOpenChange, editingClient }: Props) {
         source: editingClient.source ?? "",
         cooperationStatus: (editingClient as any).cooperationStatus ?? "SIGNED",
         industry: (editingClient as any).industry ?? "",
+        occupation: (editingClient as any).occupation ?? "",
         gender: (editingClient as any).gender ?? "",
         ethnicity: (editingClient as any).ethnicity ?? "",
         tags: editingClient.tags,
@@ -419,6 +421,11 @@ export function ClientSheet({ open, onOpenChange, editingClient }: Props) {
 
               <Field label="所属行业">
                 <Input placeholder="如 制造业 / 互联网 / 房地产" {...register("industry")} />
+              </Field>
+
+              {/* 与「所属行业」并存：个人客户常只有职业、没有行业 */}
+              <Field label="职业">
+                <Input placeholder="如 教师 / 餐饮店主 / 房产中介" {...register("occupation")} />
               </Field>
 
               {watchedType === "INDIVIDUAL" && (

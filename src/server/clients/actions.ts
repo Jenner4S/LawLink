@@ -219,6 +219,7 @@ export async function createClient(input: ClientCreateInput) {
         source: data.source,
         notes: data.notes,
         industry: data.industry,
+        occupation: data.occupation,
         ethnicity: data.ethnicity
       }),
       idType,

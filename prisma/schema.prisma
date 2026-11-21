@@ -642,6 +642,10 @@ model Client {
   internalCode        String?                 @unique // 客户编号 KH-{YYYY}-{4位}
   cooperationStatus   ClientCooperationStatus @default(SIGNED) // 合作状态
   industry            String? // 所属行业
+  /// 职业（2026-11-23）：客户档案侧。线索阶段已在 `Lead.occupation` 采集，
+  /// 收案转案件建客户时自动继承，避免二次录入。
+  /// 与 `industry`（机构/行业维度）并存：个人客户常只有职业没有行业。
+  occupation          String?
   gender              ClientGender? // 性别（个人客户）
   ethnicity           String? // 民族（个人客户）
   contacts            Contact[]

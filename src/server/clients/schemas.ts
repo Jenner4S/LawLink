@@ -50,6 +50,8 @@ const clientBaseSchema = z.object({
   // v0.39: 案件云式补充字段（internalCode 系统生成，不收用户输入）
   cooperationStatus: cooperationStatusSchema.default("SIGNED"),
   industry: z.string().max(60).optional().or(z.literal("")),
+  // 职业（2026-11-23）：与 industry 并存，个人客户常只有职业没有行业
+  occupation: z.string().trim().max(60).optional().or(z.literal("")),
   gender: clientGenderSchema.optional().or(z.literal("")),
   ethnicity: z.string().max(30).optional().or(z.literal("")),
   tags: z.array(z.string().max(20)).default([]),

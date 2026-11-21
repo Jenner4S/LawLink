@@ -222,6 +222,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 <FieldItem label="客户编号" mono>{client.internalCode || "—"}</FieldItem>
                 <FieldItem label="客户来源">{client.source || "—"}</FieldItem>
                 <FieldItem label="所属行业">{client.industry || "—"}</FieldItem>
+                <FieldItem label="职业">{client.occupation || "—"}</FieldItem>
                 {isIndividual ? <FieldItem label="性别">{client.gender ? genderLabel[client.gender] : "—"}</FieldItem> : <FieldItem label="法定代表人">{client.legalRep || "—"}</FieldItem>}
                 {isIndividual ? <FieldItem label="民族">{client.ethnicity || "—"}</FieldItem> : null}
                 <FieldItem label="联系电话" mono>{client.phone || "—"}</FieldItem>
