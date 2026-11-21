@@ -134,12 +134,74 @@ step("⑩ 「渠道与口径」面板四项齐在",
 step("⑪ 线索→回款闭环文案齐在",
   panelText.includes("本月线索 → 回款") && panelText.includes("回款率") && panelText.includes("签约额"));
 
+// ⑫ 列显隐（2026-11-23）：面板里应有「列表显示哪些列」+ 勾选框，且线索人列锁定
+const colInfo = await ev(`(function(){
+  var boxes=[].slice.call(document.querySelectorAll('input[type=checkbox]'));
+  var nameLocked=boxes.some(function(b){var l=b.closest('label');return l && l.innerText.indexOf('线索人')>=0 && b.disabled;});
+  var t=document.body.innerText||"";
+  return JSON.stringify({section:t.indexOf("列表显示哪些列")>=0, boxes:boxes.length, nameLocked:nameLocked, hintOp:t.indexOf("操作列始终显示")>=0});
+})()`);
+const ci = JSON.parse(colInfo);
+step("⑫ 列显隐：面板有分区、勾选框、线索人锁定", ci.section && ci.boxes >= 6 && ci.nameLocked && ci.hintOp,
+  `boxes=${ci.boxes} nameLocked=${ci.nameLocked}`);
+
+// ⑬ 渠道下钻（2026-11-23）：造"一级渠道 + 子渠道 + 一条线索"，点渠道行应跳 ?channel= 且只剩该线索
+const chanParentId = `walkcp${Date.now()}`;
+const chanId = `walkch${Date.now()}`;
+const drillLeadId = `walkdl${Date.now()}`;
+const walkOwnerId = await Q(`select id from "User" where active=true order by "createdAt" limit 1`);
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "LeadChannel" (id,name,kind,active,sort,"createdAt","updatedAt")
+   values ('${chanParentId}','巡检投放','PAID',true,9,now(),now())`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "LeadChannel" (id,name,"parentId",kind,active,sort,"createdAt","updatedAt")
+   values ('${chanId}','巡检子渠道','${chanParentId}','PAID',true,0,now(),now())`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "Lead" (id,name,phone,stage,"ownerId","channelId","createdAt","updatedAt")
+   values ('${drillLeadId}','巡检渠道线索','13900000777','LEAD','${walkOwnerId}','${chanId}',now(),now())`], { encoding: "utf8" });
+
+await send("Page.navigate", { url: "http://localhost:3000/leads" });
+await sleep(2500);
+const drillClick = await ev(`(function(){
+  var b=[].slice.call(document.querySelectorAll("button")).find(function(x){
+    return (x.textContent||"").indexOf("巡检子渠道")>=0 && (x.className||"").indexOf("underline")>=0;
+  });
+  if(!b) return "no-btn";
+  b.click(); return "clicked";
+})()`);
+await sleep(2500);
+const drillState = JSON.parse(await ev(`(function(){
+  var t=document.body.innerText||"";
+  return JSON.stringify({chip:t.indexOf("渠道筛选")>=0, listed:t.indexOf("巡检渠道线索")>=0, search:location.search});
+})()`));
+step("⑬ 渠道下钻：点渠道行跳 ?channel= 且只列该渠道线索",
+  drillClick === "clicked" && drillState.chip && drillState.listed && drillState.search.indexOf("channel=") >= 0,
+  `click=${drillClick} search=${drillState.search}`);
+
+// ⑭ 未来 7 天待上门（2026-11-23）：造一条"明天上门且未到店"的线索，应出现在该行
+const upId = `walkup${Date.now()}`;
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "Lead" (id,name,phone,stage,"visitOutcome","ownerId","invitedAt","createdAt","updatedAt")
+   values ('${upId}','巡检待上门','13900000778','INVITED','PENDING','${walkOwnerId}',(now() + interval '1 day'),now(),now())`], { encoding: "utf8" });
+await send("Page.navigate", { url: "http://localhost:3000/leads" });
+await sleep(2500);
+const upInfo = JSON.parse(await ev(`(function(){
+  var t=document.body.innerText||"";
+  return JSON.stringify({label:t.indexOf("未来 7 天待上门")>=0, listed:t.indexOf("巡检待上门")>=0});
+})()`));
+step("⑭ 未来 7 天待上门：明天的约定出现在该行", upInfo.label && upInfo.listed,
+  `label=${upInfo.label} listed=${upInfo.listed}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });
 const intakeId = await Q(`select coalesce("convertedIntakeId",'-') from "Lead" where id='${leadId}'`);
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "Lead" where id='${leadId}'`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `delete from "Lead" where id in ('${drillLeadId}','${upId}')`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `delete from "LeadChannel" where id in ('${chanId}','${chanParentId}')`], { encoding: "utf8" });
 if (intakeId && intakeId.startsWith("cm")) {
   execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
     `delete from "Intake" where id='${intakeId}'`], { encoding: "utf8" });
