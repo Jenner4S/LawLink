@@ -195,8 +195,10 @@ step("⑭ 未来 7 天待上门：明天的约定出现在该行", upInfo.label 
 // ⑮ 已谈案未转收案（2026-11-23）：造一条"谈完 5 天没转"的线索，应出现在积压行
 const staleId = `walkst${Date.now()}`;
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  // 注意：积压判定看 updatedAt（最后动静），不是 consultedAt。
+  // 造数据必须把两者都推到 5 天前，否则 updatedAt=now 会让判定认为"刚动过"（踩过一次）。
   `insert into "Lead" (id,name,phone,stage,"ownerId","consultedAt","createdAt","updatedAt")
-   values ('${staleId}','巡检积压线索','13900000779','CONSULTED','${walkOwnerId}',(now() - interval '5 day'),now(),now())`], { encoding: "utf8" });
+   values ('${staleId}','巡检积压线索','13900000779','CONSULTED','${walkOwnerId}',(now() - interval '5 day'),(now() - interval '6 day'),(now() - interval '5 day'))`], { encoding: "utf8" });
 await send("Page.navigate", { url: "http://localhost:3000/leads" });
 await sleep(2500);
 const staleInfo = JSON.parse(await ev(`(function(){
@@ -206,12 +208,38 @@ const staleInfo = JSON.parse(await ev(`(function(){
 step("⑮ 已谈案未转收案：谈完 5 天仍挂在积压行", staleInfo.label && staleInfo.listed,
   `label=${staleInfo.label} listed=${staleInfo.listed}`);
 
+// ⑯ 催办（2026-11-23）：点积压行里的「催办」→ 记一条跟进、该条从积压清单消失
+const nudgeClick = await ev(`(function(){
+  var row=[].slice.call(document.querySelectorAll("div")).find(function(d){
+    return (d.innerText||"").indexOf("巡检积压线索")>=0 && (d.innerText||"").indexOf("已谈案未转收案")>=0;
+  });
+  if(!row) return "no-row";
+  var b=[].slice.call(row.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim()==="催办";});
+  if(!b) return "no-btn";
+  b.click(); return "clicked";
+})()`);
+await sleep(3000);
+// 只在「已谈案未转收案」那个区块里看它还在不在 ——
+// 整页文本判断会误报：这条线索本来也还在下方线索列表里（第一版就是这么错的）。
+const afterNudge = JSON.parse(await ev(`(function(){
+  var box=[].slice.call(document.querySelectorAll("div")).find(function(d){
+    return (d.innerText||"").indexOf("已谈案未转收案")>=0 && (d.className||"").indexOf("rounded")>=0;
+  });
+  return JSON.stringify({blockGone: !box, stillListed: box ? (box.innerText||"").indexOf("巡检积压线索")>=0 : false});
+})()`));
+const nudgeActs = await Q(`select count(*) from "LeadActivity" where "leadId"='${staleId}' and type='CONTACT'`);
+step("⑯ 催办：记一条 CONTACT 跟进且该条从积压清单消失",
+  nudgeClick === "clicked" && nudgeActs.trim() !== "0" && !afterNudge.stillListed,
+  `click=${nudgeClick} acts=${nudgeActs.trim()} blockGone=${afterNudge.blockGone} stillListed=${afterNudge.stillListed}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });
 const intakeId = await Q(`select coalesce("convertedIntakeId",'-') from "Lead" where id='${leadId}'`);
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "Lead" where id='${leadId}'`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `delete from "LeadActivity" where "leadId" in ('${drillLeadId}','${upId}','${staleId}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "Lead" where id in ('${drillLeadId}','${upId}','${staleId}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",

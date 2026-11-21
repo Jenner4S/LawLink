@@ -13,7 +13,8 @@
  * ## 口径（三条）
  *
  * ① 只看 `stage = CONSULTED` 且**未转收案**（`convertedIntakeId` 为空）；
- * ② 以 `consultedAt` 起算，缺该时间则用 `updatedAt` 兜底（历史数据可能没记谈案时间）；
+ * ② **判定**看 `updatedAt`（最后动静超 N 天）；**展示天数**按 `consultedAt` 算
+ *    （"谈案后等了多久"比"最后改动多久"更有管理意义），缺则该用 `updatedAt`；
  * ③ 只列等待 **≥ days** 天的（默认 3 天：当天谈完当天转是正常节奏，不必催）。
  *
  * 纯读，不改任何线索状态。
@@ -37,7 +38,13 @@ export async function getStaleConsultedLeads(days = 3, now = new Date()): Promis
     where: {
       stage: "CONSULTED",
       convertedIntakeId: null,
-      OR: [{ consultedAt: { lte: cutoff } }, { consultedAt: null, updatedAt: { lte: cutoff } }]
+      // 以 **updatedAt（最后动静）** 判定，而不是 consultedAt。
+      //
+      // 第一版写成 `OR consultedAt <= cutoff`，结果是：只要线索有谈案时间，
+      // 无论后来跟进过多少次都**永远命中**——催办后也不会从清单消失
+      // （测试直接抓到了这一点）。"谈案后谈完就没动静"的真实含义是
+      // "最后一次改动距今超过 N 天"。
+      updatedAt: { lte: cutoff }
     },
     select: { id: true, name: true, phone: true, consultedAt: true, updatedAt: true },
     orderBy: [{ consultedAt: "asc" }, { updatedAt: "asc" }],

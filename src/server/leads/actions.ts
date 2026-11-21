@@ -325,6 +325,14 @@ export async function addLeadActivity(input: z.input<typeof activitySchema>) {
     await tx.lead.update({
       where: { id: lead.id },
       data: {
+        // 显式刷新 updatedAt（2026-11-23 实测发现的问题）：
+        // 只记一条跟进（CONTACT/NOTE）时 data 除 updatedAt 外为空，
+        // 而 Prisma 对 `update({ data: {} })` 会优化掉 SET updatedAt ——
+        // 结果是"记了跟进但最近更新不变"，列表里的「最近更新」名不副实，
+        // 催办之后线索也仍在"谈完没动静"的积压清单里。
+        // 语义上：一次跟进就是一次更新，这里写写入时刻（不是 happenedAt ——
+        // 补记过去的跟进时不该让 updatedAt 倒退）。
+        updatedAt: new Date(),
         ...(advance ? { stage: advance } : {}),
         ...(data.type === "INVITE" ? { invitedAt: happenedAt, visitOutcome: "PENDING" as const } : {}),
         ...(data.type === "VISIT" ? { visitedAt: happenedAt, visitOutcome: "ARRIVED" as const } : {}),

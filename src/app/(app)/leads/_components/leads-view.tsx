@@ -402,8 +402,37 @@ export function LeadsView({
           <span className="font-medium">{staleConsulted.length}</span>
           <span className="ml-2 text-[10.5px] text-[var(--t-muted)]">
             {staleConsulted.slice(0, 5).map((r, i) => (
-              <span key={r.id} className="mr-2">
+              <span key={r.id} className="mr-2 inline-flex items-center gap-1">
                 {r.name} <span className="tabular">{r.waitingDays}</span> 天
+                {/* 2026-11-23 催办：从"看见"到"动手"。
+                    只记一条 CONTACT 跟进（不改阶段），但会刷新 updatedAt，
+                    于是该线索自然从"超 3 天没动静"里掉出去 —— 这正是催办的含义。 */}
+                <button
+                  type="button"
+                  disabled={isPending || busyId === r.id}
+                  className="text-[10px] text-[var(--t-muted)] underline decoration-dotted hover:text-[var(--t-strong)]"
+                  title="记一条跟进（不改阶段），并从积压清单移除"
+                  onClick={() => {
+                    setBusyId(r.id);
+                    startTransition(async () => {
+                      try {
+                        await addLeadActivity({
+                          leadId: r.id,
+                          type: "CONTACT",
+                          note: `催办：谈案后 ${r.waitingDays} 天仍未转收案`
+                        });
+                        toast.success("已记录催办", { description: `${r.name} 已从积压清单移除` });
+                        router.refresh();
+                      } catch (err) {
+                        toast.error("催办失败", { description: actionErrorMessage(err) });
+                      } finally {
+                        setBusyId(null);
+                      }
+                    });
+                  }}
+                >
+                  催办
+                </button>
                 {i === 4 && staleConsulted.length > 5 ? "…" : ""}
               </span>
             ))}
