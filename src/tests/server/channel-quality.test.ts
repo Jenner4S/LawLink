@@ -127,4 +127,17 @@ describe("转化质量环比", () => {
     const ch = await seedChannel();
     expect((await getChannelQualityComparison(CUR_START, CUR_END, PREV_START, PREV_END)).has(ch.id)).toBe(false);
   });
+
+  it("**本月无线索但有上月数据**：delta 仍为 null（不是「下降 100%」）", async () => {
+    // 「上月没投」与「本月没投」在比率上都不构成可比基线：
+    // 一个是"没有对照起点"，一个是"本期没有样本"，都不能说成涨跌。
+    const ch = await seedChannel();
+    await mk(ch.id, PREV_START, { arrived: true, converted: true });
+
+    const c = (await getChannelQualityComparison(CUR_START, CUR_END, PREV_START, PREV_END)).get(ch.id)!;
+    expect(c.current.total).toBe(0);
+    expect(c.current.conversionRate).toBeNull();
+    expect(c.conversionRateDelta).toBeNull();
+    expect(c.visitRateDelta).toBeNull();
+  });
 });

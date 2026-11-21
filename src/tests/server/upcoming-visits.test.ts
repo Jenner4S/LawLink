@@ -110,4 +110,19 @@ describe("未来待上门", () => {
     expect(d[0].count).toBe(5);
     expect(d[0].items).toHaveLength(3);
   });
+
+  it("**窗口是半开区间 [今天0点, +7天)**：第 6 天 23:59 在内、第 7 天 00:00 不在", async () => {
+    // 我第一版断言写反了：以为「第 7 天 00:00 在窗口内」。
+    // 实现是 [start, start + days 天)，7 天窗口覆盖今天..第 6 天，
+    // 第 7 天 00:00 恰是区间右端点 → **不属于**窗口。这条用例据此钉住边界语义。
+    const late6 = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 6, 23, 59);
+    const midnight7 = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 7, 0, 0);
+    await seedLead({ invitedAt: late6, name: "第六天末" });
+    await seedLead({ invitedAt: midnight7, name: "第七天初" });
+
+    const days = await getUpcomingVisits(7, NOW);
+    const names = days.flatMap((d) => d.items.map((i) => i.name));
+    expect(names).toContain("第六天末");
+    expect(names).not.toContain("第七天初");
+  });
 });

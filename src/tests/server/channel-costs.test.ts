@@ -230,4 +230,15 @@ describe("月份时区（+08:00）", () => {
     expect(monthKey(newYear)).toBe("2027-01");
     expect(shiftMonth(monthKey(newYear), -1)).toBe("2026-12");
   });
+
+  it("**金额上限被拒**（1e9 是上限，超出直接拒，不静默截断）", async () => {
+    const ch = await seedChannel();
+    await expect(
+      upsertChannelCost({ channelId: ch.id, month: MONTH, amount: 1_000_000_001 })
+    ).rejects.toThrow();
+    // 恰好等于上限应通过（边界包含）
+    await expect(
+      upsertChannelCost({ channelId: ch.id, month: MONTH, amount: 1_000_000_000 })
+    ).resolves.toBeDefined();
+  });
 });
