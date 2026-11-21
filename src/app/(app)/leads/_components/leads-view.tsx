@@ -52,7 +52,8 @@ export function LeadsView({
   leadToCash,
   listColumns,
   channelFilter = null,
-  upcoming
+  upcoming,
+  staleConsulted
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -74,6 +75,8 @@ export function LeadsView({
   channelFilter?: string | null;
   /** 未来 7 天待上门（2026-11-23）：按天分组 */
   upcoming: { date: string; count: number; items: { id: string; name: string; phone: string | null }[] }[];
+  /** 已谈案未转收案（2026-11-23）：按等待天数从长到短 */
+  staleConsulted: { id: string; name: string; phone: string | null; waitingDays: number }[];
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
@@ -390,6 +393,23 @@ export function LeadsView({
       ) : (
         <div className="mb-2 text-[11px] text-[var(--t-muted)]">未来 7 天暂无约定上门的线索</div>
       )}
+
+      {/* 2026-11-23：已谈案未转收案。漏斗里「已谈案」是中间态，谈完不等于签下；
+          提醒链只管邀约到店之前，谈案之后此前没有任何机制盯着。 */}
+      {staleConsulted.length > 0 ? (
+        <div className="mb-2 rounded border border-[var(--bd-hair)] px-2 py-1 text-[11px]">
+          <span className="text-[var(--t-muted)]">已谈案未转收案（超 3 天）：</span>
+          <span className="font-medium">{staleConsulted.length}</span>
+          <span className="ml-2 text-[10.5px] text-[var(--t-muted)]">
+            {staleConsulted.slice(0, 5).map((r, i) => (
+              <span key={r.id} className="mr-2">
+                {r.name} <span className="tabular">{r.waitingDays}</span> 天
+                {i === 4 && staleConsulted.length > 5 ? "…" : ""}
+              </span>
+            ))}
+          </span>
+        </div>
+      ) : null}
 
       {/* 渠道下钻的当前筛选：能进也要能出 */}
       {channelFilter ? (

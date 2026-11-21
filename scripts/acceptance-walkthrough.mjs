@@ -192,6 +192,20 @@ const upInfo = JSON.parse(await ev(`(function(){
 step("⑭ 未来 7 天待上门：明天的约定出现在该行", upInfo.label && upInfo.listed,
   `label=${upInfo.label} listed=${upInfo.listed}`);
 
+// ⑮ 已谈案未转收案（2026-11-23）：造一条"谈完 5 天没转"的线索，应出现在积压行
+const staleId = `walkst${Date.now()}`;
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "Lead" (id,name,phone,stage,"ownerId","consultedAt","createdAt","updatedAt")
+   values ('${staleId}','巡检积压线索','13900000779','CONSULTED','${walkOwnerId}',(now() - interval '5 day'),now(),now())`], { encoding: "utf8" });
+await send("Page.navigate", { url: "http://localhost:3000/leads" });
+await sleep(2500);
+const staleInfo = JSON.parse(await ev(`(function(){
+  var t=document.body.innerText||"";
+  return JSON.stringify({label:t.indexOf("已谈案未转收案")>=0, listed:t.indexOf("巡检积压线索")>=0});
+})()`));
+step("⑮ 已谈案未转收案：谈完 5 天仍挂在积压行", staleInfo.label && staleInfo.listed,
+  `label=${staleInfo.label} listed=${staleInfo.listed}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });
@@ -199,7 +213,7 @@ const intakeId = await Q(`select coalesce("convertedIntakeId",'-') from "Lead" w
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "Lead" where id='${leadId}'`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
-  `delete from "Lead" where id in ('${drillLeadId}','${upId}')`], { encoding: "utf8" });
+  `delete from "Lead" where id in ('${drillLeadId}','${upId}','${staleId}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadChannel" where id in ('${chanId}','${chanParentId}')`], { encoding: "utf8" });
 if (intakeId && intakeId.startsWith("cm")) {

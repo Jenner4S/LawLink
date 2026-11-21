@@ -5,6 +5,7 @@ import { listLawyerOptions } from "@/server/leads/owners";
 import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import { getLeadsListColumns } from "@/server/settings/leads-columns";
 import { getUpcomingVisits } from "@/server/leads/upcoming-visits";
+import { getStaleConsultedLeads } from "@/server/leads/stale-consulted";
 import { getLeadToCash } from "@/server/leads/lead-to-cash";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
@@ -31,7 +32,7 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming] = await Promise.all([
+  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming, staleConsulted] = await Promise.all([
     listLeads({ stage: "ALL", assignee: assigneeView, ...(channelFilter ? { channelId: channelFilter } : {}) }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
@@ -47,7 +48,9 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-23：列显隐（按所配置，线索人列不可隐藏）
     getLeadsListColumns(),
     // 2026-11-23：未来 7 天待上门（基层每天要回答的问题）
-    getUpcomingVisits(7)
+    getUpcomingVisits(7),
+    // 2026-11-23：已谈案未转收案（谈完没签是真实漏损，之前没有任何机制盯）
+    getStaleConsultedLeads(3)
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} />;
 }
