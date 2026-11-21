@@ -170,6 +170,15 @@ else
     node scripts/audit-dead-exports.mjs
 fi
 
+# 公开接口一致性（2026-11-23 补）：自带 token 鉴权的路由必须同时在 proxy.ts 排除，
+# 否则外部调用会 307 到登录页 —— 单测直接调 route 函数，抓不到（真实踩过）。
+if [[ $FAST -eq 1 ]]; then
+  skip_step "公开接口一致性" "--fast"
+else
+  run_step "公开接口一致性" 'grep -c "^     " || true' \
+    node scripts/audit-public-routes.mjs
+fi
+
 # 数据库不变量（2026-11-22 补）：此前只有 deploy.sh 跑它，发布门槛不含该步，
 # 导致"不变量全过"这句话在证据文件里查不到。补进来，让数字有出处。
 if [[ $FAST -eq 1 ]]; then
