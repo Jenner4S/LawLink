@@ -45,6 +45,13 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }
 import { signBillingTx } from "@/server/finance/ledger-registration";
 import { recordMatterReviewTx } from "@/server/conflicts/matter-review";
 
+// 并发用例的超时保护（2026-11-23）：全量并行跑时（199 个测试文件同打一个库），
+// 连接池争用会让「多路并发写同一行」这类用例超过默认 5s。
+// 单跑都很快，全量跑偶发超时——`login-lockout` 就因此让整条门禁红过一次。
+// 放宽到 30s，但**不降低并发数**：这些用例的价值正是"并发下仍然正确"。
+vi.setConfig({ testTimeout: 30_000 });
+
+
 /** 主连接：与生产一样走事务 */
 let prisma: PrismaClient;
 let dropDb: (() => Promise<void>) | undefined;

@@ -16,6 +16,13 @@ import { beforeEach, beforeAll, afterAll, describe, expect, it, vi } from "vites
 import type { PrismaClient } from "@prisma/client";
 import { createTempDatabase } from "@/tests/helpers/temp-db";
 
+// 并发用例的超时保护（2026-11-23）：全量并行跑时（199 个测试文件同打一个库），
+// 连接池争用会让「多路并发写同一行」这类用例超过默认 5s。
+// 单跑都很快，全量跑偶发超时——`login-lockout` 就因此让整条门禁红过一次。
+// 放宽到 30s，但**不降低并发数**：这些用例的价值正是"并发下仍然正确"。
+vi.setConfig({ testTimeout: 30_000 });
+
+
 const NAME = vi.hoisted(() => {
   const host = process.env.FIN_TEST_PG_HOST ?? "localhost:55432";
   const user = process.env.FIN_TEST_PG_USER ?? "lawlink";
