@@ -152,6 +152,15 @@ else
     node scripts/audit-timezone.mjs
 fi
 
+# 文档索引守卫（2026-11-23 补）：docs/ 已 84 份文档，没有索引只能靠猜"哪份最新"；
+# 而新增文档不登记是文档增殖的起点。静态扫描，很便宜。
+if [[ $FAST -eq 1 ]]; then
+  skip_step "文档索引" "--fast"
+else
+  run_step "文档索引" 'grep -c "^  " || true' \
+    node scripts/audit-docs.mjs
+fi
+
 # 数据库不变量（2026-11-22 补）：此前只有 deploy.sh 跑它，发布门槛不含该步，
 # 导致"不变量全过"这句话在证据文件里查不到。补进来，让数字有出处。
 if [[ $FAST -eq 1 ]]; then
