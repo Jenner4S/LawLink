@@ -60,6 +60,13 @@ describe("daysBetween", () => {
     // 2025-01-06 (Mon) → 2025-01-10 (Fri) = 4 工作日
     expect(daysBetween(new Date("2025-01-06"), new Date("2025-01-10"), true)).toBe(4);
   });
+
+  it("**跨周末（周五→下周一）只算 1 个工作日**", () => {
+    // 这条是补的：上面那条周一→周五根本没跨周末，
+    // 把"排除周末"去掉它照样通过（变异验证发现的覆盖缺口）。
+    expect(daysBetween(new Date("2025-01-10"), new Date("2025-01-13"), true)).toBe(1);
+    expect(daysBetween(new Date("2025-01-13"), new Date("2025-01-10"), true)).toBe(-1);
+  });
 });
 
 describe("numberToChinese", () => {

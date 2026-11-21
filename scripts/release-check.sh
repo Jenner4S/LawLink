@@ -142,6 +142,16 @@ else
     node scripts/acceptance-walkthrough.mjs
 fi
 
+# 时区口径审计（2026-11-23 补）：容器跑 UTC，业务口径是上海。
+# 已经出过一次真事故（线索月界按本地字段算 → 环比全 null、成本月份错一月），
+# 静态扫一遍本地日历字段用法，未登记即失败。
+if [[ $FAST -eq 1 ]]; then
+  skip_step "时区口径审计" "--fast"
+else
+  run_step "时区口径审计" 'grep -c "^⚠️" | sed "s/^/未登记 /"; grep -c "^  src/" | sed "s/^/处 /"' \
+    node scripts/audit-timezone.mjs
+fi
+
 # 数据库不变量（2026-11-22 补）：此前只有 deploy.sh 跑它，发布门槛不含该步，
 # 导致"不变量全过"这句话在证据文件里查不到。补进来，让数字有出处。
 if [[ $FAST -eq 1 ]]; then

@@ -10,6 +10,7 @@
  *
  * 不依赖网络、不依赖 server。
  */
+import { civilFromKey, shDayKey } from "@/lib/ui/sh-time";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 1. 诉讼费
@@ -172,22 +173,38 @@ export function daysBetween(a: Date, b: Date, excludeWeekend = false): number {
     return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   }
   // 排除周末（工作日数）
-  const sign = end >= start ? 1 : -1;
+  //
+  // 2026-11-23 修正：原实现用 `cur.getTime() !== target.getTime()` 判结束。
+  // `addDays` 现在把日期归一到"上海正午载体"（04:00Z），与入参的原始时刻
+  // 不可能相等 → **死循环**（实测跑了 804 秒才被测试超时掐断）。
+  // 改为按**日期键**比较：工作日只关心日，不关心时刻。
+  const sign = shDayKey(start) <= shDayKey(end) ? 1 : -1;
   let count = 0;
-  const cur = new Date(start);
-  const target = new Date(end);
-  while (cur.getTime() !== target.getTime()) {
-    cur.setDate(cur.getDate() + sign);
-    const dow = cur.getDay();
+  let cur = civilFromKey(shDayKey(start));
+  const targetKey = shDayKey(end);
+  let guard = 0;
+  while (shDayKey(cur) !== targetKey) {
+    if (++guard > 100_000) break; // 双保险：输入异常时不至于把进程挂死
+    cur = addDays(cur, sign);
+    const dow = cur.getUTCDay(); // 正午载体是 UTC 时刻，用 UTC getter 取星期
     if (dow !== 0 && dow !== 6) count += sign;
   }
   return count;
 }
 
 export function addDays(base: Date, days: number): Date {
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
-  return d;
+  // 按"上海日子 + 正午载体"推进（与期限引擎同口径）：
+  // 容器是 UTC，`setDate` 依赖进程时区，跨日边界会偏一天。
+  const [y, m, d] = shDayKey(computeBase(base)).split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + days));
+  return civilFromKey(
+    `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`
+  );
+}
+
+/** 归一到上海日历日的正午载体（内部用） */
+function computeBase(d: Date): Date {
+  return civilFromKey(shDayKey(d));
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

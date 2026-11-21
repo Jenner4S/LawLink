@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calcLateInterest, numberToChinese } from "@/lib/legal-calc";
 import { shDayKey, shTodayCivil, civilFromKey } from "@/lib/ui/sh-time";
+import { addMonthsCivilClamped } from "@/lib/tz";
 
 export function LateInterestCalc() {
   // 日历日统一「上海日键 + 本地正午」载体；迟延天数按正午时刻差计算，与浏览器时区无关
   const todayCivil = shTodayCivil();
-  const halfYearAgo = new Date(todayCivil);
-  halfYearAgo.setMonth(halfYearAgo.getMonth() - 6);
+  // 六个月前用正午载体 + 月末钳位算（setMonth 会溢出：8/31 往前 6 月 → 3/3）
+  const halfYearAgo = addMonthsCivilClamped(todayCivil, -6);
 
   const [principal, setPrincipal] = useState("100000");
   const [dueDate, setDueDate] = useState(shDayKey(halfYearAgo));

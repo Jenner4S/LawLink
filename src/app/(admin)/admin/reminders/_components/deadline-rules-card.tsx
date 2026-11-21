@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { confirmDialog } from "@/components/patterns/confirm-dialog";
 import { shMonthDay, shTodayCivil } from "@/lib/ui/sh-time";
 import { actionErrorMessage } from "@/lib/action-error";
+import { addDaysCivil } from "@/lib/tz";
 
 export type AdminDeadlineRule = {
   id: string; code: string; name: string; description: string | null;
@@ -161,8 +162,8 @@ export function DeadlineRulesCard({ rules, rail, headerActions }: { rules: Admin
       trigger,
       due,
       tiers: offsets.map((o) => {
-        const d = new Date(due);
-        d.setDate(d.getDate() + o);
+        // 用正午载体推进，别用 setDate（依赖进程时区；容器是 UTC 时跨日会偏一天）
+        const d = addDaysCivil(due, o);
         return { offset: o, date: d };
       })
     };

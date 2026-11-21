@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import { matterVisibilityFilter, isManager } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { matterHref } from "@/lib/matters/route";
+import { addDaysCivil } from "@/lib/tz";
 
 export type AlertItem = {
   id: string;
@@ -26,8 +27,8 @@ function classifyByDays(days: number): AlertItem["tone"] {
 
 export async function loadAlerts(userId: string | null, role: string | null, managerAuthorized = false): Promise<AlertItem[]> {
   const now = new Date();
-  const in30 = new Date();
-  in30.setDate(in30.getDate() + 30);
+  // "30 天内"按上海日历推进：容器是 UTC，`setDate` 会让窗口差一天
+  const in30 = addDaysCivil(now, 30);
   // 2026-11-20：改用统一判断，避免各处手写同一条件（口径漂移风险）
   const managerView = role ? isManager({ role, managerAuthorized }) : false;
 

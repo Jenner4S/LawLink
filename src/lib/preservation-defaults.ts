@@ -15,6 +15,7 @@
  */
 import type { PropertyType } from "@prisma/client";
 import { computeDeadlineDate } from "@/lib/deadline-rules";
+import { civilFromKey, shDayKey } from "@/lib/ui/sh-time";
 
 /** 财产类型中文名。放在 lib 而非页面局部组件，供 cron / 通知等服务端代码复用。 */
 export const PROPERTY_TYPE_CN: Record<PropertyType, string> = {
@@ -60,14 +61,17 @@ export function defaultExpiryDate(startDate: Date, propertyType: PropertyType): 
  * 写成常量正是旧实现算错的原因。
  */
 export function defaultDurationDays(startDate: Date, propertyType: PropertyType): number {
-  const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  // 起算日必须与到期日**同源**（同一"正午载体"），否则差值不是整天：
+  // 容器跑在 UTC 时用本地字段归一到 0 点，会出现 N 天 + 4 小时的偏差。
+  const start = civilFromKey(shDayKey(startDate));
   const end = defaultExpiryDate(startDate, propertyType);
   return Math.round((end.getTime() - start.getTime()) / 86_400_000);
 }
 
-/** 起算日 + N 天，按本地日历推进（不用毫秒加法） */
+/**
+ * 起算日 + N 天，走期限引擎（正午载体），与 `defaultExpiryDate` 同口径。
+ * 不用 `setDate`：那依赖进程时区，容器是 UTC 时跨日会偏一天。
+ */
 export function addDays(startDate: Date, days: number): Date {
-  const out = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-  out.setDate(out.getDate() + days);
-  return out;
+  return computeDeadlineDate(startDate, days, "DAYS");
 }
