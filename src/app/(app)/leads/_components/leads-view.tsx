@@ -12,6 +12,7 @@ import { LeadTimelineDialog } from "./lead-timeline-dialog";
 import { promptDialog } from "@/components/patterns/confirm-dialog";
 import { formatDateTime } from "@/lib/utils";
 import { actionErrorMessage } from "@/lib/action-error";
+import { upsertChannelCost } from "@/server/leads/channel-costs-actions";
 import { addLeadActivity, assignLeadLawyer, convertLeadToIntake, createLead, markLeadLost, respondLeadAssignment, setLeadSecondOwner, type LeadRow } from "@/server/leads/actions";
 import { createLeadChannel, toggleLeadChannel } from "@/server/leads/channels-actions";
 import { updateLeadFinancePolicy } from "@/server/settings/lead-finance-policy-actions";
@@ -53,7 +54,9 @@ export function LeadsView({
   listColumns,
   channelFilter = null,
   upcoming,
-  staleConsulted
+  staleConsulted,
+  channelCosts,
+  costMonth
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -77,10 +80,16 @@ export function LeadsView({
   upcoming: { date: string; count: number; items: { id: string; name: string; phone: string | null }[] }[];
   /** 已谈案未转收案（2026-11-23）：按等待天数从长到短 */
   staleConsulted: { id: string; name: string; phone: string | null; waitingDays: number }[];
+  /** 本月渠道投放成本（2026-11-23）：渠道 id → 金额 */
+  channelCosts: { channelId: string; month: string; amount: number; note: string | null }[];
+  /** 当前成本所属月份（YYYY-MM） */
+  costMonth: string;
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
   const visibleCols = new Set(listColumns);
+  // 本月投放成本：渠道 id → 金额（面板直接编辑）
+  const costMap = new Map(channelCosts.map((c) => [c.channelId, c.amount]));
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<Filter>("OPEN");
   const [ownerFilter, setOwnerFilter] = useState<string>("");
@@ -274,6 +283,9 @@ export function LeadsView({
                   <span className="w-24 shrink-0 text-right">线索 / 到店 / 成交</span>
                   <span className="w-14 shrink-0 text-right">成交率</span>
                   <span className="w-24 shrink-0 text-right">
+                    投放{costMonth.slice(5)}月
+                  </span>
+                  <span className="w-24 shrink-0 text-right">
                     券{funnel.voucherSide === "COST" ? "成本" : funnel.voucherSide === "REVENUE" ? "收入" : ""}
                   </span>
                   <span className="w-24 shrink-0 text-right">单条线索 / 单成交</span>
@@ -301,6 +313,40 @@ export function LeadsView({
                       {r.total} / {r.visited} / {r.converted}
                     </span>
                     <span className="w-14 shrink-0 text-right tabular">{pct(r.conversionRate)}</span>
+                    {/* 2026-11-23：本月投放成本。此前只能改库，业主根本填不进去，
+                        于是"单线索成本"那几列永远是「—」——功能等于没做完。
+                        0 视为"没投"，服务端会删掉该月记录（0 与没投是同一件事）。 */}
+                    <span className="w-24 shrink-0 text-right">
+                      {r.key.startsWith("SRC:") ? (
+                        <span className="text-[10px] text-[var(--t-muted)]">—</span>
+                      ) : (
+                        <input
+                          className="input h-5 w-20 text-right text-[10.5px]"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          defaultValue={costMap.get(r.key) ?? ""}
+                          placeholder="—"
+                          disabled={isPending}
+                          title={`${r.label} 在 ${costMonth} 的投放成本（元）；填 0 或清空 = 没投`}
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim();
+                            const v = raw === "" ? 0 : Number(raw);
+                            if (!Number.isFinite(v) || v < 0) return;
+                            if (v === (costMap.get(r.key) ?? 0)) return;
+                            startTransition(async () => {
+                              try {
+                                await upsertChannelCost({ channelId: r.key, month: costMonth, amount: v });
+                                toast.success(v === 0 ? "已清除该渠道本月投放" : `已记录 ${v} 元投放`);
+                                router.refresh();
+                              } catch (err) {
+                                toast.error("保存失败", { description: actionErrorMessage(err) });
+                              }
+                            });
+                          }}
+                        />
+                      )}
+                    </span>
                     <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
                       {r.voucherAmount > 0 ? `¥${r.voucherAmount}` : "—"}
                     </span>

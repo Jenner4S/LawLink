@@ -232,6 +232,41 @@ step("⑯ 催办：记一条 CONTACT 跟进且该条从积压清单消失",
   nudgeClick === "clicked" && nudgeActs.trim() !== "0" && !afterNudge.stillListed,
   `click=${nudgeClick} acts=${nudgeActs.trim()} blockGone=${afterNudge.blockGone} stillListed=${afterNudge.stillListed}`);
 
+// ⑰ 渠道投放成本录入（2026-11-23）：面板里填金额 → 失焦保存 → 库内可回读
+//
+// 注意：**必须用真实 focus/blur**。`dispatchEvent(new Event("blur"))` 触发不了
+// React 的 onBlur（合成事件走 focusout），我第一版就是这么测的，
+// 结果"填了 600 但库里是 0"，差点误判成功能坏了。
+const costChanId = `walkcc${Date.now()}`;
+const costLeadId = `walkcl${Date.now()}`;
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "LeadChannel" (id,name,kind,active,sort,"createdAt","updatedAt")
+   values ('${costChanId}','巡检成本渠道','PAID',true,5,now(),now())`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `insert into "Lead" (id,name,phone,stage,"ownerId","channelId","createdAt","updatedAt")
+   values ('${costLeadId}','巡检成本线索','13900000793','LEAD','${walkOwnerId}','${costChanId}',now(),now())`], { encoding: "utf8" });
+
+await send("Page.navigate", { url: "http://localhost:3000/leads" });
+await sleep(2500);
+await ev(`(function(){var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim()==="渠道与口径";});if(b)b.click();})()`);
+await sleep(1200);
+const costFill = await ev(`(function(){
+  var lab=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim().indexOf("巡检成本渠道")>=0;});
+  if(!lab) return "no-row";
+  var inp=lab.parentElement.querySelector('input[type=number]');
+  if(!inp) return "no-input";
+  inp.focus();
+  var setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
+  setter.call(inp,"600");
+  inp.dispatchEvent(new Event("input",{bubbles:true}));
+  inp.blur();
+  return "filled";
+})()`);
+await sleep(3500);
+const costDb = Number((await Q(`select coalesce(sum(amount),0) from "LeadChannelCost" where "channelId"='${costChanId}'`)).trim());
+step("⑰ 渠道投放成本：面板填 600 → 失焦保存 → 库内回读 600", costFill === "filled" && costDb === 600,
+  `fill=${costFill} db=${costDb}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });
@@ -241,9 +276,11 @@ execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "la
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId" in ('${drillLeadId}','${upId}','${staleId}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
-  `delete from "Lead" where id in ('${drillLeadId}','${upId}','${staleId}')`], { encoding: "utf8" });
+  `delete from "Lead" where id in ('${drillLeadId}','${upId}','${staleId}','${costLeadId}')`], { encoding: "utf8" });
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
-  `delete from "LeadChannel" where id in ('${chanId}','${chanParentId}')`], { encoding: "utf8" });
+  `delete from "LeadChannelCost" where "channelId"='${costChanId}'`], { encoding: "utf8" });
+execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
+  `delete from "LeadChannel" where id in ('${chanId}','${chanParentId}','${costChanId}')`], { encoding: "utf8" });
 if (intakeId && intakeId.startsWith("cm")) {
   execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
     `delete from "Intake" where id='${intakeId}'`], { encoding: "utf8" });

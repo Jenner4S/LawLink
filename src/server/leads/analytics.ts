@@ -28,6 +28,7 @@ import { prisma } from "@/lib/prisma";
 import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import type { LeadStage, LeadSource } from "@prisma/client";
 import { shMonthStart } from "@/server/finance/facts";
+import { getChannelCostsForMonth, monthKey } from "@/server/leads/channel-costs";
 
 export type LeadFunnel = {
   /** 期间（上海口径） */
@@ -83,6 +84,8 @@ export type LeadFunnel = {
      * 分母为 0 或券金额为 0 时为 null，界面显示「—」：
      * 0 成本会被误读成"这个渠道不花钱"，那比不显示更危险。
      */
+    /** 该渠道该月投放成本（2026-11-23）；0 = 未录入 */
+    monthlyCost: number;
     costPerLead: number | null;
     costPerVisit: number | null;
     costPerConverted: number | null;
@@ -119,6 +122,9 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
   const total = leads.length;
   // 券金额归属口径（2026-11-22 可配置）：界面据此标注那一列是成本还是收入
   const { voucherAmountSide } = await getLeadFinancePolicy();
+  // 渠道月度投放成本（2026-11-23）：按漏斗起始月取，用于补齐"成本"的可信来源
+  const costMonth = monthKey(periodStart);
+  const monthlyCosts = await getChannelCostsForMonth(costMonth);
   let invited = 0;
   let visited = 0;
   let consulted = 0;
@@ -190,6 +196,19 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
             : (daysToConvert[daysToConvert.length / 2 - 1] + daysToConvert[daysToConvert.length / 2]) / 2) * 10
         ) / 10;
 
+  /**
+   * 某渠道的成本合计（2026-11-23）：
+   *  · 该渠道该月的投放成本**总是**计入（那是真花出去的钱）；
+   *  · 券金额只有在归属=成本侧（COST）时才计入 —— 归属选了收入侧/忽略时
+   *    再算进成本就是**双计**（它已经从收入侧体现过一次）。
+   *  · 都为 0 → 返回 0，`unitCost` 会给 null，界面显示「—」而不是 0。
+   */
+  function channelCostTotal(channelKey: string, voucher: number): number {
+    const monthly = monthlyCosts.get(channelKey) ?? 0;
+    const voucherPart = voucherAmountSide === "COST" ? voucher : 0;
+    return Math.round((monthly + voucherPart) * 100) / 100;
+  }
+
   return {
     periodStart,
     periodEnd,
@@ -223,10 +242,12 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
         visited: v.visited,
         converted: v.converted,
         voucherAmount: Math.round(v.voucherAmount * 100) / 100,
+        // 该渠道该月的投放成本（一级/二级各记自己的；没有记录就是 0）
+        monthlyCost: Math.round((monthlyCosts.get(key) ?? 0) * 100) / 100,
         conversionRate: rate(v.converted, v.total),
-        costPerLead: unitCost(v.voucherAmount, v.total),
-        costPerVisit: unitCost(v.voucherAmount, v.visited),
-        costPerConverted: unitCost(v.voucherAmount, v.converted)
+        costPerLead: unitCost(channelCostTotal(key, v.voucherAmount), v.total),
+        costPerVisit: unitCost(channelCostTotal(key, v.voucherAmount), v.visited),
+        costPerConverted: unitCost(channelCostTotal(key, v.voucherAmount), v.converted)
       }))
       .sort((a, b) => b.total - a.total),
     byOwner: [...ownerAgg.entries()]

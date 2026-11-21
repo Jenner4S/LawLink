@@ -3714,19 +3714,50 @@ enum LeadChannelKind {
   OTHER // 其他
 }
 
+/// 渠道月度投放成本（2026-11-23）
+///
+/// ## 为什么单独一张表
+///
+/// 线索上的 `voucherAmount` 是**每条线索**的券金额，不等于"这个月在大众点评投了 3000"。
+/// 没有渠道级投放成本，漏斗里那几列（单线索/单到店/单成交成本）就没有可信来源 ——
+/// 业主只能改库，等于这功能没做完。
+///
+/// ## 口径
+///
+/// · 按「渠道 × 月」唯一（`month` 形如 `2026-11`），重复录入是**覆盖**不是累加；
+/// · 只记金额与备注，不记分摊规则 —— 分摊怎么算在分析层决定，表只存事实；
+/// · 二级渠道成本记在二级上；一级渠道若自己也投（如打包采购），单独记一级。
+model LeadChannelCost {
+  id          String      @id @default(cuid())
+  channelId   String
+  channel     LeadChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  /// YYYY-MM，按月聚合；同渠道同月唯一
+  month       String
+  amount      Decimal     @db.Decimal(14, 2)
+  note        String?
+  createdById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([channelId, month])
+  @@index([month])
+}
+
 model LeadChannel {
-  id        String          @id @default(cuid())
+  id        String            @id @default(cuid())
   name      String
   /// 两级：空＝一级；有值＝二级
   parentId  String?
-  parent    LeadChannel?    @relation("LeadChannelTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children  LeadChannel[]   @relation("LeadChannelTree")
-  kind      LeadChannelKind @default(OTHER)
-  active    Boolean         @default(true)
-  sort      Int             @default(0)
+  parent    LeadChannel?      @relation("LeadChannelTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  LeadChannel[]     @relation("LeadChannelTree")
+  kind      LeadChannelKind   @default(OTHER)
+  active    Boolean           @default(true)
+  sort      Int               @default(0)
   leads     Lead[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  /// 该渠道的月度投放成本（2026-11-23）
+  costs     LeadChannelCost[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
   @@unique([parentId, name])
   @@index([parentId, active, sort])
