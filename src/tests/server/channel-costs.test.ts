@@ -241,4 +241,12 @@ describe("月份时区（+08:00）", () => {
       upsertChannelCost({ channelId: ch.id, month: MONTH, amount: 1_000_000_000 })
     ).resolves.toBeDefined();
   });
+
+  it("**最小正数 0.01 可存**（与「填 0 = 删除」区分开：0.01 是一分钱，不是没投）", async () => {
+    const ch = await seedChannel();
+    await upsertChannelCost({ channelId: ch.id, month: MONTH, amount: 0.01 });
+    expect((await getChannelCostsForMonth(MONTH)).get(ch.id)).toBe(0.01);
+    // 0 会删记录，0.01 必须留着 —— 这条钉住两者不是同一件事
+    expect(await prisma.leadChannelCost.count({ where: { channelId: ch.id } })).toBe(1);
+  });
 });

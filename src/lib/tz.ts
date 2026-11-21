@@ -24,6 +24,10 @@
 export const SH_OFFSET_MS = 8 * 3600_000;
 
 /** 取上海日历字段（注意：用 UTC getter 读"偏移后的时刻"） */
+/**
+ * 注：不防御非法输入（null / Invalid Date）。调用点全部传 `Date`，
+ * 名称也标明只接受 Date；加了防御反而会掩盖调用方的类型错误。
+ */
 export function shParts(d: Date): { y: number; m: number; day: number; h: number; min: number } {
   const sh = new Date(d.getTime() + SH_OFFSET_MS);
   return {

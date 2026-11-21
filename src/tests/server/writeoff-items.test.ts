@@ -290,4 +290,16 @@ describe("逐笔冲抵", () => {
       requestWriteOff({ matterId: m.id, billingId: b.id, amount: 50, reason: "WAIVED" })
     ).rejects.toThrow(/该合同下没有未收应收条目/);
   });
+
+  it("**单笔应收金额恰好等于坏账额**（全额冲抵，恰好压线必须通过）", async () => {
+    // 边界包含性的另一侧：超过被拒（已有用例覆盖），"恰好等于"必须放行。
+    const m = await seedMatter();
+    const r = await addReceivable(m.id, 100);
+    const res = await requestWriteOff({ matterId: m.id, amount: 100, reason: "INABILITY_TO_PAY" });
+
+    const items = await prisma.receivableWriteOffItem.findMany({ where: { writeOffId: res.id } });
+    expect(items).toHaveLength(1);
+    expect(Number(items[0].amount)).toBe(100);
+    expect(items[0].receivableId).toBe(r.id);
+  });
 });

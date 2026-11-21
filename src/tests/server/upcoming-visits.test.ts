@@ -48,6 +48,11 @@ let seq = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(++seq).toString(36)}`;
 const NOW = new Date("2026-11-23T09:00:00+08:00");
 const day = (n: number) => new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + n, 14, 0);
+/** 断言分组键用（与实现同口径：上海日期串） */
+const ymdOf = (d: Date) => {
+  const sh = new Date(d.getTime() + 8 * 3600_000);
+  return `${sh.getUTCFullYear()}-${String(sh.getUTCMonth() + 1).padStart(2, "0")}-${String(sh.getUTCDate()).padStart(2, "0")}`;
+};
 
 async function seedLead(opts: {
   invitedAt?: Date | null;
@@ -124,5 +129,26 @@ describe("未来待上门", () => {
     const names = days.flatMap((d) => d.items.map((i) => i.name));
     expect(names).toContain("第六天末");
     expect(names).not.toContain("第七天初");
+  });
+
+  it("days = 0 时窗口为空，返回空数组（退化输入不抛错）", async () => {
+    // 页面固定传 7，但函数签名允许传 0。测它是为了让"退化输入不炸"有据可查，
+    // 而不是靠读者推断"应该不会有人传 0 吧"。
+    await seedLead({ invitedAt: day(1), name: "不该出现" });
+    const days = await getUpcomingVisits(0, NOW);
+    expect(days).toEqual([]);
+  });
+
+  it("**同一天多条同名不合并**（截断按条数，不按名字去重）", async () => {
+    // 3 条/天的截断是按**条**算的：客户可能真有两个同名联系人，
+    // 按名字去重会少报"今天要来几个人"。
+    for (let i = 0; i < 4; i++) {
+      await seedLead({ invitedAt: new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1, 10, i), name: "同名客户" });
+    }
+    const days = await getUpcomingVisits(7, NOW);
+    const tomorrow = days.find((d) => d.date === ymdOf(day(1)));
+    expect(tomorrow?.count).toBe(4);      // 真实条数
+    expect(tomorrow?.items.length).toBe(3); // 名字最多 3 条
+    expect(new Set(tomorrow?.items.map((i) => i.name)).size).toBe(1); // 全是同一个名字，没被去重掉计数
   });
 });
