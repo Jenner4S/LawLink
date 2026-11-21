@@ -51,7 +51,8 @@ export function LeadsView({
   financePolicy,
   leadToCash,
   listColumns,
-  channelFilter = null
+  channelFilter = null,
+  upcoming
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -71,6 +72,8 @@ export function LeadsView({
   listColumns: string[];
   /** 渠道下钻筛选（2026-11-23）：当前正在看哪个渠道的线索 */
   channelFilter?: string | null;
+  /** 未来 7 天待上门（2026-11-23）：按天分组 */
+  upcoming: { date: string; count: number; items: { id: string; name: string; phone: string | null }[] }[];
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
@@ -367,6 +370,26 @@ export function LeadsView({
           转化只能从「已谈案」发起——否则漏斗里看不到真实的到店与谈案
         </span>
       </div>
+
+      {/* 2026-11-23：未来 7 天待上门。漏斗回答"这个月怎么样"、渠道回答"钱往哪投"，
+          但基层每天要回答的是"今天该打给谁"——提醒台账会到点提醒，却不告诉你这周三有几家来。 */}
+      {upcoming.length > 0 ? (
+        <div className="mb-2 rounded border border-[var(--bd-hair)] px-2 py-1 text-[11px]">
+          <span className="text-[var(--t-muted)]">未来 7 天待上门：</span>
+          {upcoming.map((d) => (
+            <span key={d.date} className="mr-3 inline-flex items-center gap-1">
+              <span className="tabular">{d.date.slice(5).replace("-", "/")}</span>
+              <span className="font-medium">{d.count}</span>
+              <span className="text-[10.5px] text-[var(--t-muted)]">
+                （{d.items.map((i) => i.name).join("、")}
+                {d.count > d.items.length ? "…" : ""}）
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="mb-2 text-[11px] text-[var(--t-muted)]">未来 7 天暂无约定上门的线索</div>
+      )}
 
       {/* 渠道下钻的当前筛选：能进也要能出 */}
       {channelFilter ? (
