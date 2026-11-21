@@ -68,3 +68,45 @@ export async function getChannelCostTrend(
   const map = new Map(rows.map((r) => [r.month, Number(r.amount)]));
   return months.map((m) => ({ month: m, amount: map.get(m) ?? 0 }));
 }
+
+/**
+ * 当月 vs 上月的投放成本对比（2026-11-23）
+ *
+ * 录入只是手段 —— "这个月投了 3000"要和上月比才知道是该加还是该减。
+ *
+ * ## 口径
+ *
+ * · `delta = 本月 − 上月`；`deltaRate = delta / 上月`；
+ * · **上月为 0** 时 `deltaRate = null`（不是 0%、也不是 100%）：那不是"增长"，
+ *   而是"上个月没投"，比率没有意义 —— 界面显示「新增」；
+ * · 两月都为 0 → 两者皆 null/0，界面显示「—」（不显示 0%，那会被读成"持平"）。
+ */
+export type CostComparison = { current: number; previous: number; delta: number; deltaRate: number | null };
+
+export async function getChannelCostComparison(month: string): Promise<Map<string, CostComparison>> {
+  const prev = shiftMonth(month, -1);
+  const rows = await prisma.leadChannelCost.findMany({
+    where: { month: { in: [month, prev] } },
+    select: { channelId: true, month: true, amount: true }
+  });
+
+  const cur = new Map<string, number>();
+  const old = new Map<string, number>();
+  for (const r of rows) {
+    (r.month === month ? cur : old).set(r.channelId, Number(r.amount));
+  }
+
+  const out = new Map<string, CostComparison>();
+  for (const id of new Set([...cur.keys(), ...old.keys()])) {
+    const current = cur.get(id) ?? 0;
+    const previous = old.get(id) ?? 0;
+    const delta = Math.round((current - previous) * 100) / 100;
+    out.set(id, {
+      current,
+      previous,
+      delta,
+      deltaRate: previous > 0 ? Math.round((delta / previous) * 1000) / 10 : null
+    });
+  }
+  return out;
+}

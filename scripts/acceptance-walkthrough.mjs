@@ -295,6 +295,22 @@ step("⑱ 回填上月：写入上月记录，本月原有 600 不受影响",
   backfill === "filled" && prevDb === 450 && curDb === 600,
   `fill=${backfill} prev=${prevDb} cur=${curDb}`);
 
+// ⑲ 投放环比（2026-11-23）：上月 450 + 本月 600 → 页面显示 ↑33.3%
+// 上面 ⑰⑱ 已写入本月 600、上月 450，这里只需回到本月看那一行右侧是否有环比标记。
+await send("Page.navigate", { url: "http://localhost:3000/leads" });
+await sleep(2500);
+await ev(`(function(){var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim()==="渠道与口径";});if(b)b.click();})()`);
+await sleep(1500);
+const cmp = await ev(`(function(){
+  var lab=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim().indexOf("巡检成本渠道")>=0;});
+  if(!lab) return "no-row";
+  var cell=lab.parentElement.querySelector('input[type=number]')?.parentElement;
+  var t=cell ? (cell.innerText||"") : "";
+  return JSON.stringify({text:t, up:t.indexOf("↑")>=0, rate:t.indexOf("33.3")>=0});
+})()`);
+const ci2 = JSON.parse(cmp);
+step("⑲ 投放环比：上月 450→本月 600 显示 ↑33.3%", ci2.up && ci2.rate, `text=${(ci2.text||"").replace(/\n/g," ").slice(0,40)}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });

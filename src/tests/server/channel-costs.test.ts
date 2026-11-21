@@ -58,7 +58,7 @@ vi.mock("@/server/audit", () => ({ audit: vi.fn(async () => {}), auditTx: vi.fn(
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
 const { upsertChannelCost } = await import("@/server/leads/channel-costs-actions");
-const { getChannelCostsForMonth, listChannelCosts, monthKey, shiftMonth, recentMonths, getChannelCostTrend } = await import("@/server/leads/channel-costs");
+const { getChannelCostsForMonth, listChannelCosts, monthKey, shiftMonth, recentMonths, getChannelCostTrend, getChannelCostComparison } = await import("@/server/leads/channel-costs");
 const { getLeadFunnel } = await import("@/server/leads/analytics");
 const { saveLeadFinancePolicy, LEAD_FINANCE_POLICY_DEFAULTS } = await import("@/server/settings/lead-finance-policy");
 
@@ -160,5 +160,48 @@ describe("月份工具与历史", () => {
       { month: "2026-10", amount: 1800 },
       { month: "2026-09", amount: 0 }
     ]);
+  });
+});
+
+/**
+ * 本月 vs 上月投放对比（2026-11-23）
+ *
+ * 录入只是手段 —— "这个月投了 3000"要和上月比才知道该加还是该减。
+ *
+ * 四条口径：
+ *  ① 有上月有本月 → 算出 delta 与 deltaRate（一位小数）；
+ *  ② **上月为 0** → deltaRate = null（不是 0%、也不是 100%：那是"上月没投"，不是"增长"）；
+ *  ③ 两月都为 0 → 两者皆 0/null，界面不显示（写 0% 会被读成"持平"）；
+ *  ④ 本月归零（上月有、本月删掉）→ delta = -上月，rate = -100%。
+ */
+describe("投放环比", () => {
+  it("上月 450、本月 600 → +150、+33.3%", async () => {
+    const ch = await seedChannel();
+    await upsertChannelCost({ channelId: ch.id, month: "2026-10", amount: 450 });
+    await upsertChannelCost({ channelId: ch.id, month: "2026-11", amount: 600 });
+    const c = (await getChannelCostComparison("2026-11")).get(ch.id)!;
+    expect(c).toEqual({ current: 600, previous: 450, delta: 150, deltaRate: 33.3 });
+  });
+
+  it("**上月为 0 → deltaRate 是 null**（不是 0%，也不是 100%）", async () => {
+    const ch = await seedChannel();
+    await upsertChannelCost({ channelId: ch.id, month: "2026-11", amount: 600 });
+    const c = (await getChannelCostComparison("2026-11")).get(ch.id)!;
+    expect(c.previous).toBe(0);
+    expect(c.delta).toBe(600);
+    expect(c.deltaRate).toBeNull();
+  });
+
+  it("**本月归零（上月有、本月删掉）→ -100%**", async () => {
+    const ch = await seedChannel();
+    await upsertChannelCost({ channelId: ch.id, month: "2026-10", amount: 800 });
+    const c = (await getChannelCostComparison("2026-11")).get(ch.id)!;
+    expect(c.delta).toBe(-800);
+    expect(c.deltaRate).toBe(-100);
+  });
+
+  it("两月都没投的渠道不出现在对比里（没有可比的东西）", async () => {
+    const ch = await seedChannel();
+    expect((await getChannelCostComparison("2026-11")).has(ch.id)).toBe(false);
   });
 });

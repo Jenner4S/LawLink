@@ -6,7 +6,7 @@ import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import { getLeadsListColumns } from "@/server/settings/leads-columns";
 import { getUpcomingVisits } from "@/server/leads/upcoming-visits";
 import { getStaleConsultedLeads } from "@/server/leads/stale-consulted";
-import { listChannelCosts, monthKey, recentMonths } from "@/server/leads/channel-costs";
+import { getChannelCostComparison, listChannelCosts, monthKey, recentMonths } from "@/server/leads/channel-costs";
 import { getLeadToCash } from "@/server/leads/lead-to-cash";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
@@ -40,7 +40,7 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     typeof sp.costMonth === "string" && monthSeq.includes(sp.costMonth) ? sp.costMonth : thisMonth;
 
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming, staleConsulted, channelCosts] = await Promise.all([
+  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming, staleConsulted, channelCosts, costCompare] = await Promise.all([
     listLeads({ stage: "ALL", assignee: assigneeView, ...(channelFilter ? { channelId: channelFilter } : {}) }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
@@ -60,7 +60,9 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-23：已谈案未转收案（谈完没签是真实漏损，之前没有任何机制盯）
     getStaleConsultedLeads(3),
     // 2026-11-23：渠道月度投放成本（本月的，供面板直接编辑）
-    listChannelCosts(costMonth)
+    listChannelCosts(costMonth),
+    // 2026-11-23：本月 vs 上月投放对比（录入的数要参与判断）
+    getChannelCostComparison(costMonth)
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} channelCosts={channelCosts} costMonth={costMonth} costMonths={monthSeq} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} channelCosts={channelCosts} costMonth={costMonth} costMonths={monthSeq} costCompare={Object.fromEntries(costCompare)} />;
 }

@@ -57,7 +57,8 @@ export function LeadsView({
   staleConsulted,
   channelCosts,
   costMonth,
-  costMonths
+  costMonths,
+  costCompare
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -87,6 +88,8 @@ export function LeadsView({
   costMonth: string;
   /** 可回填的月份（近 12 个月，最近的在前） */
   costMonths: string[];
+  /** 本月 vs 上月投放对比（渠道 id → 对比） */
+  costCompare: Record<string, { current: number; previous: number; delta: number; deltaRate: number | null }>;
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
@@ -368,6 +371,22 @@ export function LeadsView({
                           }}
                         />
                       )}
+                      {/* 环比（2026-11-23）：上月为 0 显示「新增」而不是 0%；
+                          两月都 0 不显示（没有可比的东西，写 0% 会被读成持平）。 */}
+                      {(() => {
+                        const c = costCompare[r.key];
+                        if (!c || c.delta === 0) return null;
+                        const up = c.delta > 0;
+                        const cls = up ? "text-[var(--red,#b91c1c)]" : "text-[var(--green,#15803d)]";
+                        const label = c.deltaRate === null
+                          ? "新增"
+                          : `${up ? "↑" : "↓"}${Math.abs(c.deltaRate)}%`;
+                        return (
+                          <span className={`ml-1 text-[9.5px] ${cls}`} title={`上月 ¥${c.previous} → 本月 ¥${c.current}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </span>
                     <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
                       {r.voucherAmount > 0 ? `¥${r.voucherAmount}` : "—"}
