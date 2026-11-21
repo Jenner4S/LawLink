@@ -138,7 +138,11 @@ describe("recordLoginFailure · 原子递增与阈值锁定（真库）", () => 
     expect(Math.max(...results)).toBe(8);
     const row = await read(u.id);
     expect(row.failedLoginAttempts).toBe(8);
-  });
+    // 超时放宽到 30s（2026-11-23）：全量并行跑（199 个测试文件同时打同一个库）时，
+    // 这条会因连接池争用超过默认 5s 而偶发超时——单跑约 0.3s。
+    // 不降低并发数：这个用例的价值正是"8 路并发下计数仍然精确"，
+    // 削弱并发等于把原子性回归守卫变成摆设。
+  }, 30_000);
 
   it("账号不存在：返回 0（RETURNING 空集），不抛错", async () => {
     const attempts = await recordLoginFailure("nonexistent-user-id", THRESHOLD, LOCK_MIN);

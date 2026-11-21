@@ -161,6 +161,15 @@ else
     node scripts/audit-docs.mjs
 fi
 
+# 死导出守卫（2026-11-23 补）：历史遗留 55 个已登记为基线（见 scripts/dead-exports-baseline.json）；
+# 此后**新增**零引用导出会失败 —— "又造了个没人用的东西"不该等到复盘才发现。
+if [[ $FAST -eq 1 ]]; then
+  skip_step "死导出守卫" "--fast"
+else
+  run_step "死导出守卫" 'grep -c "^     " || true' \
+    node scripts/audit-dead-exports.mjs
+fi
+
 # 数据库不变量（2026-11-22 补）：此前只有 deploy.sh 跑它，发布门槛不含该步，
 # 导致"不变量全过"这句话在证据文件里查不到。补进来，让数字有出处。
 if [[ $FAST -eq 1 ]]; then
