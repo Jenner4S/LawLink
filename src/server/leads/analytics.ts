@@ -119,6 +119,27 @@ export async function getLeadFunnel(period: { start?: Date; end?: Date } = {}): 
     }
   });
 
+  /**
+   * 量级告警（2026-11-23 实测后加，**不改行为**）。
+   *
+   * 本函数是"全量拉取 → 内存聚合"。实测 5 万条/月时这一步 **120ms**，
+   * 成为 `/leads` 的墙钟瓶颈；改 SQL 聚合可到 **~25ms**（6 条 count(*) FILTER，
+   * 实测见 `docs/性能基线-20261123.md`）。
+   *
+   * 但现在不改口径，原因有二：
+   *  ① 真实量级（一所一年几千条）到不了这个数，120ms 不会出现；
+   *  ② 中位数语义会变（现有实现"偶数取两侧平均"，SQL 用 percentile_cont），
+   *     那是口径改动，该由业主拍板，不该顺手做。
+   *
+   * 于是留一条日志：真到了这个量级，日志直接指路（带实测数据与改法）。
+   */
+  if (leads.length > 10_000) {
+    console.warn(
+      `[lead-funnel] 本期线索 ${leads.length} 条，内存聚合偏慢（1.75 万条实测 272ms，5 万条 120ms 起）；` +
+        `如需优化改 SQL 聚合，见 docs/性能基线-20261123.md`
+    );
+  }
+
   const total = leads.length;
   // 券金额归属口径（2026-11-22 可配置）：界面据此标注那一列是成本还是收入
   const { voucherAmountSide } = await getLeadFinancePolicy();
