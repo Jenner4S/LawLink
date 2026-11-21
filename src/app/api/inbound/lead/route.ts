@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
-import { audit } from "@/server/audit";
+import { createInboundLead } from "@/server/inbound/create-inbound-lead";
 
 /**
  * 官网 / 公众号 / 落地页的线索入站接口（2026-11-23）
@@ -75,7 +74,6 @@ function tokenOk(given: string | null, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-const IDEMPOTENCY_PREFIX = "[inbound:";
 
 export async function POST(req: Request) {
   const expected = process.env.INBOUND_LEAD_TOKEN?.trim();
@@ -113,86 +111,23 @@ export async function POST(req: Request) {
   }
   const data = parsed.data;
 
-  // 幂等：只认 externalId（见文件头说明，不按手机号猜重复）
-  if (data.externalId) {
-    const marker = `${IDEMPOTENCY_PREFIX}${data.externalId}]`;
-    const existing = await prisma.lead.findFirst({
-      where: { notes: { contains: marker } },
-      select: { id: true }
-    });
-    if (existing) {
-      return NextResponse.json({ ok: true, id: existing.id, duplicate: true });
-    }
+  // 幂等与落库都在 createInboundLead 里（官网表单与邮件收件共用同一套口径，
+  // 两处各写一遍必然分叉）
+  const result = await createInboundLead({
+    name: data.name,
+    phone: data.phone ?? null,
+    channelName: data.channelName ?? null,
+    externalId: data.externalId ?? null,
+    message: data.message ?? null,
+    sourceDetail: data.pageUrl ?? null,
+    activityNote: "官网表单提交（自动入站）"
+  });
+
+  if (!result.ok) {
+    return NextResponse.json({ error: "没有可用的入站接收人", howTo: result.howTo }, { status: 503 });
   }
-
-  /**
-   * 入站接收人：`Lead.ownerId` 必填（schema 约束），而"待派单"看的是
-   * `assigneeStatus = UNASSIGNED`（与 ownerId 无关）。所以这里挂一个"接收人"，
-   * 线索仍会进「待派单」视图。
-   *
-   * 优先读设置 `leadInboundOwnerId`；没配就回退到第一个在职管理员/合伙人；
-   * 都没有 → 503 并说明怎么配（不能静默丢线索，也不能硬塞给某个随机用户）。
-   */
-  const setting = await prisma.systemSetting.findUnique({ where: { key: "leadInboundOwnerId" } });
-  const configuredId = typeof setting?.value === "string" ? setting.value : null;
-  const receiver =
-    configuredId
-      ? await prisma.user.findFirst({ where: { id: configuredId, active: true }, select: { id: true } })
-      : await prisma.user.findFirst({
-          where: { active: true, role: { in: ["PRINCIPAL_LAWYER", "INDEPENDENT_LAWYER"] } },
-          orderBy: { createdAt: "asc" },
-          select: { id: true }
-        });
-  if (!receiver) {
-    return NextResponse.json(
-      {
-        error: "没有可用的入站接收人",
-        howTo: "先在系统里启用一个用户，或把设置项 leadInboundOwnerId 指到某个用户 id"
-      },
-      { status: 503 }
-    );
+  if (result.duplicate) {
+    return NextResponse.json({ ok: true, id: result.id, duplicate: true });
   }
-
-  // 渠道按名匹配（找不到就不挂，不因渠道名写错而丢线索）
-  const channel = data.channelName
-    ? await prisma.leadChannel.findFirst({
-        where: { name: data.channelName, active: true },
-        select: { id: true }
-      })
-    : null;
-
-  const noteParts = [
-    data.message ? `客户留言：${data.message}` : null,
-    data.externalId ? `${IDEMPOTENCY_PREFIX}${data.externalId}]` : null,
-    data.pageUrl ? `来源页：${data.pageUrl}` : null
-  ].filter(Boolean);
-
-  const lead = await prisma.lead.create({
-    data: {
-      name: data.name,
-      phone: data.phone ?? null,
-      source: "ONLINE",
-      sourceDetail: data.pageUrl ?? null,
-      channelId: channel?.id ?? null,
-      notes: noteParts.length ? noteParts.join("\n") : null,
-      stage: "LEAD",
-      ownerId: receiver.id,
-      // 未指派律师 → 进「待派单」视图（页面 chip 支持筛选）
-      assigneeStatus: "UNASSIGNED"
-    },
-    select: { id: true }
-  });
-
-  await prisma.leadActivity.create({
-    data: { leadId: lead.id, type: "NOTE", note: "官网表单提交（自动入站）", createdById: receiver.id }
-  });
-
-  await audit({
-    action: "LEAD_INBOUND",
-    targetType: "Lead",
-    targetId: lead.id,
-    detail: { name: data.name, channel: channel?.id ?? null, externalId: data.externalId ?? null }
-  });
-
-  return NextResponse.json({ ok: true, id: lead.id, duplicate: false }, { status: 201 });
+  return NextResponse.json({ ok: true, id: result.id, duplicate: false }, { status: 201 });
 }

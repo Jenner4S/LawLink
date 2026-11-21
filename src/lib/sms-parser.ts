@@ -605,3 +605,19 @@ export { CN_DIGIT };
 // AI 增强（enrichWithAi）已迁移至 sms-parser-ai.ts（server-only）
 // 该文件保持 client-safe（无 node:* 依赖），sms-paste-dialog 等 client
 // 组件可直接 import 这里的 parseSms / splitSmsBatch / toDate。
+
+/**
+ * 从文本里取第一个合法电话（手机优先，其次座机）。
+ *
+ * 单独导出而**不导出 `PAT_PHONE` 本身**：那些是带 `g` 标志的正则，
+ * 共享同一个对象会因 `lastIndex` 残留导致"有时取不到"的偶发 bug。
+ * 每次调用新建正则，行为稳定。
+ */
+export function firstPhoneInText(text: string): string | null {
+  for (const pat of PAT_PHONE) {
+    const re = new RegExp(pat.source);
+    const m = re.exec(text);
+    if (m) return m[0];
+  }
+  return null;
+}
