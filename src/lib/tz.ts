@@ -13,6 +13,13 @@
  *
  * 本文件只做"取上海日历字段"与"按上海日历运算"，返回的仍是标准 `Date`（绝对时刻）。
  * 展示层继续用 `formatDate`（它已固定 `timeZone: "Asia/Shanghai"`）。
+ *
+ * ## 当前使用面（2026-11-23 复核）
+ *
+ * · 生产代码只用到 `addDaysCivil`（提醒窗口、期限预览）与 `addMonthsCivilClamped`（迟延利息默认日）；
+ * · `shParts` / `shStartOfDay` / `shAddDays` / `shAddMonthsClamped` / `shDateString` / `shYear`
+ *   目前由 `tz.test.ts` 覆盖，作为时区口径的**断言工具**保留（防止以后改坏而不自知）。
+ * · 曾写过的 `dateOnly*` 一族已删（与既有正午载体契约冲突，见文末说明）。
  */
 export const SH_OFFSET_MS = 8 * 3600_000;
 
@@ -67,50 +74,17 @@ export function shDateString(d: Date): string {
 }
 
 // ─────────────────────────────────────────────────────────────
-// date-only 一律用 UTC 日历（2026-11-23）
+// 关于 date-only：结论是「用正午载体，不用 UTC 0 点」（2026-11-23）
 // ─────────────────────────────────────────────────────────────
 //
-// 这里有个容易搞混的区别，写清楚避免以后反复改：
+// 我一开始以为 date-only 该用 UTC 0 点表示，于是写了 `dateOnly*` 一族工具。
+// 实测与既有契约冲突：`deadline-rules-timezone.test.ts` 要求
+// `2026-12-31T00:00:00Z` + 1 年 = `2027-12-31`，而本仓库既有的日历日表示法是
+// **上海日子 + 正午载体**（`civilFromKey(shDayKey())`，正午距日界 12 小时不跨日）。
 //
-//  · **date-only 字段**（期限届满日、保全起止日、续期日）表示"日历上的某一天"，
-//    与时刻无关。既定契约是**以 UTC 0 点存储**（`deadline-rules-timezone.test.ts`
-//    就是这个契约的守卫：`2026-12-31T00:00:00Z` + 1 年 = `2027-12-31`）。
-//    这类字段必须用 UTC 日历运算，用上海日历反而会差一天。
-//
-//  · **datetime 场景**（"今天/本月是哪天"、按小时分组）才需要上海日历，
-//    因为那是"此刻在上海是几号"，用 `sh*` 系列。
-//
-// 一句话：date-only 用 `dateOnly*`，now 相关用 `sh*`。
-
-/** 把任意时刻归一为"它代表的 UTC 日历日"的 0 点（date-only 语义） */
-export function dateOnly(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
-/** date-only 加 N 天 */
-export function dateOnlyAddDays(d: Date, days: number): Date {
-  const b = dateOnly(d);
-  return new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate() + days));
-}
-
-/** date-only 加 N 个月，超月末钳到月末（1/31 + 1 月 → 2/28；setMonth 会溢出到 3/2） */
-export function dateOnlyAddMonthsClamped(d: Date, months: number): Date {
-  const b = dateOnly(d);
-  const y = b.getUTCFullYear();
-  const m = b.getUTCMonth();
-  const day = b.getUTCDate();
-  const targetIndex = m + months;
-  const targetYear = y + Math.floor(targetIndex / 12);
-  const targetMonth = ((targetIndex % 12) + 12) % 12;
-  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(targetYear, targetMonth, Math.min(day, lastDay)));
-}
-
-/** date-only 的 YYYY-MM-DD（按 UTC 日历，与存储契约一致） */
-export function dateOnlyString(d: Date): string {
-  const b = dateOnly(d);
-  return `${b.getUTCFullYear()}-${String(b.getUTCMonth() + 1).padStart(2, "0")}-${String(b.getUTCDate()).padStart(2, "0")}`;
-}
+// 于是把 `dateOnly*` 全部删掉（生产与测试都无人使用，留着只是给后来者添乱），
+// 期限/保全/法律计算统一走正午载体；本文件只保留 now 相关的 `sh*` 与
+// 「正午载体推进」的 `addDaysCivil` / `addMonthsCivilClamped`。
 
 // ─────────────────────────────────────────────────────────────
 // 与「正午载体」配套的推进函数（页面/预览层用）
@@ -120,7 +94,7 @@ export function dateOnlyString(d: Date): string {
 export function addDaysCivil(d: Date, days: number): Date {
   const [y, m, day] = shDayKey(d).split("-").map(Number);
   const next = new Date(Date.UTC(y, m - 1, day + days));
-  return shCivilFromKey(
+  return shNoon(
     `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`
   );
 }
@@ -132,19 +106,30 @@ export function addMonthsCivilClamped(d: Date, months: number): Date {
   const targetYear = y + Math.floor(targetIndex / 12);
   const targetMonth = ((targetIndex % 12) + 12) % 12;
   const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  return shCivilFromKey(
+  return shNoon(
     `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`
   );
 }
 
-/** 由 `YYYY-MM-DD` 造正午载体（与 `lib/ui/sh-time.ts` 的 civilFromKey 同义，此处避免循环依赖） */
-function shCivilFromKey(key: string): Date {
+/**
+ * 由 `YYYY-MM-DD` 造**固定的**上海正午时刻（UTC 04:00）。
+ *
+ * ⚠️ 与 `lib/ui/sh-time.ts` 的 `civilFromKey` **不等价**，别混用：
+ *
+ * · `civilFromKey(key)` 用 `new Date(y, m-1, d, 12)` —— **进程本地**正午。
+ *   容器是 UTC 时它等于 12:00Z（上海 20:00，同一天，正确）；
+ *   但若进程在 UTC-8 跑，就成了 20:00Z（上海次日 04:00），**跨日**。
+ * · `shNoon(key)` 固定 UTC 04:00，任何进程时区下都表示同一个上海日正午。
+ *
+ * 本文件选择后者（与时区无关），因为它要服务"跨时区部署也不能错"的场景；
+ * 而 `civilFromKey` 已被大量既有代码使用，改动面过大，故两套并存并在此写明边界。
+ */
+function shNoon(key: string): Date {
   const [y, m, d] = key.split("-").map(Number);
-  // 上海正午 12:00 = UTC 04:00
   return new Date(Date.UTC(y, m - 1, d, 4, 0, 0));
 }
 
-/** 上海日键（与 sh-time 的 shDayKey 同义） */
+/** 上海日键（与 `sh-time.shDayKey` 同义，但此处不 import 以避免 lib 层耦合） */
 function shDayKey(d: Date): string {
   const sh = new Date(d.getTime() + SH_OFFSET_MS);
   return `${sh.getUTCFullYear()}-${String(sh.getUTCMonth() + 1).padStart(2, "0")}-${String(sh.getUTCDate()).padStart(2, "0")}`;

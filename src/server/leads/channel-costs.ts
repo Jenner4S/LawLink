@@ -61,24 +61,6 @@ export function recentMonths(month: string, count = 6): string[] {
 }
 
 /**
- * 某渠道近 N 月的投放成本序列（2026-11-23）
- *
- * 只编辑本月看不出趋势——"这个月投了 3000"要和上月比才有意义。
- * 返回按月份从新到旧，缺失的月份补 0（0 = 该月没投）。
- */
-export async function getChannelCostTrend(
-  channelId: string,
-  months: string[]
-): Promise<{ month: string; amount: number }[]> {
-  const rows = await prisma.leadChannelCost.findMany({
-    where: { channelId, month: { in: months } },
-    select: { month: true, amount: true }
-  });
-  const map = new Map(rows.map((r) => [r.month, Number(r.amount)]));
-  return months.map((m) => ({ month: m, amount: map.get(m) ?? 0 }));
-}
-
-/**
  * 当月 vs 上月的投放成本对比（2026-11-23）
  *
  * 录入只是手段 —— "这个月投了 3000"要和上月比才知道是该加还是该减。

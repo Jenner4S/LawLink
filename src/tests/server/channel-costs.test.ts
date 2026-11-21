@@ -58,7 +58,7 @@ vi.mock("@/server/audit", () => ({ audit: vi.fn(async () => {}), auditTx: vi.fn(
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
 const { upsertChannelCost } = await import("@/server/leads/channel-costs-actions");
-const { getChannelCostsForMonth, listChannelCosts, monthKey, shiftMonth, recentMonths, getChannelCostTrend, getChannelCostComparison } = await import("@/server/leads/channel-costs");
+const { getChannelCostsForMonth, listChannelCosts, monthKey, shiftMonth, recentMonths, getChannelCostComparison } = await import("@/server/leads/channel-costs");
 const { getLeadFunnel } = await import("@/server/leads/analytics");
 const { saveLeadFinancePolicy, LEAD_FINANCE_POLICY_DEFAULTS } = await import("@/server/settings/lead-finance-policy");
 
@@ -151,15 +151,21 @@ describe("月份工具与历史", () => {
     expect((await getChannelCostsForMonth("2026-10")).get(ch.id)).toBe(1800);
   });
 
-  it("趋势序列：缺失月补 0（0 = 该月没投，不是「没数据」）", async () => {
+  it("缺失月不出现在结果里（调用方据此理解「没投」，不是 0）", async () => {
+    // 原先这里测 getChannelCostTrend，但它生产零使用（只有测试用），已删。
+    // 改成测**生产在用的**两个 API 的组合，口径等价：
+    //   · getChannelCostsForMonth 只返回有记录的月份；
+    //   · 需要「近 N 月」时由 recentMonths 生成月份列表再取。
     const ch = await seedChannel();
     await upsertChannelCost({ channelId: ch.id, month: "2026-10", amount: 1800 });
-    const trend = await getChannelCostTrend(ch.id, ["2026-11", "2026-10", "2026-09"]);
-    expect(trend).toEqual([
-      { month: "2026-11", amount: 0 },
-      { month: "2026-10", amount: 1800 },
-      { month: "2026-09", amount: 0 }
-    ]);
+
+    const oct = await getChannelCostsForMonth("2026-10");
+    const nov = await getChannelCostsForMonth("2026-11");
+    expect(oct.get(ch.id)).toBe(1800);
+    expect(nov.has(ch.id)).toBe(false); // 11 月没投 → 压根没有记录
+
+    // 最近 3 个月列表来自 recentMonths（生产在用），顺序固定
+    expect(recentMonths("2026-11", 3)).toEqual(["2026-11", "2026-10", "2026-09"]);
   });
 });
 
