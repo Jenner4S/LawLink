@@ -17,6 +17,8 @@ import { createLeadChannel, toggleLeadChannel } from "@/server/leads/channels-ac
 import { updateLeadFinancePolicy } from "@/server/settings/lead-finance-policy-actions";
 import type { LeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import type { LeadToCash } from "@/server/leads/lead-to-cash";
+import { LEADS_COLUMNS } from "@/lib/leads-columns";
+import { updateLeadsListColumns } from "@/server/settings/leads-columns-actions";
 import type { LeadFunnel } from "@/server/leads/analytics";
 import type { ChannelNode } from "@/server/leads/channels";
 
@@ -47,7 +49,8 @@ export function LeadsView({
   lawyers,
   assigneeView = "ALL",
   financePolicy,
-  leadToCash
+  leadToCash,
+  listColumns
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -63,8 +66,12 @@ export function LeadsView({
   financePolicy: LeadFinancePolicy;
   /** 线索到回款闭环（本月）：补上漏斗与财务之间缺失的那一段连接 */
   leadToCash: LeadToCash;
+  /** 列显隐（2026-11-23）：按所配置；线索人列不可隐藏 */
+  listColumns: string[];
 }) {
   const router = useRouter();
+  // 列显隐：用 Set 判断，避免每行每列都做数组查找
+  const visibleCols = new Set(listColumns);
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<Filter>("OPEN");
   const [ownerFilter, setOwnerFilter] = useState<string>("");
@@ -427,6 +434,40 @@ export function LeadsView({
                   <option value="IGNORED">只记录，不参与计算</option>
                 </select>
               </label>
+              <div className="w-full text-[11px]">
+                列表显示哪些列
+                <span className="ml-1 text-[10px] text-[var(--t-muted)]">（线索人列必显；按所生效）</span>
+                <div className="mt-0.5 flex flex-wrap gap-2">
+                  {LEADS_COLUMNS.map((c) => {
+                    const on = visibleCols.has(c.key);
+                    const locked = c.key === "name";
+                    return (
+                      <label key={c.key} className={`flex items-center gap-1 ${locked ? "opacity-60" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          disabled={isPending || locked}
+                          onChange={() => {
+                            const next = on
+                              ? listColumns.filter((k) => k !== c.key)
+                              : [...listColumns, c.key];
+                            startTransition(async () => {
+                              try {
+                                await updateLeadsListColumns({ columns: next });
+                                router.refresh();
+                              } catch (err) {
+                                toast.error("保存失败", { description: actionErrorMessage(err) });
+                              }
+                            });
+                          }}
+                        />
+                        {c.label}
+                      </label>
+                    );
+                  })}
+                  <span className="text-[10px] text-[var(--t-muted)]">操作列始终显示</span>
+                </div>
+              </div>
               <label className="text-[11px]">
                 坏账自批上限（元）
                 <input
@@ -587,12 +628,16 @@ export function LeadsView({
           <table className="mo-table" style={{ minWidth: 900 }}>
             <thead>
               <tr>
-                <th>线索人</th><th>来源</th><th>阶段</th><th>跟进</th><th>负责人</th><th>最近更新</th><th>操作</th>
+                {LEADS_COLUMNS.filter((c) => visibleCols.has(c.key)).map((c) => (
+                  <th key={c.key}>{c.label}</th>
+                ))}
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((l) => (
                 <tr key={l.id}>
+                  {visibleCols.has("name") ? (
                   <td>
                     <div className="text-[12.5px] font-medium">{l.name}</div>
                     <div className="text-[10.5px] text-[var(--t-muted)] flex items-center gap-1">
@@ -607,10 +652,14 @@ export function LeadsView({
                       ) : null}
                     </div>
                   </td>
+                  ) : null}
+                  {visibleCols.has("source") ? (
                   <td className="text-[11.5px]">
                     {SOURCE_CN[l.source] ?? l.source}
                     {l.sourceDetail ? <div className="text-[10px] text-[var(--t-muted)]">{l.sourceDetail}</div> : null}
                   </td>
+                  ) : null}
+                  {visibleCols.has("stage") ? (
                   <td>
                     <span className={`badge ${STAGE_CLS[l.stage] ?? "b-slate"}`} style={{ fontSize: 10 }}>{STAGE_CN[l.stage] ?? l.stage}</span>
                     {l.visitOutcome === "NO_SHOW" ? (
@@ -619,6 +668,8 @@ export function LeadsView({
                       </span>
                     ) : null}
                   </td>
+                  ) : null}
+                  {visibleCols.has("activity") ? (
                   <td className="text-[11px]">
                     <button
                       type="button"
@@ -629,8 +680,11 @@ export function LeadsView({
                       {l.activityCount} 次
                     </button>
                   </td>
-                  <td className="text-[11.5px]">{l.owner.name}</td>
-                  <td className="text-[11px] text-[var(--t-muted)]">{formatDateTime(l.updatedAt)}</td>
+                  ) : null}
+                  {visibleCols.has("owner") ? <td className="text-[11.5px]">{l.owner.name}</td> : null}
+                  {visibleCols.has("updatedAt") ? (
+                    <td className="text-[11px] text-[var(--t-muted)]">{formatDateTime(l.updatedAt)}</td>
+                  ) : null}
                   <td>
                     <div className="flex flex-wrap gap-1">
                       {l.stage === "LEAD" ? (

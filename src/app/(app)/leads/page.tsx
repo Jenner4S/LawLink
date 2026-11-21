@@ -3,6 +3,7 @@ import { listLeadOwners, listLeads } from "@/server/leads/actions";
 import { listLeadChannels } from "@/server/leads/channels";
 import { listLawyerOptions } from "@/server/leads/owners";
 import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
+import { getLeadsListColumns } from "@/server/settings/leads-columns";
 import { getLeadToCash } from "@/server/leads/lead-to-cash";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
@@ -27,7 +28,7 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash] = await Promise.all([
+  const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns] = await Promise.all([
     listLeads({ stage: "ALL", assignee: assigneeView }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
@@ -39,7 +40,9 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-22：业务口径（可配置，默认按回款 / 券金额=成本）
     getLeadFinancePolicy(),
     // 2026-11-22：线索到回款的闭环（本月口径）
-    getLeadToCash({ start: monthStart, end: nextMonth })
+    getLeadToCash({ start: monthStart, end: nextMonth }),
+    // 2026-11-23：列显隐（按所配置，线索人列不可隐藏）
+    getLeadsListColumns()
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} />;
 }
