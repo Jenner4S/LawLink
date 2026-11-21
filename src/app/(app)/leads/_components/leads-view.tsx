@@ -56,7 +56,8 @@ export function LeadsView({
   upcoming,
   staleConsulted,
   channelCosts,
-  costMonth
+  costMonth,
+  costMonths
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -84,6 +85,8 @@ export function LeadsView({
   channelCosts: { channelId: string; month: string; amount: number; note: string | null }[];
   /** 当前成本所属月份（YYYY-MM） */
   costMonth: string;
+  /** 可回填的月份（近 12 个月，最近的在前） */
+  costMonths: string[];
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
@@ -276,7 +279,26 @@ export function LeadsView({
               </div>
             </div>
             <div>
-              <div className="mb-1 text-[11px] text-[var(--t-muted)]">按渠道（决定钱往哪投）</div>
+              <div className="mb-1 flex items-center gap-2 text-[11px] text-[var(--t-muted)]">
+                <span>按渠道（决定钱往哪投）</span>
+                {/* 2026-11-23 回填：只编辑本月看不出趋势，"上月投了多少"要有地方补录。
+                    只允许近 12 个月，且不晚于本月 —— 填未来的数会让环比错位。 */}
+                <label className="ml-auto text-[10px]">
+                  投放月份
+                  <select
+                    className="input ml-1 h-5 text-[10px]"
+                    value={costMonth}
+                    disabled={isPending}
+                    onChange={(e) => router.push(`/leads?costMonth=${e.target.value}`)}
+                  >
+                    {costMonths.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 text-[9.5px] text-[var(--t-muted)]">
                   <span className="w-28 shrink-0">渠道</span>
@@ -328,7 +350,7 @@ export function LeadsView({
                           defaultValue={costMap.get(r.key) ?? ""}
                           placeholder="—"
                           disabled={isPending}
-                          title={`${r.label} 在 ${costMonth} 的投放成本（元）；填 0 或清空 = 没投`}
+                          title={`${r.label} 在 ${costMonth} 的投放成本（元）；填 0 或清空 = 没投。切换上方月份可补录历史月`}
                           onBlur={(e) => {
                             const raw = e.target.value.trim();
                             const v = raw === "" ? 0 : Number(raw);

@@ -267,6 +267,34 @@ const costDb = Number((await Q(`select coalesce(sum(amount),0) from "LeadChannel
 step("⑰ 渠道投放成本：面板填 600 → 失焦保存 → 库内回读 600", costFill === "filled" && costDb === 600,
   `fill=${costFill} db=${costDb}`);
 
+// ⑱ 回填历史月（2026-11-23）：切到上月 → 该渠道填写 → 写进上月记录，本月不受影响
+const prevMonth = (() => {
+  const d = new Date(); d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+})();
+await send("Page.navigate", { url: `http://localhost:3000/leads?costMonth=${prevMonth}` });
+await sleep(2500);
+await ev(`(function(){var b=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim()==="渠道与口径";});if(b)b.click();})()`);
+await sleep(1200);
+const backfill = await ev(`(function(){
+  var lab=[].slice.call(document.querySelectorAll("button")).find(function(x){return (x.textContent||"").trim().indexOf("巡检成本渠道")>=0;});
+  if(!lab) return "no-row";
+  var inp=lab.parentElement.querySelector('input[type=number]');
+  if(!inp) return "no-input";
+  inp.focus();
+  var setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
+  setter.call(inp,"450");
+  inp.dispatchEvent(new Event("input",{bubbles:true}));
+  inp.blur();
+  return "filled";
+})()`);
+await sleep(3500);
+const prevDb = Number((await Q(`select coalesce(sum(amount),0) from "LeadChannelCost" where "channelId"='${costChanId}' and month='${prevMonth}'`)).trim());
+const curDb = Number((await Q(`select coalesce(sum(amount),0) from "LeadChannelCost" where "channelId"='${costChanId}' and month<>'${prevMonth}'`)).trim());
+step("⑱ 回填上月：写入上月记录，本月原有 600 不受影响",
+  backfill === "filled" && prevDb === 450 && curDb === 600,
+  `fill=${backfill} prev=${prevDb} cur=${curDb}`);
+
 // 清理：删线索与其收案（按标记，不依赖 id 变量）
 execFileSync("docker", ["exec", "lawlink-db", "psql", "-U", "lawlink", "-d", "lawlink", "-c",
   `delete from "LeadActivity" where "leadId"='${leadId}'`], { encoding: "utf8" });

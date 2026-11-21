@@ -6,7 +6,7 @@ import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import { getLeadsListColumns } from "@/server/settings/leads-columns";
 import { getUpcomingVisits } from "@/server/leads/upcoming-visits";
 import { getStaleConsultedLeads } from "@/server/leads/stale-consulted";
-import { listChannelCosts, monthKey } from "@/server/leads/channel-costs";
+import { listChannelCosts, monthKey, recentMonths } from "@/server/leads/channel-costs";
 import { getLeadToCash } from "@/server/leads/lead-to-cash";
 import { ensureDefaultChannels } from "@/server/leads/channels-actions";
 import { getLeadFunnel } from "@/server/leads/analytics";
@@ -19,7 +19,7 @@ import { LeadsView } from "./_components/leads-view";
  * 收案（Intake）是"决定接案之后"的事，两者刻意分开——
  * 混在一起会让收案列表被「问一句就走」的噪声污染。
  */
-export default async function LeadsPage({ searchParams }: { searchParams?: Promise<{ assignee?: string; channel?: string }> }) {
+export default async function LeadsPage({ searchParams }: { searchParams?: Promise<{ assignee?: string; channel?: string; costMonth?: string }> }) {
   const sp = (await searchParams) ?? {};
   // 渠道下钻（2026-11-23）：?channel=<id>
   const channelFilter = typeof sp.channel === "string" && sp.channel.trim() ? sp.channel.trim() : null;
@@ -32,6 +32,13 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   await ensureDefaultChannels().catch(() => ({ created: 0 }));
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // 投放成本编辑月份（2026-11-23）：默认本月；只允许近 12 个月且不晚于本月
+  // （补录上月是常态，填未来的数没有意义还会让环比错位）
+  const thisMonth = monthKey(monthStart);
+  const monthSeq = recentMonths(thisMonth, 12);
+  const costMonth =
+    typeof sp.costMonth === "string" && monthSeq.includes(sp.costMonth) ? sp.costMonth : thisMonth;
+
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns, upcoming, staleConsulted, channelCosts] = await Promise.all([
     listLeads({ stage: "ALL", assignee: assigneeView, ...(channelFilter ? { channelId: channelFilter } : {}) }),
@@ -53,7 +60,7 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-23：已谈案未转收案（谈完没签是真实漏损，之前没有任何机制盯）
     getStaleConsultedLeads(3),
     // 2026-11-23：渠道月度投放成本（本月的，供面板直接编辑）
-    listChannelCosts(monthKey(monthStart))
+    listChannelCosts(costMonth)
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} channelCosts={channelCosts} costMonth={monthKey(monthStart)} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} upcoming={upcoming} staleConsulted={staleConsulted} channelCosts={channelCosts} costMonth={costMonth} costMonths={monthSeq} />;
 }

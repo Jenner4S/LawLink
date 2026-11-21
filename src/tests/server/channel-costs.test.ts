@@ -58,7 +58,7 @@ vi.mock("@/server/audit", () => ({ audit: vi.fn(async () => {}), auditTx: vi.fn(
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }));
 
 const { upsertChannelCost } = await import("@/server/leads/channel-costs-actions");
-const { getChannelCostsForMonth, listChannelCosts, monthKey } = await import("@/server/leads/channel-costs");
+const { getChannelCostsForMonth, listChannelCosts, monthKey, shiftMonth, recentMonths, getChannelCostTrend } = await import("@/server/leads/channel-costs");
 const { getLeadFunnel } = await import("@/server/leads/analytics");
 const { saveLeadFinancePolicy, LEAD_FINANCE_POLICY_DEFAULTS } = await import("@/server/settings/lead-finance-policy");
 
@@ -123,5 +123,42 @@ describe("渠道月度投放成本", () => {
     const row = f.byChannel.find((r) => r.key === ch.id)!;
     expect(row.monthlyCost).toBe(600);
     expect(row.costPerLead).toBe(300); // 600 / 2 条
+  });
+});
+
+/**
+ * 回填历史月份（2026-11-23）
+ *
+ * 只编辑本月看不出趋势 —— "这个月投了 3000"要和上月比才有意义。
+ * 月份必须是可枚举、可回退、不能填未来的。
+ */
+describe("月份工具与历史", () => {
+  it("shiftMonth 跨年正确（1 月往前是上一年 12 月）", () => {
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftMonth("2026-11", -11)).toBe("2025-12");
+  });
+
+  it("recentMonths 从新到旧、含自身", () => {
+    expect(recentMonths("2026-11", 3)).toEqual(["2026-11", "2026-10", "2026-09"]);
+  });
+
+  it("**不同月份互不覆盖**（补录上月不影响本月）", async () => {
+    const ch = await seedChannel();
+    await upsertChannelCost({ channelId: ch.id, month: "2026-11", amount: 3000 });
+    await upsertChannelCost({ channelId: ch.id, month: "2026-10", amount: 1800 });
+    expect((await getChannelCostsForMonth("2026-11")).get(ch.id)).toBe(3000);
+    expect((await getChannelCostsForMonth("2026-10")).get(ch.id)).toBe(1800);
+  });
+
+  it("趋势序列：缺失月补 0（0 = 该月没投，不是「没数据」）", async () => {
+    const ch = await seedChannel();
+    await upsertChannelCost({ channelId: ch.id, month: "2026-10", amount: 1800 });
+    const trend = await getChannelCostTrend(ch.id, ["2026-11", "2026-10", "2026-09"]);
+    expect(trend).toEqual([
+      { month: "2026-11", amount: 0 },
+      { month: "2026-10", amount: 1800 },
+      { month: "2026-09", amount: 0 }
+    ]);
   });
 });

@@ -38,3 +38,33 @@ export async function listChannelCosts(month: string): Promise<ChannelCostRow[]>
   });
   return rows.map((r) => ({ channelId: r.channelId, month: r.month, amount: Number(r.amount), note: r.note }));
 }
+
+/** `2026-11` ± n 个月（用于月份选择器与环比） */
+export function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return monthKey(d);
+}
+
+/** 近 N 个月（含 `month` 自身，最近的在前） */
+export function recentMonths(month: string, count = 6): string[] {
+  return Array.from({ length: count }, (_, i) => shiftMonth(month, -i));
+}
+
+/**
+ * 某渠道近 N 月的投放成本序列（2026-11-23）
+ *
+ * 只编辑本月看不出趋势——"这个月投了 3000"要和上月比才有意义。
+ * 返回按月份从新到旧，缺失的月份补 0（0 = 该月没投）。
+ */
+export async function getChannelCostTrend(
+  channelId: string,
+  months: string[]
+): Promise<{ month: string; amount: number }[]> {
+  const rows = await prisma.leadChannelCost.findMany({
+    where: { channelId, month: { in: months } },
+    select: { month: true, amount: true }
+  });
+  const map = new Map(rows.map((r) => [r.month, Number(r.amount)]));
+  return months.map((m) => ({ month: m, amount: map.get(m) ?? 0 }));
+}
