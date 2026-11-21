@@ -14,6 +14,8 @@ import { DeadlineRulesCard } from "./_components/deadline-rules-card";
 import { ReminderScanButton } from "./_components/reminder-scan-button";
 import { WebhookSettingsCard } from "./_components/webhook-settings-card";
 import { EmailChannelCard } from "./_components/email-channel-card";
+import { IntegrationStatusCard } from "./_components/integration-status-card";
+import { getIntegrationStatus } from "@/server/settings/integration-status";
 import { DeliveryLedgerCard } from "./_components/delivery-ledger-card";
 import { HolidayCard } from "./_components/holiday-card";
 import { listHolidays } from "@/server/calendar/holiday-actions";
@@ -60,6 +62,8 @@ export default async function RemindersSettingsPage() {
         }
       />
       <WebhookSettingsCard initialEnabled={webhook.enabled} initialUrl={webhook.url} />
+      {/* 2026-11-23：三项外部接入到哪一步了（表单/邮件/短信），只读 */}
+      <IntegrationStatusCard status={await getIntegrationStatus()} />
       <EmailChannelCard
         configured={isEmailConfigured()}
         mailFrom={process.env.MAIL_FROM || null}
