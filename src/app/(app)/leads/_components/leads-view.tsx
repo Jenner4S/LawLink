@@ -50,7 +50,8 @@ export function LeadsView({
   assigneeView = "ALL",
   financePolicy,
   leadToCash,
-  listColumns
+  listColumns,
+  channelFilter = null
 }: {
   leads: LeadRow[];
   funnel: LeadFunnel;
@@ -68,6 +69,8 @@ export function LeadsView({
   leadToCash: LeadToCash;
   /** 列显隐（2026-11-23）：按所配置；线索人列不可隐藏 */
   listColumns: string[];
+  /** 渠道下钻筛选（2026-11-23）：当前正在看哪个渠道的线索 */
+  channelFilter?: string | null;
 }) {
   const router = useRouter();
   // 列显隐：用 Set 判断，避免每行每列都做数组查找
@@ -271,7 +274,23 @@ export function LeadsView({
                 </div>
                 {funnel.byChannel.slice(0, 6).map((r) => (
                   <div key={r.key} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-28 shrink-0 truncate" title={r.label}>{r.label}</span>
+                    {/* 2026-11-23 下钻：点渠道看它带来的线索（一级含子渠道）。
+                        key 就是 channelId；`SRC:<枚举>` 是旧数据按来源回退，没有 id 可点。
+                        （我第一版按 `CH:` 前缀判断，结果按钮一个都不渲染——CDP 探针发现的。） */}
+                    {!r.key.startsWith("SRC:") ? (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/leads?channel=${encodeURIComponent(r.key)}`)}
+                        className={`w-28 shrink-0 truncate text-left underline decoration-dotted hover:text-[var(--t-strong)] ${
+                          channelFilter === r.key ? "text-[var(--primary)]" : ""
+                        }`}
+                        title={`只看「${r.label}」带来的线索`}
+                      >
+                        {r.label}
+                      </button>
+                    ) : (
+                      <span className="w-28 shrink-0 truncate" title={r.label}>{r.label}</span>
+                    )}
                     <span className="w-24 shrink-0 text-right tabular text-[var(--t-muted)]">
                       {r.total} / {r.visited} / {r.converted}
                     </span>
@@ -348,6 +367,18 @@ export function LeadsView({
           转化只能从「已谈案」发起——否则漏斗里看不到真实的到店与谈案
         </span>
       </div>
+
+      {/* 渠道下钻的当前筛选：能进也要能出 */}
+      {channelFilter ? (
+        <div className="mb-1 flex items-center gap-1 text-[11px]">
+          <span className="rounded bg-[var(--primary-bg,rgba(37,99,235,.10))] px-1.5 py-0.5">
+            渠道筛选：{funnel.byChannel.find((r) => r.key === channelFilter)?.label ?? channelFilter}
+          </span>
+          <button type="button" className="text-[var(--t-muted)] underline decoration-dotted" onClick={() => router.push("/leads")}>
+            清除
+          </button>
+        </div>
+      ) : null}
 
       {/* 2026-11-22 P1-2：派单视图。回答「今天该我动的还有几件」——
           没有它，200 条里找待接单只能靠眼睛扫。 */}

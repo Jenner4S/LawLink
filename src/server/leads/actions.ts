@@ -186,6 +186,12 @@ export async function listLeads(
      * 回答的是「今天该我动的还有几件」——没有它，200 条里找待接单只能靠眼睛扫。
      */
     assignee?: "ALL" | "PENDING_ASSIGN" | "PENDING_ACCEPT";
+    /**
+     * 渠道下钻（2026-11-23）：点漏斗里的某个渠道，看它带来的线索。
+     * 传**一级渠道**时自动含其全部子渠道 —— 否则点"大众点评"只能看到
+     * 直接挂在一级的零星线索，与漏斗里那一行的数字对不上。
+     */
+    channelId?: string;
   } = {}
 ) {
   const session = await requireSession("clients.read");
@@ -199,11 +205,22 @@ export async function listLeads(
         ? { stage: { in: ["LEAD", "INVITED", "VISITED", "CONSULTED"] as LeadStage[] } }
         : { stage };
 
+  // 渠道下钻：一级渠道 → 含所有子渠道；二级渠道 → 只看自己
+  let channelIds: string[] | null = null;
+  if (filter.channelId) {
+    const children = await prisma.leadChannel.findMany({
+      where: { parentId: filter.channelId },
+      select: { id: true }
+    });
+    channelIds = [filter.channelId, ...children.map((c) => c.id)];
+  }
+
   const rows = await prisma.lead.findMany({
     where: {
       ...where,
       ...(filter.ownerId ? { ownerId: filter.ownerId } : {}),
       // 派单视图（2026-11-22 P1-2）：只按在途派单状态收窄，不影响既有 stage/负责人口径
+      ...(channelIds ? { channelId: { in: channelIds } } : {}),
       ...(filter.assignee === "PENDING_ASSIGN"
         ? { assigneeStatus: "UNASSIGNED" as const }
         : filter.assignee === "PENDING_ACCEPT"

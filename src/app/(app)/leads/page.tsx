@@ -16,8 +16,10 @@ import { LeadsView } from "./_components/leads-view";
  * 收案（Intake）是"决定接案之后"的事，两者刻意分开——
  * 混在一起会让收案列表被「问一句就走」的噪声污染。
  */
-export default async function LeadsPage({ searchParams }: { searchParams?: Promise<{ assignee?: string }> }) {
+export default async function LeadsPage({ searchParams }: { searchParams?: Promise<{ assignee?: string; channel?: string }> }) {
   const sp = (await searchParams) ?? {};
+  // 渠道下钻（2026-11-23）：?channel=<id>
+  const channelFilter = typeof sp.channel === "string" && sp.channel.trim() ? sp.channel.trim() : null;
   const assigneeView = (sp.assignee === "PENDING_ASSIGN" || sp.assignee === "PENDING_ACCEPT" ? sp.assignee : "ALL") as
     | "ALL"
     | "PENDING_ASSIGN"
@@ -29,7 +31,7 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const [leads, funnel, owners, channels, lawyers, financePolicy, leadToCash, listColumns] = await Promise.all([
-    listLeads({ stage: "ALL", assignee: assigneeView }),
+    listLeads({ stage: "ALL", assignee: assigneeView, ...(channelFilter ? { channelId: channelFilter } : {}) }),
     // 阶段二：获客看板。分母口径见 analytics.ts 文件头（期间新增线索，不是期间转化）
     getLeadFunnel(),
     listLeadOwners(),
@@ -44,5 +46,5 @@ export default async function LeadsPage({ searchParams }: { searchParams?: Promi
     // 2026-11-23：列显隐（按所配置，线索人列不可隐藏）
     getLeadsListColumns()
   ]);
-  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} />;
+  return <LeadsView leads={leads} funnel={funnel} owners={owners} channels={channels} lawyers={lawyers} assigneeView={assigneeView} financePolicy={financePolicy} leadToCash={leadToCash} listColumns={listColumns} channelFilter={channelFilter} />;
 }
