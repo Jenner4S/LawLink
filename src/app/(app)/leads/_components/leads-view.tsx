@@ -381,7 +381,9 @@ export function LeadsView({
           <div className="mb-3 rounded border border-[var(--bd-hair)] p-2">
             <p className="mb-1 text-[12px] font-medium">业务口径（改配置即可，不动代码）</p>
             <p className="mb-2 text-[10.5px] text-[var(--t-muted)]">
-              这两项只有业主能定；定下来之前系统按有主张的默认跑，定了随时切换。
+              这几项只有业主能定；定下来之前系统按有主张的默认跑，定了随时切换。
+              <br />
+              坏账自批上限默认 <b>0 = 永不自批</b>（两人复核）；填正数则小于该金额可由申报人自行确认，审计留痕。
             </p>
             <div className="flex flex-wrap gap-3">
               <label className="text-[11px]">
@@ -424,6 +426,31 @@ export function LeadsView({
                   <option value="REVENUE">收入侧（客户付券款）</option>
                   <option value="IGNORED">只记录，不参与计算</option>
                 </select>
+              </label>
+              <label className="text-[11px]">
+                坏账自批上限（元）
+                <input
+                  className="input ml-1 h-6 w-20 text-[11px]"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  defaultValue={financePolicy.writeOffSelfApproveBelow}
+                  disabled={isPending}
+                  onBlur={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isFinite(v) || v < 0 || v === financePolicy.writeOffSelfApproveBelow) return;
+                    startTransition(async () => {
+                      try {
+                        await updateLeadFinancePolicy({ ...financePolicy, writeOffSelfApproveBelow: v });
+                        toast.success(v === 0 ? "已改为：坏账必须他人复核" : `已改为：${v} 元以下可自批`);
+                        router.refresh();
+                      } catch (err) {
+                        toast.error("保存失败", { description: actionErrorMessage(err) });
+                      }
+                    });
+                  }}
+                  title="0 = 永不自批（默认，两人复核）；填 >0 时小于该金额的坏账可由申报人自行确认，审计会记录 selfApproved"
+                />
               </label>
             </div>
           </div>

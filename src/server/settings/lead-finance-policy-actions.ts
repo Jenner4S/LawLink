@@ -20,7 +20,9 @@ import { getLeadFinancePolicy, saveLeadFinancePolicy } from "./lead-finance-poli
 
 const schema = z.object({
   contingencyBasis: z.enum(["RECEIVED", "CONTRACT"]),
-  voucherAmountSide: z.enum(["COST", "REVENUE", "IGNORED"])
+  voucherAmountSide: z.enum(["COST", "REVENUE", "IGNORED"]),
+  // 坏账自批上限：0 = 永不自批（默认，两人复核）；>0 时小于该值可自批
+  writeOffSelfApproveBelow: z.coerce.number().min(0).max(1_000_000).multipleOf(0.01).default(0)
 });
 
 export async function updateLeadFinancePolicy(input: z.input<typeof schema>) {

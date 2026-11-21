@@ -35,11 +35,26 @@ export type VoucherAmountSide = "COST" | "REVENUE" | "IGNORED";
 export interface LeadFinancePolicy {
   contingencyBasis: ContingencyBasis;
   voucherAmountSide: VoucherAmountSide;
+  /**
+   * 坏账**自助批准**的金额上限（2026-11-23）。
+   *
+   * `0`（默认）= 永不自批，任何坏账都要他人复核 —— 这是**两个人的设计**，
+   * 也是防舞弊最直接的一道墙。
+   *
+   * `> 0` = 金额**小于**该阈值的坏账允许申报人自行确认（小额免复核），
+   * 适用于"几十块的差额挂着没人愿意走流程"的现实。此时审计会记录
+   * `selfApproved: true` 与阈值，事后可查"哪些是自批的"。
+   *
+   * 为什么默认保持 0：放宽控制是业主的权限，不是实现的自由。
+   * 系统默认更严，需要放宽时改配置即可。
+   */
+  writeOffSelfApproveBelow: number;
 }
 
 export const LEAD_FINANCE_POLICY_DEFAULTS: LeadFinancePolicy = {
   contingencyBasis: "RECEIVED",
-  voucherAmountSide: "COST"
+  voucherAmountSide: "COST",
+  writeOffSelfApproveBelow: 0
 };
 
 export async function getLeadFinancePolicy(): Promise<LeadFinancePolicy> {
@@ -53,7 +68,11 @@ export async function getLeadFinancePolicy(): Promise<LeadFinancePolicy> {
     voucherAmountSide:
       v.voucherAmountSide === "COST" || v.voucherAmountSide === "REVENUE" || v.voucherAmountSide === "IGNORED"
         ? v.voucherAmountSide
-        : LEAD_FINANCE_POLICY_DEFAULTS.voucherAmountSide
+        : LEAD_FINANCE_POLICY_DEFAULTS.voucherAmountSide,
+    writeOffSelfApproveBelow:
+      typeof v.writeOffSelfApproveBelow === "number" && Number.isFinite(v.writeOffSelfApproveBelow) && v.writeOffSelfApproveBelow >= 0
+        ? Math.round(v.writeOffSelfApproveBelow * 100) / 100
+        : LEAD_FINANCE_POLICY_DEFAULTS.writeOffSelfApproveBelow
   };
 }
 

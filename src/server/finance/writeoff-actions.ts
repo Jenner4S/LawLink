@@ -37,6 +37,7 @@ import { ActionError } from "@/lib/action-error";
 import { requireSession } from "@/lib/auth/session";
 import { canExecuteFinance } from "@/lib/roles/catalog";
 import { roleMutation } from "@/lib/roles/service";
+import { getLeadFinancePolicy } from "@/server/settings/lead-finance-policy";
 import { audit } from "@/server/audit";
 import { revalidatePath } from "next/cache";
 import { assertMatterWritable } from "@/lib/archive/guard";
@@ -247,9 +248,27 @@ export async function decideWriteOff(input: z.input<typeof decideSchema>) {
   // 归档案件不再产生新的财务处置（写守卫审计指出此处缺失，补上）：
   // 案件归档意味着“账已收尾”，此时批准一笔坏账会改动一个已封存的口径。
   await assertMatterWritable(current.matterId, { allowFinanceRole: true });
-  // 自批会让"两个人分开"的设计失效
-  if (current.requestedById === session.user.id) {
-    throw new ActionError("不能批准自己申报的坏账，请由他人复核");
+  /**
+   * 自批拦截（2026-11-23 起支持"小额免复核"的可配置阈值）。
+   *
+   * 默认 `writeOffSelfApproveBelow = 0` → 永不自批：两个人分开是防舞弊最直接的墙，
+   * 系统默认就该更严；放宽控制是业主的权限，不是实现的自由。
+   *
+   * 业主设为 > 0 时，**金额小于阈值**的坏账允许申报人自行确认，
+   * 用于"几十块差额挂着没人愿意走流程"的现实。审计会记 `selfApproved: true`
+   * 与当时阈值，事后能查出"哪些是自批的"。
+   */
+  const policy = await getLeadFinancePolicy();
+  const selfApproveLimit = policy.writeOffSelfApproveBelow;
+  const isSelf = current.requestedById === session.user.id;
+  const amountNum = Number(current.amount);
+  const selfApproved = isSelf && selfApproveLimit > 0 && amountNum < selfApproveLimit;
+  if (isSelf && !selfApproved) {
+    throw new ActionError(
+      selfApproveLimit > 0
+        ? `不能批准自己申报的坏账（仅 ${selfApproveLimit} 元以下可自批，本笔 ${amountNum} 元），请由他人复核`
+        : "不能批准自己申报的坏账，请由他人复核"
+    );
   }
   if (data.decision === "REJECTED" && !data.rejectReason?.trim()) {
     throw new ActionError("驳回须填写理由");
@@ -271,8 +290,10 @@ export async function decideWriteOff(input: z.input<typeof decideSchema>) {
     targetId: current.id,
     detail: {
       matterId: current.matterId,
-      amount: Number(current.amount),
-      rejectReason: data.decision === "REJECTED" ? data.rejectReason : undefined
+      amount: amountNum,
+      rejectReason: data.decision === "REJECTED" ? data.rejectReason : undefined,
+      // 自批必须留得下痕迹：谁在什么阈值下自己批的
+      ...(selfApproved ? { selfApproved: true, selfApproveLimit } : {})
     }
   });
   revalidatePath(`/matters`);
