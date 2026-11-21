@@ -187,6 +187,24 @@ function measureDrift() {
 /* ------------------------------------------------------------------ *
  * 文档里读当前写的值（读不到返回 null，而不是空串）
  * ------------------------------------------------------------------ */
+/** 实测测试文件数（静态目录扫描，很便宜） */
+function measureTestFiles() {
+  const walk = (dir, out = []) => {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      const st = fs.statSync(full);
+      if (st.isDirectory()) walk(full, out);
+      else if (/\.test\.tsx?$/.test(name)) out.push(full);
+    }
+    return out;
+  };
+  try {
+    return walk(path.join(ROOT, "src")).length;
+  } catch {
+    return null;
+  }
+}
+
 function docTests() {
   const m = fs.readFileSync(DOC, "utf8").match(/(\d+) passed/);
   return m ? Number(m[1]) : null;
@@ -195,6 +213,17 @@ function docLedger() {
   const m = fs.readFileSync(DOC, "utf8").match(/\*\*(\d+) 条\*\*/);
   return m ? Number(m[1]) : null;
 }
+/**
+ * 测试**文件数**（2026-11-23 补）。
+ *
+ * 之前只校验"用例数"，而快照里同时写了「199 个测试文件」——
+ * 加一个文件就等于两处要改，容易只改一处。这条把它也钉住。
+ */
+function docTestFiles() {
+  const m = fs.readFileSync(DOC, "utf8").match(/(\d+) (?:files|个测试文件)/);
+  return m ? Number(m[1]) : null;
+}
+
 function docMigrations() {
   const m = fs.readFileSync(DOC, "utf8").match(/\*\*(\d+) 个迁移\*\*/);
   return m ? Number(m[1]) : null;
@@ -228,6 +257,7 @@ function writeBack(label, from, to, apply) {
  * ------------------------------------------------------------------ */
 const actual = {
   tests: await measureTests(),
+  files: measureTestFiles(),
   ledger: measureLedger(),
   migrations: measureMigrations(),
   driftOk: measureDrift()
@@ -235,6 +265,7 @@ const actual = {
 
 const shown = {
   tests: docTests(),
+  files: docTestFiles(),
   ledger: docLedger(),
   migrations: docMigrations()
 };
@@ -265,6 +296,10 @@ const row = (label, doc, act, ok) => {
   if (!ok) fail = 1;
 };
 row("测试数", shown.tests, actual.tests, shown.tests === actual.tests);
+if (shown.files !== null) {
+  // 只在文档确实写了"文件数"时才校验（旧文档没有这一项，不因此失败）
+  row("测试文件", shown.files, actual.files ?? null, shown.files === actual.files);
+}
 row("台账条目", shown.ledger, actual.ledger, shown.ledger === actual.ledger);
 row("迁移数", shown.migrations, actual.migrations, shown.migrations === actual.migrations);
 if (actual.driftOk === null) {
